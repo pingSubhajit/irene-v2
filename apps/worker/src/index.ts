@@ -190,7 +190,7 @@ async function enqueueTrackedBackfillPage(input: {
   windowDays: number
   pageToken?: string
 }) {
-  const jobKey = `${GMAIL_BACKFILL_PAGE_JOB_NAME}:${input.oauthConnectionId}:${input.pageToken ?? "first"}`
+  const jobKey = `${GMAIL_BACKFILL_PAGE_JOB_NAME}:${input.oauthConnectionId}:${input.correlationId}:${input.pageToken ?? "first"}`
   const jobRun = await ensureJobRun({
     queueName: BACKFILL_IMPORT_QUEUE_NAME,
     jobName: GMAIL_BACKFILL_PAGE_JOB_NAME,
@@ -341,7 +341,8 @@ async function handleGmailBackfillStart(job: Job) {
   }
 
   await updateEmailSyncCursor(cursor.id, {
-    backfillStartedAt: cursor.backfillStartedAt ?? new Date(),
+    backfillStartedAt: new Date(),
+    backfillCompletedAt: null,
   })
 
   const query = buildFinanceSearchQuery(payload.windowDays)

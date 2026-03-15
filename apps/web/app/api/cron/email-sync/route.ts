@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 
 import {
   ensureEmailSyncCursor,
-  listActiveGmailOauthConnections,
+  listSyncableGmailOauthConnections,
 } from "@workspace/db"
 import { getCronEnv } from "@workspace/config/server"
 import { createLogger } from "@workspace/observability"
@@ -44,7 +44,7 @@ export async function GET() {
     )
   }
 
-  const connections = await listActiveGmailOauthConnections()
+  const connections = await listSyncableGmailOauthConnections()
 
   const results = await Promise.all(
     connections.map(async (connection) => {

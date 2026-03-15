@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue } from "./redis"
+import { getOrCreateQueue, toBullJobId } from "./redis"
 
 export const BACKFILL_IMPORT_QUEUE_NAME = "backfill-import"
 export const EMAIL_SYNC_QUEUE_NAME = "email-sync"
@@ -68,7 +68,7 @@ export async function enqueueGmailBackfillStart(
   const parsed = gmailBackfillStartJobPayloadSchema.parse(payload)
 
   return getBackfillImportQueue().add(GMAIL_BACKFILL_START_JOB_NAME, parsed, {
-    jobId: parsed.jobKey,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 
@@ -76,7 +76,7 @@ export async function enqueueGmailBackfillPage(payload: GmailBackfillPageJobPayl
   const parsed = gmailBackfillPageJobPayloadSchema.parse(payload)
 
   return getBackfillImportQueue().add(GMAIL_BACKFILL_PAGE_JOB_NAME, parsed, {
-    jobId: parsed.jobKey,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 
@@ -86,7 +86,7 @@ export async function enqueueGmailIncrementalPoll(
   const parsed = gmailIncrementalPollJobPayloadSchema.parse(payload)
 
   return getEmailSyncQueue().add(GMAIL_INCREMENTAL_POLL_JOB_NAME, parsed, {
-    jobId: parsed.jobKey,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 
@@ -96,7 +96,7 @@ export async function enqueueGmailMessageIngest(
   const parsed = gmailMessageIngestJobPayloadSchema.parse(payload)
 
   return getEmailSyncQueue().add(GMAIL_MESSAGE_INGEST_JOB_NAME, parsed, {
-    jobId: parsed.jobKey,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 

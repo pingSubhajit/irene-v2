@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue } from "./redis"
+import { getOrCreateQueue, toBullJobId } from "./redis"
 
 export const SYSTEM_QUEUE_NAME = "system"
 export const SYSTEM_HEALTHCHECK_JOB_NAME = "system.healthcheck"
@@ -26,7 +26,7 @@ export async function enqueueSystemHealthcheck(payload: SystemHealthcheckJobPayl
   const parsed = systemHealthcheckJobPayloadSchema.parse(payload)
 
   return getSystemQueue().add(SYSTEM_HEALTHCHECK_JOB_NAME, parsed, {
-    jobId: parsed.jobKey,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 

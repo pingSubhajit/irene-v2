@@ -45,7 +45,6 @@ export async function uploadPrivateObject(input: UploadPrivateObjectInput) {
   await file.save(input.body, {
     resumable: false,
     contentType: input.contentType,
-    private: true,
     validation: false,
   })
 
@@ -55,9 +54,12 @@ export async function uploadPrivateObject(input: UploadPrivateObjectInput) {
 }
 
 export async function checkGoogleCloudStorageHealth() {
-  const [exists] = await getBucket().exists()
+  await getBucket().getFiles({
+    maxResults: 1,
+    autoPaginate: false,
+  })
 
   return {
-    ok: exists,
+    ok: true,
   }
 }

@@ -31,7 +31,7 @@ type TriggerBaseInput = {
 
 export async function triggerGmailBackfill(input: TriggerBaseInput) {
   const correlationId = createCorrelationId()
-  const jobKey = `${GMAIL_BACKFILL_START_JOB_NAME}:${input.oauthConnectionId}:${GMAIL_BACKFILL_WINDOW_DAYS}`
+  const jobKey = `${GMAIL_BACKFILL_START_JOB_NAME}:${input.oauthConnectionId}:${GMAIL_BACKFILL_WINDOW_DAYS}:${correlationId}`
   const jobRun = await ensureJobRun({
     queueName: BACKFILL_IMPORT_QUEUE_NAME,
     jobName: GMAIL_BACKFILL_START_JOB_NAME,
@@ -121,7 +121,7 @@ export async function getGmailIntegrationState(userId: string) {
 export async function requireActiveGmailConnection(userId: string) {
   const connection = await getGmailOauthConnectionForUser(userId)
 
-  if (!connection || connection.status !== "active") {
+  if (!connection || connection.status === "revoked") {
     return null
   }
 

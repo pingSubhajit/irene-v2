@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, not } from "drizzle-orm"
 
 import { db } from "./client"
 import {
@@ -84,6 +84,19 @@ export async function listActiveGmailOauthConnections() {
       and(
         eq(oauthConnections.provider, GMAIL_PROVIDER),
         eq(oauthConnections.status, "active"),
+      ),
+    )
+    .orderBy(desc(oauthConnections.updatedAt))
+}
+
+export async function listSyncableGmailOauthConnections() {
+  return db
+    .select()
+    .from(oauthConnections)
+    .where(
+      and(
+        eq(oauthConnections.provider, GMAIL_PROVIDER),
+        not(eq(oauthConnections.status, "revoked")),
       ),
     )
     .orderBy(desc(oauthConnections.updatedAt))

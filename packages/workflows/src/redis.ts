@@ -36,6 +36,10 @@ export function createWorkerRedisConnection() {
   return getRedisOptions()
 }
 
+export function toBullJobId(jobKey: string) {
+  return jobKey.replaceAll(":", "__")
+}
+
 export function getOrCreateQueue(name: string, key: keyof QueueRegistry) {
   const registry = getQueueRegistry()
   const existing = registry[key]
