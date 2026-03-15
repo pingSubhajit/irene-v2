@@ -2,12 +2,12 @@ import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { nextCookies } from "better-auth/next-js"
 
-import { getServerEnv, isAllowedEmail } from "@workspace/config/server"
+import { getAuthEnv, isAllowedEmail } from "@workspace/config/server"
 import { authSchema, db, upsertUserSettings } from "@workspace/db"
 import { createLogger } from "@workspace/observability"
 
 const logger = createLogger("auth")
-const env = getServerEnv()
+const env = getAuthEnv()
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,

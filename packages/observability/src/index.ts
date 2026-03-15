@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import { getServerEnv } from "@workspace/config/server"
+import { getRuntimeEnv } from "@workspace/config/server"
 
 const levelWeights = {
   debug: 10,
@@ -17,7 +17,7 @@ export function createCorrelationId() {
 }
 
 function shouldLog(level: LogLevel) {
-  const configuredLevel = getServerEnv().LOG_LEVEL as LogLevel
+  const configuredLevel = getRuntimeEnv().LOG_LEVEL as LogLevel
 
   return levelWeights[level] >= levelWeights[configuredLevel]
 }

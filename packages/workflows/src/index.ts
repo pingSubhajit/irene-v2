@@ -1,7 +1,7 @@
 import { Queue, type ConnectionOptions } from "bullmq"
 import { z } from "zod"
 
-import { getServerEnv } from "@workspace/config/server"
+import { getRedisEnv } from "@workspace/config/server"
 
 export const QUEUE_PREFIX = "irene"
 export const SYSTEM_QUEUE_NAME = "system"
@@ -25,7 +25,7 @@ const globalForRedis = globalThis as typeof globalThis & {
 }
 
 function getRedisOptions(): ConnectionOptions {
-  const env = getServerEnv()
+  const env = getRedisEnv()
 
   return {
     host: env.UPSTASH_REDIS_HOST,

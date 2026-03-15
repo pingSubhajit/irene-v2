@@ -2,7 +2,7 @@ import { Pool } from "pg"
 import { and, desc, eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/node-postgres"
 
-import { getServerEnv } from "@workspace/config/server"
+import { getDatabaseEnv } from "@workspace/config/server"
 
 import { jobRuns, schema, userSettings } from "./schema"
 
@@ -11,7 +11,7 @@ const globalForDb = globalThis as typeof globalThis & {
 }
 
 function createPool() {
-  const env = getServerEnv()
+  const env = getDatabaseEnv()
 
   return new Pool({
     connectionString: env.DATABASE_URL,
