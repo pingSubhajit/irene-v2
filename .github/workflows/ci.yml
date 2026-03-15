@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "codex/**"
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://user:pass@localhost:5432/irene
+      DATABASE_URL_DIRECT: postgres://user:pass@localhost:5432/irene
+      BETTER_AUTH_SECRET: 1234567890123456789012345678901234567890
+      BETTER_AUTH_URL: http://localhost:3000
+      GOOGLE_CLIENT_ID: dummy-google-client-id
+      GOOGLE_CLIENT_SECRET: dummy-google-client-secret
+      ALLOWED_EMAILS: owner@example.com
+      UPSTASH_REDIS_HOST: localhost
+      UPSTASH_REDIS_PORT: 6379
+      UPSTASH_REDIS_PASSWORD: password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build web
+        run: pnpm --filter web build
+
+      - name: Build worker
+        run: pnpm --filter worker build
