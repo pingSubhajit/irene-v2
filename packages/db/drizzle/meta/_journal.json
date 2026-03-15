@@ -15,6 +15,13 @@
       "when": 1773599102260,
       "tag": "0001_classy_sharon_ventura",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773603570685,
+      "tag": "0002_safe_giant_man",
+      "breakpoints": true
     }
   ]
 }

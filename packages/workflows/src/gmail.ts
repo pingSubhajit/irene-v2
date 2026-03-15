@@ -39,6 +39,15 @@ export const gmailMessageIngestJobPayloadSchema = gmailBasePayloadSchema.extend(
   providerMessageId: z.string().min(1),
   sourceKind: z.enum(["backfill", "incremental"]),
   historyId: z.string().min(1).optional(),
+  relevanceLabel: z.enum([
+    "transactional_finance",
+    "obligation_finance",
+    "marketing_finance",
+    "non_finance",
+  ]),
+  relevanceStage: z.enum(["heuristic", "model"]),
+  relevanceScore: z.number().int(),
+  relevanceReasons: z.array(z.string()),
 })
 
 export type GmailBackfillStartJobPayload = z.infer<

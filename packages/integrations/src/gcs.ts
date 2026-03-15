@@ -53,6 +53,20 @@ export async function uploadPrivateObject(input: UploadPrivateObjectInput) {
   }
 }
 
+export async function deletePrivateObjects(storageKeys: string[]) {
+  const uniqueKeys = [...new Set(storageKeys.filter(Boolean))]
+
+  for (const storageKey of uniqueKeys) {
+    await getBucket().file(storageKey).delete({
+      ignoreNotFound: true,
+    })
+  }
+
+  return {
+    deletedCount: uniqueKeys.length,
+  }
+}
+
 export async function checkGoogleCloudStorageHealth() {
   await getBucket().getFiles({
     maxResults: 1,

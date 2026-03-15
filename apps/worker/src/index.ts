@@ -148,6 +148,10 @@ async function enqueueTrackedMessageIngest(input: {
   providerMessageId: string
   sourceKind: "backfill" | "incremental"
   historyId?: string | null
+  relevanceLabel: "transactional_finance" | "obligation_finance"
+  relevanceStage: "heuristic" | "model"
+  relevanceScore: number
+  relevanceReasons: string[]
 }) {
   const jobKey = `${GMAIL_MESSAGE_INGEST_JOB_NAME}:${input.oauthConnectionId}:${input.providerMessageId}`
   const jobRun = await ensureJobRun({
@@ -163,6 +167,10 @@ async function enqueueTrackedMessageIngest(input: {
       source: "worker",
       sourceKind: input.sourceKind,
       historyId: input.historyId ?? null,
+      relevanceLabel: input.relevanceLabel,
+      relevanceStage: input.relevanceStage,
+      relevanceScore: input.relevanceScore,
+      relevanceReasons: input.relevanceReasons,
     },
   })
 
@@ -178,6 +186,10 @@ async function enqueueTrackedMessageIngest(input: {
     source: "worker",
     sourceKind: input.sourceKind,
     historyId: input.historyId ?? undefined,
+    relevanceLabel: input.relevanceLabel,
+    relevanceStage: input.relevanceStage,
+    relevanceScore: input.relevanceScore,
+    relevanceReasons: input.relevanceReasons,
   })
 }
 
@@ -235,16 +247,20 @@ async function processCandidateMessages(input: {
 
   if (!connection || connection.status === "revoked") {
     return {
-      acceptedCount: 0,
-      skippedCount: input.messageIds.length,
+      acceptedTransactionalCount: 0,
+      acceptedObligationCount: 0,
+      skippedMarketingCount: 0,
+      skippedNonFinanceCount: input.messageIds.length,
       lastSeenMessageAt: null as Date | null,
       latestHistoryId: null as string | null,
     }
   }
 
   const onTokenUpdate = createTokenPersister(connection.id)
-  let acceptedCount = 0
-  let skippedCount = 0
+  let acceptedTransactionalCount = 0
+  let acceptedObligationCount = 0
+  let skippedMarketingCount = 0
+  let skippedNonFinanceCount = 0
   let latestHistoryId: string | null = null
   let lastSeenMessageAt: Date | null = null
 
@@ -264,7 +280,14 @@ async function processCandidateMessages(input: {
       const decision = await classifyFinanceRelevance(metadataToClassifierInput(metadata))
 
       if (decision.decision === "accept") {
-        acceptedCount += 1
+        if (decision.classification === "transactional_finance") {
+          acceptedTransactionalCount += 1
+        } else if (decision.classification === "obligation_finance") {
+          acceptedObligationCount += 1
+        } else {
+          skippedNonFinanceCount += 1
+          continue
+        }
         await enqueueTrackedMessageIngest({
           userId: input.userId,
           oauthConnectionId: input.oauthConnectionId,
@@ -273,18 +296,26 @@ async function processCandidateMessages(input: {
           providerMessageId: metadata.id,
           sourceKind: input.sourceKind,
           historyId: metadata.historyId,
+          relevanceLabel: decision.classification,
+          relevanceStage: decision.stage,
+          relevanceScore: decision.score,
+          relevanceReasons: decision.reasons,
         })
         continue
       }
 
-      skippedCount += 1
+      if (decision.classification === "marketing_finance") {
+        skippedMarketingCount += 1
+      } else {
+        skippedNonFinanceCount += 1
+      }
     } catch (error) {
       if (getAttemptCount(input.job) >= ((input.job.opts.attempts as number | undefined) ?? 3)) {
         logger.warn("Skipping borderline Gmail message after classifier retries exhausted", {
           jobId: input.job.id,
           messageId,
         })
-        skippedCount += 1
+        skippedNonFinanceCount += 1
         continue
       }
 
@@ -293,8 +324,10 @@ async function processCandidateMessages(input: {
   }
 
   return {
-    acceptedCount,
-    skippedCount,
+    acceptedTransactionalCount,
+    acceptedObligationCount,
+    skippedMarketingCount,
+    skippedNonFinanceCount,
     lastSeenMessageAt,
     latestHistoryId,
   }
@@ -431,14 +464,18 @@ async function handleGmailBackfillPage(job: Job) {
   })
 
   await markJobSucceeded(job, payload, {
-    acceptedCount: processed.acceptedCount,
-    skippedCount: processed.skippedCount,
+    acceptedTransactionalCount: processed.acceptedTransactionalCount,
+    acceptedObligationCount: processed.acceptedObligationCount,
+    skippedMarketingCount: processed.skippedMarketingCount,
+    skippedNonFinanceCount: processed.skippedNonFinanceCount,
     nextPageToken: page.nextPageToken ?? null,
   })
 
   return {
-    acceptedCount: processed.acceptedCount,
-    skippedCount: processed.skippedCount,
+    acceptedTransactionalCount: processed.acceptedTransactionalCount,
+    acceptedObligationCount: processed.acceptedObligationCount,
+    skippedMarketingCount: processed.skippedMarketingCount,
+    skippedNonFinanceCount: processed.skippedNonFinanceCount,
     nextPageToken: page.nextPageToken ?? null,
   }
 }
@@ -540,15 +577,19 @@ async function handleGmailIncrementalPoll(job: Job) {
   })
 
   await markJobSucceeded(job, payload, {
-    acceptedCount: processed.acceptedCount,
-    skippedCount: processed.skippedCount,
+    acceptedTransactionalCount: processed.acceptedTransactionalCount,
+    acceptedObligationCount: processed.acceptedObligationCount,
+    skippedMarketingCount: processed.skippedMarketingCount,
+    skippedNonFinanceCount: processed.skippedNonFinanceCount,
     usedFallback,
     processedCount: messageIds.length,
   })
 
   return {
-    acceptedCount: processed.acceptedCount,
-    skippedCount: processed.skippedCount,
+    acceptedTransactionalCount: processed.acceptedTransactionalCount,
+    acceptedObligationCount: processed.acceptedObligationCount,
+    skippedMarketingCount: processed.skippedMarketingCount,
+    skippedNonFinanceCount: processed.skippedNonFinanceCount,
     usedFallback,
     processedCount: messageIds.length,
   }
@@ -662,6 +703,10 @@ async function handleGmailMessageIngest(job: Job) {
     snippet: message.snippet,
     hasAttachments: message.hasAttachments,
     documentHash: message.documentHash,
+    relevanceLabel: payload.relevanceLabel,
+    relevanceStage: payload.relevanceStage,
+    relevanceScore: payload.relevanceScore,
+    relevanceReasonsJson: payload.relevanceReasons,
   })
 
   const attachmentCount = await storeAttachments({

@@ -6,6 +6,8 @@ import {
   emailSyncCursors,
   oauthConnections,
   rawDocuments,
+  type RawDocumentRelevanceLabel,
+  type RawDocumentRelevanceStage,
   type DocumentAttachmentParseStatus,
   type OauthConnectionStatus,
   type RawDocumentSourceType,
@@ -228,6 +230,10 @@ type UpsertRawDocumentInput = {
   snippet?: string | null
   hasAttachments: boolean
   documentHash: string
+  relevanceLabel: RawDocumentRelevanceLabel
+  relevanceStage: RawDocumentRelevanceStage
+  relevanceScore: number
+  relevanceReasonsJson: string[]
 }
 
 export async function upsertRawDocument(input: UpsertRawDocumentInput) {
@@ -266,6 +272,10 @@ export async function upsertRawDocument(input: UpsertRawDocumentInput) {
       snippet: input.snippet ?? null,
       hasAttachments: input.hasAttachments,
       documentHash: input.documentHash,
+      relevanceLabel: input.relevanceLabel,
+      relevanceStage: input.relevanceStage,
+      relevanceScore: input.relevanceScore,
+      relevanceReasonsJson: input.relevanceReasonsJson,
     })
     .onConflictDoNothing()
     .returning()
@@ -396,4 +406,65 @@ export async function listDocumentAttachmentsForRawDocumentIds(rawDocumentIds: s
     .from(documentAttachments)
     .where(inArray(documentAttachments.rawDocumentId, rawDocumentIds))
     .orderBy(desc(documentAttachments.createdAt))
+}
+
+export async function getGmailIngestionArtifactsForConnection(oauthConnectionId: string) {
+  const documents = await db
+    .select({
+      id: rawDocuments.id,
+      bodyHtmlStorageKey: rawDocuments.bodyHtmlStorageKey,
+    })
+    .from(rawDocuments)
+    .where(eq(rawDocuments.oauthConnectionId, oauthConnectionId))
+
+  const rawDocumentIds = documents.map((document) => document.id)
+  const attachments = await listDocumentAttachmentsForRawDocumentIds(rawDocumentIds)
+  const storageKeys = [
+    ...documents
+      .map((document) => document.bodyHtmlStorageKey)
+      .filter((value): value is string => Boolean(value)),
+    ...attachments.map((attachment) => attachment.storageKey),
+  ]
+
+  return {
+    rawDocumentIds,
+    rawDocumentCount: documents.length,
+    attachmentCount: attachments.length,
+    storageKeys: [...new Set(storageKeys)],
+  }
+}
+
+export async function resetGmailIngestionForConnection(oauthConnectionId: string) {
+  const artifacts = await getGmailIngestionArtifactsForConnection(oauthConnectionId)
+
+  return db.transaction(async (tx) => {
+    await tx.delete(rawDocuments).where(eq(rawDocuments.oauthConnectionId, oauthConnectionId))
+
+    await tx
+      .update(emailSyncCursors)
+      .set({
+        providerCursor: null,
+        backfillStartedAt: null,
+        backfillCompletedAt: null,
+        lastSeenMessageAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(emailSyncCursors.oauthConnectionId, oauthConnectionId))
+
+    await tx
+      .update(oauthConnections)
+      .set({
+        status: "active",
+        lastSuccessfulSyncAt: null,
+        lastFailedSyncAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(oauthConnections.id, oauthConnectionId))
+
+    return {
+      deletedRawDocuments: artifacts.rawDocumentCount,
+      deletedAttachments: artifacts.attachmentCount,
+      deletedStorageObjects: artifacts.storageKeys.length,
+    }
+  })
 }

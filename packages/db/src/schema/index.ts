@@ -19,6 +19,9 @@ export {
   type OauthConnectionInsert,
   type OauthConnectionSelect,
   type OauthConnectionStatus,
+  type RawDocumentInsert,
+  type RawDocumentRelevanceLabel,
+  type RawDocumentRelevanceStage,
   type RawDocumentSelect,
   type RawDocumentSourceType,
 } from "./ingestion"

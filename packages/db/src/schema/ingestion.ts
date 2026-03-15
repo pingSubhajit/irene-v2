@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   index,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -15,6 +16,12 @@ import { users } from "./auth"
 
 export type OauthConnectionStatus = "active" | "expired" | "revoked" | "error"
 export type RawDocumentSourceType = "email" | "attachment_email" | "forwarded_email"
+export type RawDocumentRelevanceLabel =
+  | "transactional_finance"
+  | "obligation_finance"
+  | "marketing_finance"
+  | "non_finance"
+export type RawDocumentRelevanceStage = "heuristic" | "model"
 export type DocumentAttachmentParseStatus =
   | "pending"
   | "processing"
@@ -131,6 +138,10 @@ export const rawDocuments = pgTable(
     snippet: text("snippet"),
     hasAttachments: boolean("has_attachments").notNull().default(false),
     documentHash: text("document_hash").notNull(),
+    relevanceLabel: text("relevance_label").$type<RawDocumentRelevanceLabel>(),
+    relevanceStage: text("relevance_stage").$type<RawDocumentRelevanceStage>(),
+    relevanceScore: bigint("relevance_score", { mode: "number" }),
+    relevanceReasonsJson: jsonb("relevance_reasons_json").$type<string[] | null>(),
     ingestedAt: timestamp("ingested_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),
@@ -152,6 +163,14 @@ export const rawDocuments = pgTable(
     check(
       "raw_document_source_type_check",
       sql`${table.sourceType} in ('email', 'attachment_email', 'forwarded_email')`,
+    ),
+    check(
+      "raw_document_relevance_label_check",
+      sql`${table.relevanceLabel} IS NULL OR ${table.relevanceLabel} in ('transactional_finance', 'obligation_finance', 'marketing_finance', 'non_finance')`,
+    ),
+    check(
+      "raw_document_relevance_stage_check",
+      sql`${table.relevanceStage} IS NULL OR ${table.relevanceStage} in ('heuristic', 'model')`,
     ),
   ],
 )
@@ -202,5 +221,6 @@ export type OauthConnectionInsert = typeof oauthConnections.$inferInsert
 export type OauthConnectionSelect = typeof oauthConnections.$inferSelect
 export type EmailSyncCursorSelect = typeof emailSyncCursors.$inferSelect
 export type RawDocumentSelect = typeof rawDocuments.$inferSelect
+export type RawDocumentInsert = typeof rawDocuments.$inferInsert
 export type DocumentAttachmentInsert = typeof documentAttachments.$inferInsert
 export type DocumentAttachmentSelect = typeof documentAttachments.$inferSelect
