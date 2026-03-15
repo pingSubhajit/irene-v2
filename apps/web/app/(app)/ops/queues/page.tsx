@@ -1,5 +1,9 @@
 import { listRecentJobRuns } from "@workspace/db"
-import { getSystemQueueStats } from "@workspace/workflows"
+import {
+  getBackfillImportQueueStats,
+  getEmailSyncQueueStats,
+  getSystemQueueStats,
+} from "@workspace/workflows"
 
 import { requireSession } from "@/lib/session"
 
@@ -8,31 +12,45 @@ export const dynamic = "force-dynamic"
 export default async function QueueOpsPage() {
   await requireSession()
 
-  const [stats, jobRuns] = await Promise.all([getSystemQueueStats(), listRecentJobRuns(20)])
+  const [systemStats, backfillStats, emailSyncStats, jobRuns] = await Promise.all([
+    getSystemQueueStats(),
+    getBackfillImportQueueStats(),
+    getEmailSyncQueueStats(),
+    listRecentJobRuns(30),
+  ])
+  const queueCards: Array<[string, Record<string, number>]> = [
+    ["System queue", systemStats],
+    ["Backfill queue", backfillStats],
+    ["Email sync queue", emailSyncStats],
+  ]
 
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-semibold tracking-tight">Queue operations</h1>
         <p className="mt-3 text-sm leading-6 text-zinc-600">
-          Internal queue visibility for the Phase 1 system worker. This page is
-          owner-protected and gives the operational answer this phase needs: queue
-          counts plus recent job lifecycle records.
+          Internal queue visibility for the system worker plus the Gmail ingestion
+          queues. This page is owner-protected and surfaces queue depth alongside
+          recent lifecycle records.
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-7">
-        {Object.entries(stats).map(([key, value]) => (
-          <div
-            key={key}
-            className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm"
-          >
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
-              {key}
-            </p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950">
-              {value}
-            </p>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {queueCards.map(([label, stats]) => (
+          <div key={label} className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <p className="text-sm font-medium text-zinc-950">{label}</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {Object.entries(stats).map(([key, value]) => (
+                <div key={key}>
+                  <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
+                    {key}
+                  </p>
+                  <p className="mt-1 text-xl font-semibold tracking-tight text-zinc-950">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </div>

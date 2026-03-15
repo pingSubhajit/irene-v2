@@ -8,6 +8,13 @@
       "when": 1773595463439,
       "tag": "0000_cold_silver_fox",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773599102260,
+      "tag": "0001_classy_sharon_ventura",
+      "breakpoints": true
     }
   ]
 }

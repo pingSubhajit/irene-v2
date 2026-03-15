@@ -1,26 +1,20 @@
 {
-  "name": "worker",
-  "version": "0.0.1",
+  "name": "@workspace/ai",
+  "version": "0.0.0",
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc --noEmit && mkdir -p dist && printf 'ok\\n' > dist/.build-stamp",
-    "start": "tsx src/index.ts",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit"
   },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
-    "@workspace/ai": "workspace:*",
+    "@ai-sdk/gateway": "^3.0.66",
     "@workspace/config": "workspace:*",
-    "@workspace/db": "workspace:*",
-    "@workspace/integrations": "workspace:*",
     "@workspace/observability": "workspace:*",
-    "@workspace/workflows": "workspace:*",
-    "bullmq": "^5.71.0",
-    "drizzle-orm": "^0.45.1",
-    "ioredis": "^5.9.3",
-    "pg": "^8.20.0",
+    "ai": "^6.0.116",
     "zod": "^4.3.6"
   },
   "devDependencies": {

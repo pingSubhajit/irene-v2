@@ -20,6 +20,13 @@ jobs:
       GOOGLE_CLIENT_ID: dummy-google-client-id
       GOOGLE_CLIENT_SECRET: dummy-google-client-secret
       ALLOWED_EMAILS: owner@example.com
+      APP_ENCRYPTION_KEY: 1234567890123456789012345678901234567890
+      GCS_BUCKET: irene-test-bucket
+      GCS_PROJECT_ID: irene-test-project
+      GCS_CLIENT_EMAIL: irene-test@example.iam.gserviceaccount.com
+      GCS_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\\nTEST\\n-----END PRIVATE KEY-----\\n"
+      AI_GATEWAY_API_KEY: dummy-ai-gateway-key
+      CRON_SECRET: cron-secret
       UPSTASH_REDIS_HOST: localhost
       UPSTASH_REDIS_PORT: 6379
       UPSTASH_REDIS_PASSWORD: password
