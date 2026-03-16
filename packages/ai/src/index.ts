@@ -348,11 +348,14 @@ export async function classifyFinanceRelevance(
 export async function checkAiGatewayHealth() {
   const gateway = getGatewayProvider()
   const metadata = await gateway.getAvailableModels()
+  const availableIds = new Set(metadata.models.map((entry) => entry.id))
+  const requiredModels = Object.values(aiModels)
 
   return {
-    ok: metadata.models.some(
-      (entry) => entry.id === aiModels.financeRelevanceClassifier,
-    ),
-    model: aiModels.financeRelevanceClassifier,
+    ok: requiredModels.every((model) => availableIds.has(model)),
+    models: requiredModels,
   }
 }
+
+export { aiModels, aiPromptVersions } from "./config"
+export * from "./extraction"

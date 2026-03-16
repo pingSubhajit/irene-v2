@@ -8,6 +8,8 @@ type QueueRegistry = {
   system?: Queue
   backfillImport?: Queue
   emailSync?: Queue
+  documentNormalization?: Queue
+  aiExtraction?: Queue
 }
 
 const globalForRedis = globalThis as typeof globalThis & {

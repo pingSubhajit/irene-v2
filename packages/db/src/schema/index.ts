@@ -25,9 +25,23 @@ export {
   type RawDocumentSelect,
   type RawDocumentSourceType,
 } from "./ingestion"
+export {
+  extractedSignals,
+  modelRuns,
+  type ExtractedSignalCandidateEventType,
+  type ExtractedSignalInsert,
+  type ExtractedSignalSelect,
+  type ExtractedSignalStatus,
+  type ExtractedSignalType,
+  type ModelRunInsert,
+  type ModelRunSelect,
+  type ModelRunStatus,
+  type ModelRunTaskType,
+} from "./extraction"
 
 import { authSchema } from "./auth"
 import { jobRuns, userSettings } from "./app"
+import { extractedSignals, modelRuns } from "./extraction"
 import {
   documentAttachments,
   emailSyncCursors,
@@ -43,4 +57,6 @@ export const schema = {
   emailSyncCursors,
   rawDocuments,
   documentAttachments,
+  modelRuns,
+  extractedSignals,
 }

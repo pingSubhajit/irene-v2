@@ -53,6 +53,11 @@ export async function uploadPrivateObject(input: UploadPrivateObjectInput) {
   }
 }
 
+export async function downloadPrivateObject(storageKey: string) {
+  const [buffer] = await getBucket().file(storageKey).download()
+  return buffer
+}
+
 export async function deletePrivateObjects(storageKeys: string[]) {
   const uniqueKeys = [...new Set(storageKeys.filter(Boolean))]
 

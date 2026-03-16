@@ -19,7 +19,9 @@
     "@workspace/workflows": "workspace:*",
     "bullmq": "^5.71.0",
     "drizzle-orm": "^0.45.1",
+    "html-to-text": "^9.0.5",
     "ioredis": "^5.9.3",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.20.0",
     "zod": "^4.3.6"
   },

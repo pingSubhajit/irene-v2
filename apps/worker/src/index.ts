@@ -3,14 +3,25 @@ import { createHash } from "node:crypto"
 import type { Job } from "bullmq"
 import { Worker } from "bullmq"
 
-import { classifyFinanceRelevance } from "@workspace/ai"
 import {
+  aiModels,
+  aiPromptVersions,
+  classifyFinanceRelevance,
+  extractStructuredSignals,
+  routeDocumentForExtraction,
+} from "@workspace/ai"
+import {
+  createExtractedSignals,
+  createModelRun,
   closeDatabase,
   ensureJobRun,
   getEmailSyncCursorById,
   getOauthConnectionById,
+  getRawDocumentById,
+  hasExtractedSignalsForRawDocument,
   updateEmailSyncCursor,
   updateJobRun,
+  updateModelRun,
   updateOauthConnection,
   upsertDocumentAttachment,
   upsertRawDocument,
@@ -24,13 +35,17 @@ import {
   listGmailHistory,
   listGmailMessageIds,
   type GmailMessageMetadata,
-  type GmailNormalizedMessage,
   type GmailAttachmentBlob,
   buildFinanceSearchQuery,
   uploadPrivateObject,
 } from "@workspace/integrations"
 import {
+  AI_EXTRACTION_QUEUE_NAME,
   BACKFILL_IMPORT_QUEUE_NAME,
+  DOCUMENT_EXTRACT_ROUTE_JOB_NAME,
+  DOCUMENT_EXTRACT_STRUCTURED_JOB_NAME,
+  DOCUMENT_NORMALIZATION_QUEUE_NAME,
+  DOCUMENT_NORMALIZE_JOB_NAME,
   EMAIL_SYNC_QUEUE_NAME,
   GMAIL_BACKFILL_PAGE_JOB_NAME,
   GMAIL_BACKFILL_START_JOB_NAME,
@@ -41,6 +56,12 @@ import {
   SYSTEM_QUEUE_NAME,
   closeWorkflowConnections,
   createWorkerRedisConnection,
+  documentExtractRouteJobPayloadSchema,
+  documentExtractStructuredJobPayloadSchema,
+  documentNormalizeJobPayloadSchema,
+  enqueueDocumentExtractRoute,
+  enqueueDocumentExtractStructured,
+  enqueueDocumentNormalize,
   enqueueGmailBackfillPage,
   enqueueGmailMessageIngest,
   gmailBackfillPageJobPayloadSchema,
@@ -49,6 +70,12 @@ import {
   gmailMessageIngestJobPayloadSchema,
   systemHealthcheckJobPayloadSchema,
 } from "@workspace/workflows"
+
+import {
+  buildNormalizedExtractionDocument,
+  runDeterministicExtraction,
+  type WorkerExtractedSignal,
+} from "./extraction"
 
 const logger = createLogger("worker")
 
@@ -232,6 +259,179 @@ async function enqueueTrackedBackfillPage(input: {
     pageToken: input.pageToken,
     query: input.query,
   })
+}
+
+async function enqueueTrackedDocumentNormalize(input: {
+  userId: string
+  rawDocumentId: string
+  correlationId: string
+}) {
+  const jobKey = `${DOCUMENT_NORMALIZE_JOB_NAME}:${input.rawDocumentId}`
+  const jobRun = await ensureJobRun({
+    queueName: DOCUMENT_NORMALIZATION_QUEUE_NAME,
+    jobName: DOCUMENT_NORMALIZE_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      rawDocumentId: input.rawDocumentId,
+      source: "worker",
+    },
+  })
+
+  await enqueueDocumentNormalize({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    rawDocumentId: input.rawDocumentId,
+    source: "worker",
+  })
+}
+
+async function enqueueTrackedDocumentExtractRoute(input: {
+  userId: string
+  rawDocumentId: string
+  correlationId: string
+  normalizationJobRunId?: string
+}) {
+  const jobKey = `${DOCUMENT_EXTRACT_ROUTE_JOB_NAME}:${input.rawDocumentId}`
+  const jobRun = await ensureJobRun({
+    queueName: AI_EXTRACTION_QUEUE_NAME,
+    jobName: DOCUMENT_EXTRACT_ROUTE_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      rawDocumentId: input.rawDocumentId,
+      source: "worker",
+      normalizationJobRunId: input.normalizationJobRunId ?? null,
+    },
+  })
+
+  await enqueueDocumentExtractRoute({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    rawDocumentId: input.rawDocumentId,
+    source: "worker",
+    normalizationJobRunId: input.normalizationJobRunId,
+  })
+}
+
+async function enqueueTrackedDocumentExtractStructured(input: {
+  userId: string
+  rawDocumentId: string
+  correlationId: string
+  routeJobRunId: string
+  routeModelRunId?: string
+  routeLabel:
+    | "purchase"
+    | "income"
+    | "subscription_charge"
+    | "emi_payment"
+    | "bill_payment"
+    | "refund"
+    | "transfer"
+    | "generic_finance"
+  routeConfidence: number
+  routeReasons: string[]
+}) {
+  const jobKey = `${DOCUMENT_EXTRACT_STRUCTURED_JOB_NAME}:${input.rawDocumentId}`
+  const jobRun = await ensureJobRun({
+    queueName: AI_EXTRACTION_QUEUE_NAME,
+    jobName: DOCUMENT_EXTRACT_STRUCTURED_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      rawDocumentId: input.rawDocumentId,
+      source: "worker",
+      routeJobRunId: input.routeJobRunId,
+      routeModelRunId: input.routeModelRunId ?? null,
+      routeLabel: input.routeLabel,
+      routeConfidence: input.routeConfidence,
+      routeReasons: input.routeReasons,
+    },
+  })
+
+  await enqueueDocumentExtractStructured({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    rawDocumentId: input.rawDocumentId,
+    source: "worker",
+    routeJobRunId: input.routeJobRunId,
+    routeModelRunId: input.routeModelRunId,
+    routeLabel: input.routeLabel,
+    routeConfidence: input.routeConfidence,
+    routeReasons: input.routeReasons,
+  })
+}
+
+async function persistExtractedSignals(input: {
+  userId: string
+  rawDocumentId: string
+  modelRunId?: string | null
+  source: "deterministic" | "model"
+  parserNameOrPrompt: string
+  routeLabel:
+    | "purchase"
+    | "income"
+    | "subscription_charge"
+    | "emi_payment"
+    | "bill_payment"
+    | "refund"
+    | "transfer"
+    | "generic_finance"
+    | null
+  routeConfidence: number | null
+  routeReasons: string[]
+  attachmentIds: string[]
+  signals: WorkerExtractedSignal[]
+}) {
+  const createdSignals = await createExtractedSignals(
+    input.signals.map((signal) => ({
+      userId: input.userId,
+      rawDocumentId: input.rawDocumentId,
+      modelRunId: input.modelRunId ?? null,
+      signalType: signal.signalType,
+      candidateEventType: signal.candidateEventType,
+      amountMinor: signal.amountMinor ?? null,
+      currency: signal.currency ?? null,
+      eventDate: signal.eventDate ?? null,
+      merchantRaw: signal.merchantRaw ?? null,
+      merchantHint: signal.merchantHint ?? null,
+      paymentInstrumentHint: signal.paymentInstrumentHint ?? null,
+      categoryHint: signal.categoryHint ?? null,
+      isRecurringHint: signal.isRecurringHint,
+      isEmiHint: signal.isEmiHint,
+      confidence: signal.confidence,
+      evidenceJson: {
+        source: input.source,
+        parserOrPrompt: input.parserNameOrPrompt,
+        snippets: signal.evidenceSnippets,
+        explanation: signal.explanation,
+        attachmentIds: input.attachmentIds,
+        route:
+          input.routeLabel !== null
+            ? {
+                label: input.routeLabel,
+                confidence: input.routeConfidence,
+                reasons: input.routeReasons,
+              }
+            : null,
+      },
+      status: "pending",
+    })),
+  )
+
+  return createdSignals
 }
 
 async function processCandidateMessages(input: {
@@ -598,7 +798,10 @@ async function handleGmailIncrementalPoll(job: Job) {
 async function uploadRawHtml(input: {
   userId: string
   oauthConnectionId: string
-  message: GmailNormalizedMessage
+  message: {
+    providerMessageId: string
+    bodyHtml: string | null
+  }
 }) {
   if (!input.message.bodyHtml) {
     return null
@@ -725,6 +928,12 @@ async function handleGmailMessageIngest(job: Job) {
     status: "active",
   })
 
+  await enqueueTrackedDocumentNormalize({
+    userId: payload.userId,
+    rawDocumentId: rawDocument.id,
+    correlationId: payload.correlationId,
+  })
+
   await markJobSucceeded(job, payload, {
     rawDocumentId: rawDocument.id,
     rawDocumentCreated: created,
@@ -735,6 +944,274 @@ async function handleGmailMessageIngest(job: Job) {
     rawDocumentId: rawDocument.id,
     rawDocumentCreated: created,
     attachmentCount,
+  }
+}
+
+async function handleDocumentNormalize(job: Job) {
+  const payload = documentNormalizeJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const rawDocument = await getRawDocumentById(payload.rawDocumentId)
+
+  if (!rawDocument) {
+    throw new Error(`Missing raw document ${payload.rawDocumentId}`)
+  }
+
+  if (await hasExtractedSignalsForRawDocument(rawDocument.id)) {
+    await markJobSucceeded(job, payload, {
+      skipped: true,
+      reason: "already_extracted",
+    })
+    return {
+      skipped: true,
+    }
+  }
+
+  const normalizedDocument = await buildNormalizedExtractionDocument(rawDocument)
+  const deterministic = runDeterministicExtraction(normalizedDocument)
+
+  if (deterministic) {
+    const attachmentIds = normalizedDocument.attachmentTexts.map(
+      (attachment) => attachment.attachmentId,
+    )
+    const signals = await persistExtractedSignals({
+      userId: payload.userId,
+      rawDocumentId: rawDocument.id,
+      source: "deterministic",
+      parserNameOrPrompt: deterministic.parserName,
+      routeLabel: null,
+      routeConfidence: null,
+      routeReasons: [],
+      attachmentIds,
+      signals: deterministic.signals,
+    })
+
+    await markJobSucceeded(job, payload, {
+      extractionSource: "deterministic",
+      signalCount: signals.length,
+      parserName: deterministic.parserName,
+      rawDocumentId: rawDocument.id,
+      attachmentIds,
+    })
+
+    return {
+      extractionSource: "deterministic",
+      signalCount: signals.length,
+    }
+  }
+
+  await enqueueTrackedDocumentExtractRoute({
+    userId: payload.userId,
+    rawDocumentId: rawDocument.id,
+    correlationId: payload.correlationId,
+    normalizationJobRunId: payload.jobRunId,
+  })
+
+  await markJobSucceeded(job, payload, {
+    extractionSource: "model",
+    normalizedAttachmentCount: normalizedDocument.attachmentTexts.length,
+    bodyTextPresent: Boolean(normalizedDocument.bodyText),
+    rawDocumentId: rawDocument.id,
+  })
+
+  return {
+    extractionSource: "model",
+  }
+}
+
+async function handleDocumentExtractRoute(job: Job) {
+  const payload = documentExtractRouteJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const rawDocument = await getRawDocumentById(payload.rawDocumentId)
+
+  if (!rawDocument) {
+    throw new Error(`Missing raw document ${payload.rawDocumentId}`)
+  }
+
+  if (await hasExtractedSignalsForRawDocument(rawDocument.id)) {
+    await markJobSucceeded(job, payload, {
+      skipped: true,
+      reason: "already_extracted",
+    })
+    return {
+      skipped: true,
+    }
+  }
+
+  const normalizedDocument = await buildNormalizedExtractionDocument(rawDocument)
+  const modelRun = await createModelRun({
+    userId: payload.userId,
+    rawDocumentId: rawDocument.id,
+    taskType: "classification_support",
+    provider: "ai-gateway",
+    modelName: aiModels.financeDocumentRouter,
+    promptVersion: aiPromptVersions.financeDocumentRouter,
+    status: "running",
+  })
+
+  try {
+    const routed = await routeDocumentForExtraction(normalizedDocument)
+
+    await updateModelRun(modelRun.id, {
+      status: "succeeded",
+      provider: routed.metadata.provider,
+      modelName: routed.metadata.modelName,
+      promptVersion: routed.metadata.promptVersion,
+      inputTokens: routed.metadata.inputTokens,
+      outputTokens: routed.metadata.outputTokens,
+      latencyMs: routed.metadata.latencyMs,
+      requestId: routed.metadata.requestId,
+    })
+
+    await enqueueTrackedDocumentExtractStructured({
+      userId: payload.userId,
+      rawDocumentId: rawDocument.id,
+      correlationId: payload.correlationId,
+      routeJobRunId: payload.jobRunId,
+      routeModelRunId: modelRun.id,
+      routeLabel: routed.route.routeLabel,
+      routeConfidence: routed.route.confidence,
+      routeReasons: routed.route.reasons,
+    })
+
+    await markJobSucceeded(job, payload, {
+      routeLabel: routed.route.routeLabel,
+      routeConfidence: routed.route.confidence,
+      routeReasons: routed.route.reasons,
+      modelRunId: modelRun.id,
+    })
+
+    return {
+      routeLabel: routed.route.routeLabel,
+    }
+  } catch (error) {
+    await updateModelRun(modelRun.id, {
+      status: "failed",
+      errorMessage: error instanceof Error ? error.message : "Unknown route failure",
+    })
+    throw error
+  }
+}
+
+async function handleDocumentExtractStructured(job: Job) {
+  const payload = documentExtractStructuredJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const rawDocument = await getRawDocumentById(payload.rawDocumentId)
+
+  if (!rawDocument) {
+    throw new Error(`Missing raw document ${payload.rawDocumentId}`)
+  }
+
+  if (await hasExtractedSignalsForRawDocument(rawDocument.id)) {
+    await markJobSucceeded(job, payload, {
+      skipped: true,
+      reason: "already_extracted",
+    })
+    return {
+      skipped: true,
+    }
+  }
+
+  const normalizedDocument = await buildNormalizedExtractionDocument(rawDocument)
+  const attachmentIds = normalizedDocument.attachmentTexts.map(
+    (attachment) => attachment.attachmentId,
+  )
+  const modelRun = await createModelRun({
+    userId: payload.userId,
+    rawDocumentId: rawDocument.id,
+    taskType: "document_extraction",
+    provider: "ai-gateway",
+    modelName: aiModels.financeSignalExtractor,
+    promptVersion: aiPromptVersions.financeSignalExtractor,
+    status: "running",
+  })
+
+  try {
+    const extracted = await extractStructuredSignals({
+      normalizedDocument,
+      routeLabel: payload.routeLabel,
+    })
+
+    await updateModelRun(modelRun.id, {
+      status: "succeeded",
+      provider: extracted.metadata.provider,
+      modelName: extracted.metadata.modelName,
+      promptVersion: extracted.metadata.promptVersion,
+      inputTokens: extracted.metadata.inputTokens,
+      outputTokens: extracted.metadata.outputTokens,
+      latencyMs: extracted.metadata.latencyMs,
+      requestId: extracted.metadata.requestId,
+    })
+
+    const signalPayload: WorkerExtractedSignal[] =
+      extracted.extraction.signals.length > 0
+        ? extracted.extraction.signals.map((signal) => ({
+            signalType: signal.signalType,
+            candidateEventType: signal.candidateEventType ?? null,
+            amountMinor: signal.amountMinor ?? null,
+            currency: signal.currency ?? null,
+            eventDate: signal.eventDate ?? null,
+            merchantRaw: signal.merchantRaw ?? null,
+            merchantHint: signal.merchantHint ?? null,
+            paymentInstrumentHint: signal.paymentInstrumentHint ?? null,
+            categoryHint: signal.categoryHint ?? null,
+            isRecurringHint: signal.isRecurringHint,
+            isEmiHint: signal.isEmiHint,
+            confidence: signal.confidence,
+            evidenceSnippets: signal.evidenceSnippets,
+            explanation: signal.explanation ?? "Model extracted a structured finance signal.",
+          }))
+        : [
+            {
+              signalType: "generic_finance_signal" as const,
+              candidateEventType: null,
+              amountMinor: null,
+              currency: null,
+              eventDate: rawDocument.messageTimestamp.toISOString().slice(0, 10),
+              merchantRaw: rawDocument.fromAddress,
+              merchantHint: rawDocument.fromAddress,
+              paymentInstrumentHint: null,
+              categoryHint: null,
+              isRecurringHint: false,
+              isEmiHint: false,
+              confidence: 0.35,
+              evidenceSnippets: [rawDocument.subject, rawDocument.snippet]
+                .filter((value): value is string => Boolean(value))
+                .slice(0, 2),
+              explanation: "Model could not produce a typed signal.",
+            },
+          ]
+
+    const signals = await persistExtractedSignals({
+      userId: payload.userId,
+      rawDocumentId: rawDocument.id,
+      modelRunId: modelRun.id,
+      source: "model",
+      parserNameOrPrompt: payload.routeLabel,
+      routeLabel: payload.routeLabel,
+      routeConfidence: payload.routeConfidence,
+      routeReasons: payload.routeReasons,
+      attachmentIds,
+      signals: signalPayload,
+    })
+
+    await markJobSucceeded(job, payload, {
+      signalCount: signals.length,
+      modelRunId: modelRun.id,
+      routeLabel: payload.routeLabel,
+    })
+
+    return {
+      signalCount: signals.length,
+    }
+  } catch (error) {
+    await updateModelRun(modelRun.id, {
+      status: "failed",
+      errorMessage: error instanceof Error ? error.message : "Unknown extraction failure",
+    })
+    throw error
   }
 }
 
@@ -794,10 +1271,48 @@ const emailSyncWorker = new Worker(
   },
 )
 
+const documentNormalizationWorker = new Worker(
+  DOCUMENT_NORMALIZATION_QUEUE_NAME,
+  async (job) => {
+    if (job.name !== DOCUMENT_NORMALIZE_JOB_NAME) {
+      throw new Error(`Unsupported job: ${job.name}`)
+    }
+
+    return handleDocumentNormalize(job)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 3,
+  },
+)
+
+const aiExtractionWorker = new Worker(
+  AI_EXTRACTION_QUEUE_NAME,
+  async (job) => {
+    if (job.name === DOCUMENT_EXTRACT_ROUTE_JOB_NAME) {
+      return handleDocumentExtractRoute(job)
+    }
+
+    if (job.name === DOCUMENT_EXTRACT_STRUCTURED_JOB_NAME) {
+      return handleDocumentExtractStructured(job)
+    }
+
+    throw new Error(`Unsupported job: ${job.name}`)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 3,
+  },
+)
+
 for (const [queueName, worker] of [
   [SYSTEM_QUEUE_NAME, systemWorker],
   [BACKFILL_IMPORT_QUEUE_NAME, backfillWorker],
   [EMAIL_SYNC_QUEUE_NAME, emailSyncWorker],
+  [DOCUMENT_NORMALIZATION_QUEUE_NAME, documentNormalizationWorker],
+  [AI_EXTRACTION_QUEUE_NAME, aiExtractionWorker],
 ] as const) {
   worker.on("ready", () => {
     logger.info("Worker ready", { queueName })
@@ -840,6 +1355,8 @@ async function shutdown(signal: string) {
     systemWorker.close(),
     backfillWorker.close(),
     emailSyncWorker.close(),
+    documentNormalizationWorker.close(),
+    aiExtractionWorker.close(),
   ])
   await closeWorkflowConnections()
   await closeDatabase()

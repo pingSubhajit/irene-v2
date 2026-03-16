@@ -1,4 +1,5 @@
 export * from "./client"
+export * from "./extraction"
 export * from "./ingestion"
 export * from "./job-runs"
 export * from "./schema"

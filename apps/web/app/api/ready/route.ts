@@ -4,17 +4,24 @@ import { checkDatabaseHealth } from "@workspace/db"
 import { getEnvSanityChecks } from "@workspace/config/server"
 import { checkAiGatewayHealth } from "@workspace/ai"
 import { checkGoogleCloudStorageHealth } from "@workspace/integrations"
-import { checkRedisHealth } from "@workspace/workflows"
+import {
+  checkRedisHealth,
+  getAiExtractionQueueStats,
+  getDocumentNormalizationQueueStats,
+} from "@workspace/workflows"
 
 export const runtime = "nodejs"
 
 export async function GET() {
   const envChecks = getEnvSanityChecks()
-  const [database, redis, storage, aiGateway] = await Promise.allSettled([
+  const [database, redis, storage, aiGateway, normalizationQueue, extractionQueue] =
+    await Promise.allSettled([
     checkDatabaseHealth(),
     checkRedisHealth(),
     checkGoogleCloudStorageHealth(),
     checkAiGatewayHealth(),
+    getDocumentNormalizationQueueStats(),
+    getAiExtractionQueueStats(),
   ])
 
   const databaseReady = database.status === "fulfilled" && database.value.ok
@@ -32,6 +39,12 @@ export async function GET() {
         redis: redisReady,
         storage: storageReady,
         aiGateway: aiReady,
+        queues: {
+          documentNormalization:
+            normalizationQueue.status === "fulfilled" ? normalizationQueue.value : null,
+          aiExtraction:
+            extractionQueue.status === "fulfilled" ? extractionQueue.value : null,
+        },
       },
     },
     {

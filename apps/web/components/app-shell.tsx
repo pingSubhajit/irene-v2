@@ -11,6 +11,7 @@ const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/settings", label: "Settings" },
   { href: "/ops/queues", label: "Queues" },
+  { href: "/ops/extraction", label: "Extraction" },
 ]
 
 export function AppShell({ email, children }: AppShellProps) {

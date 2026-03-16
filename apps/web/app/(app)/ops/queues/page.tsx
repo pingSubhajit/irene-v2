@@ -1,6 +1,8 @@
 import { listRecentJobRuns } from "@workspace/db"
 import {
   getBackfillImportQueueStats,
+  getAiExtractionQueueStats,
+  getDocumentNormalizationQueueStats,
   getEmailSyncQueueStats,
   getSystemQueueStats,
 } from "@workspace/workflows"
@@ -12,16 +14,27 @@ export const dynamic = "force-dynamic"
 export default async function QueueOpsPage() {
   await requireSession()
 
-  const [systemStats, backfillStats, emailSyncStats, jobRuns] = await Promise.all([
+  const [
+    systemStats,
+    backfillStats,
+    emailSyncStats,
+    documentNormalizationStats,
+    aiExtractionStats,
+    jobRuns,
+  ] = await Promise.all([
     getSystemQueueStats(),
     getBackfillImportQueueStats(),
     getEmailSyncQueueStats(),
+    getDocumentNormalizationQueueStats(),
+    getAiExtractionQueueStats(),
     listRecentJobRuns(30),
   ])
   const queueCards: Array<[string, Record<string, number>]> = [
     ["System queue", systemStats],
     ["Backfill queue", backfillStats],
     ["Email sync queue", emailSyncStats],
+    ["Document normalization queue", documentNormalizationStats],
+    ["AI extraction queue", aiExtractionStats],
   ]
 
   return (
@@ -29,9 +42,9 @@ export default async function QueueOpsPage() {
       <div className="rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-semibold tracking-tight">Queue operations</h1>
         <p className="mt-3 text-sm leading-6 text-zinc-600">
-          Internal queue visibility for the system worker plus the Gmail ingestion
-          queues. This page is owner-protected and surfaces queue depth alongside
-          recent lifecycle records.
+          Internal queue visibility for the worker runtime across ingestion,
+          normalization, and extraction. This page is owner-protected and surfaces
+          queue depth alongside recent lifecycle records.
         </p>
       </div>
 
