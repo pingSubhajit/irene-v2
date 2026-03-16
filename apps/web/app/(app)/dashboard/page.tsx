@@ -73,10 +73,13 @@ export default async function DashboardPage() {
   let monthRefundMinor = 0
   let obligationCount = 0
   const categoryTotals = new Map<string, number>()
+  const dailySpendMap = new Map<number, number>()
 
   for (const { event, category } of monthEvents) {
     if (event.direction === "outflow" && !event.isTransfer) {
       monthSpendMinor += event.amountMinor
+      const day = event.eventOccurredAt.getUTCDate()
+      dailySpendMap.set(day, (dailySpendMap.get(day) ?? 0) + event.amountMinor)
       if (category?.name) {
         categoryTotals.set(category.name, (categoryTotals.get(category.name) ?? 0) + event.amountMinor)
       }
@@ -97,6 +100,12 @@ export default async function DashboardPage() {
       obligationCount += 1
     }
   }
+
+  const todayDate = new Date().getUTCDate()
+  const dailySpend = Array.from({ length: todayDate }, (_, i) => ({
+    day: i + 1,
+    amount: (dailySpendMap.get(i + 1) ?? 0) / 100,
+  }))
 
   const netFlowMinor = monthIncomeMinor - monthSpendMinor
   const topCategories = [...categoryTotals.entries()]
@@ -143,7 +152,11 @@ export default async function DashboardPage() {
             label="Primary snapshot"
             headline="total spend so far"
             amount={formatCurrency(monthSpendMinor)}
-            summary={`Income ${formatCurrency(monthIncomeMinor)} · net flow ${formatCurrency(netFlowMinor)} · refunds ${formatCurrency(monthRefundMinor)}`}
+            income={formatCurrency(monthIncomeMinor)}
+            netFlow={formatCurrency(netFlowMinor)}
+            netFlowDirection={netFlowMinor > 0 ? "positive" : netFlowMinor < 0 ? "negative" : "zero"}
+            refunds={formatCurrency(monthRefundMinor)}
+            dailySpend={dailySpend}
             actionHref="/activity"
             actionLabel="Open activity"
           />

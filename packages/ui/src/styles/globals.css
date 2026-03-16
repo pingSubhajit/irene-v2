@@ -233,4 +233,55 @@
   .neo-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
+  /* 3D neo buttons — stacked box-shadows along isometric vector (-5px, 10px) */
+  .neo-btn-3d {
+    --_sc: transparent;
+    box-shadow:
+      -0.5px 1px 0 0 var(--_sc),
+      -1px 2px 0 0 var(--_sc),
+      -1.5px 3px 0 0 var(--_sc),
+      -2px 4px 0 0 var(--_sc),
+      -2.5px 5px 0 0 var(--_sc),
+      -3px 6px 0 0 var(--_sc),
+      -3.5px 7px 0 0 var(--_sc),
+      -4px 8px 0 0 var(--_sc),
+      -4.5px 9px 0 0 var(--_sc),
+      -5px 10px 0 0 var(--_sc);
+  }
+
+  .neo-btn-3d:not(:disabled):hover {
+    transform: translate(0.5px, -1px);
+    box-shadow:
+      -0.55px 1.1px 0 0 var(--_sc),
+      -1.1px 2.2px 0 0 var(--_sc),
+      -1.65px 3.3px 0 0 var(--_sc),
+      -2.2px 4.4px 0 0 var(--_sc),
+      -2.75px 5.5px 0 0 var(--_sc),
+      -3.3px 6.6px 0 0 var(--_sc),
+      -3.85px 7.7px 0 0 var(--_sc),
+      -4.4px 8.8px 0 0 var(--_sc),
+      -4.95px 9.9px 0 0 var(--_sc),
+      -5.5px 11px 0 0 var(--_sc);
+  }
+
+  .neo-btn-3d:not(:disabled):active {
+    transform: translate(-2px, 4px);
+    box-shadow:
+      -0.3px 0.6px 0 0 var(--_sc),
+      -0.6px 1.2px 0 0 var(--_sc),
+      -0.9px 1.8px 0 0 var(--_sc),
+      -1.2px 2.4px 0 0 var(--_sc),
+      -1.5px 3px 0 0 var(--_sc),
+      -1.8px 3.6px 0 0 var(--_sc),
+      -2.1px 4.2px 0 0 var(--_sc),
+      -2.4px 4.8px 0 0 var(--_sc),
+      -2.7px 5.4px 0 0 var(--_sc),
+      -3px 6px 0 0 var(--_sc);
+  }
+
+  .neo-btn-3d-cream { --_sc: var(--neo-shadow-cream); }
+  .neo-btn-3d-yellow { --_sc: var(--neo-shadow-yellow); }
+  .neo-btn-3d-dark { --_sc: rgba(0, 0, 0, 0.52); }
+  .neo-btn-3d-coral { --_sc: var(--neo-shadow-coral); }
 }
