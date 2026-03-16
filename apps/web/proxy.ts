@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { getSessionCookie } from "better-auth/cookies"
 
-const protectedPrefixes = ["/dashboard", "/settings", "/ops"]
+const protectedPrefixes = ["/dashboard", "/ledger", "/review", "/settings", "/ops"]
 
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname

@@ -9,6 +9,8 @@ type AppShellProps = {
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/ledger", label: "Ledger" },
+  { href: "/review", label: "Review" },
   { href: "/settings", label: "Settings" },
   { href: "/ops/queues", label: "Queues" },
   { href: "/ops/extraction", label: "Extraction" },

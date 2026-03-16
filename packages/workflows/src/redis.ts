@@ -10,6 +10,7 @@ type QueueRegistry = {
   emailSync?: Queue
   documentNormalization?: Queue
   aiExtraction?: Queue
+  reconciliation?: Queue
 }
 
 const globalForRedis = globalThis as typeof globalThis & {

@@ -4,6 +4,7 @@ import {
   getAiExtractionQueueStats,
   getDocumentNormalizationQueueStats,
   getEmailSyncQueueStats,
+  getReconciliationQueueStats,
   getSystemQueueStats,
 } from "@workspace/workflows"
 
@@ -20,6 +21,7 @@ export default async function QueueOpsPage() {
     emailSyncStats,
     documentNormalizationStats,
     aiExtractionStats,
+    reconciliationStats,
     jobRuns,
   ] = await Promise.all([
     getSystemQueueStats(),
@@ -27,6 +29,7 @@ export default async function QueueOpsPage() {
     getEmailSyncQueueStats(),
     getDocumentNormalizationQueueStats(),
     getAiExtractionQueueStats(),
+    getReconciliationQueueStats(),
     listRecentJobRuns(30),
   ])
   const queueCards: Array<[string, Record<string, number>]> = [
@@ -35,6 +38,7 @@ export default async function QueueOpsPage() {
     ["Email sync queue", emailSyncStats],
     ["Document normalization queue", documentNormalizationStats],
     ["AI extraction queue", aiExtractionStats],
+    ["Reconciliation queue", reconciliationStats],
   ]
 
   return (

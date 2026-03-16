@@ -51,7 +51,9 @@ import {
   GMAIL_BACKFILL_START_JOB_NAME,
   GMAIL_INCREMENTAL_POLL_JOB_NAME,
   GMAIL_MESSAGE_INGEST_JOB_NAME,
+  RECONCILIATION_QUEUE_NAME,
   QUEUE_PREFIX,
+  SIGNAL_RECONCILE_JOB_NAME,
   SYSTEM_HEALTHCHECK_JOB_NAME,
   SYSTEM_QUEUE_NAME,
   closeWorkflowConnections,
@@ -64,10 +66,12 @@ import {
   enqueueDocumentNormalize,
   enqueueGmailBackfillPage,
   enqueueGmailMessageIngest,
+  enqueueSignalReconcile,
   gmailBackfillPageJobPayloadSchema,
   gmailBackfillStartJobPayloadSchema,
   gmailIncrementalPollJobPayloadSchema,
   gmailMessageIngestJobPayloadSchema,
+  reconciliationJobPayloadSchema,
   systemHealthcheckJobPayloadSchema,
 } from "@workspace/workflows"
 
@@ -76,6 +80,7 @@ import {
   runDeterministicExtraction,
   type WorkerExtractedSignal,
 } from "./extraction"
+import { reconcileExtractedSignal } from "./reconciliation"
 
 const logger = createLogger("worker")
 
@@ -374,6 +379,38 @@ async function enqueueTrackedDocumentExtractStructured(input: {
   })
 }
 
+async function enqueueTrackedSignalReconcile(input: {
+  userId: string
+  extractedSignalId: string
+  rawDocumentId: string
+  correlationId: string
+}) {
+  const jobKey = `${SIGNAL_RECONCILE_JOB_NAME}:${input.extractedSignalId}`
+  const jobRun = await ensureJobRun({
+    queueName: RECONCILIATION_QUEUE_NAME,
+    jobName: SIGNAL_RECONCILE_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      extractedSignalId: input.extractedSignalId,
+      rawDocumentId: input.rawDocumentId,
+      source: "worker",
+    },
+  })
+
+  await enqueueSignalReconcile({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    extractedSignalId: input.extractedSignalId,
+    rawDocumentId: input.rawDocumentId,
+    source: "worker",
+  })
+}
+
 async function persistExtractedSignals(input: {
   userId: string
   rawDocumentId: string
@@ -429,6 +466,17 @@ async function persistExtractedSignals(input: {
       },
       status: "pending",
     })),
+  )
+
+  await Promise.all(
+    createdSignals.map((signal) =>
+      enqueueTrackedSignalReconcile({
+        userId: input.userId,
+        extractedSignalId: signal.id,
+        rawDocumentId: input.rawDocumentId,
+        correlationId: `${input.rawDocumentId}:${signal.id}`,
+      }),
+    ),
   )
 
   return createdSignals
@@ -1215,6 +1263,21 @@ async function handleDocumentExtractStructured(job: Job) {
   }
 }
 
+async function handleSignalReconcile(job: Job) {
+  const payload = reconciliationJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await reconcileExtractedSignal({
+    userId: payload.userId,
+    extractedSignalId: payload.extractedSignalId,
+    rawDocumentId: payload.rawDocumentId,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+
+  return outcome
+}
+
 const systemWorker = new Worker(
   SYSTEM_QUEUE_NAME,
   async (job) => {
@@ -1307,12 +1370,29 @@ const aiExtractionWorker = new Worker(
   },
 )
 
+const reconciliationWorker = new Worker(
+  RECONCILIATION_QUEUE_NAME,
+  async (job) => {
+    if (job.name !== SIGNAL_RECONCILE_JOB_NAME) {
+      throw new Error(`Unsupported job: ${job.name}`)
+    }
+
+    return handleSignalReconcile(job)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 3,
+  },
+)
+
 for (const [queueName, worker] of [
   [SYSTEM_QUEUE_NAME, systemWorker],
   [BACKFILL_IMPORT_QUEUE_NAME, backfillWorker],
   [EMAIL_SYNC_QUEUE_NAME, emailSyncWorker],
   [DOCUMENT_NORMALIZATION_QUEUE_NAME, documentNormalizationWorker],
   [AI_EXTRACTION_QUEUE_NAME, aiExtractionWorker],
+  [RECONCILIATION_QUEUE_NAME, reconciliationWorker],
 ] as const) {
   worker.on("ready", () => {
     logger.info("Worker ready", { queueName })
@@ -1357,6 +1437,7 @@ async function shutdown(signal: string) {
     emailSyncWorker.close(),
     documentNormalizationWorker.close(),
     aiExtractionWorker.close(),
+    reconciliationWorker.close(),
   ])
   await closeWorkflowConnections()
   await closeDatabase()

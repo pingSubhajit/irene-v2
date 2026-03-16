@@ -1,10 +1,13 @@
 import {
+  countFinancialEventsForUser,
   countExtractedSignalsForUser,
+  countOpenReviewQueueItemsForUser,
   countRawDocumentsForUser,
   listDocumentAttachmentsForRawDocumentIds,
   listExtractedSignalsForRawDocumentIds,
-  listRecentExtractionFailuresForUser,
+  listFinancialEventSourcesForRawDocumentIds,
   listRecentModelRunsForUser,
+  listRecentReviewQueueItemsForRawDocumentIds,
   listRecentRawDocumentsForUser,
   listRecentJobRunsForQueues,
   listModelRunsForRawDocumentIds,
@@ -14,6 +17,8 @@ import {
   DOCUMENT_NORMALIZATION_QUEUE_NAME,
   getAiExtractionQueueStats,
   getDocumentNormalizationQueueStats,
+  getReconciliationQueueStats,
+  RECONCILIATION_QUEUE_NAME,
 } from "@workspace/workflows"
 
 import { requireSession } from "@/lib/session"
@@ -26,32 +31,43 @@ export default async function ExtractionOpsPage() {
   const [
     rawDocumentCount,
     extractedSignalCount,
+    financialEventCount,
+    openReviewCount,
     normalizationStats,
     extractionStats,
+    reconciliationStats,
     recentRawDocuments,
     recentModelRuns,
-    recentFailures,
     recentExtractionJobs,
   ] = await Promise.all([
     countRawDocumentsForUser(session.user.id),
     countExtractedSignalsForUser(session.user.id),
+    countFinancialEventsForUser(session.user.id),
+    countOpenReviewQueueItemsForUser(session.user.id),
     getDocumentNormalizationQueueStats(),
     getAiExtractionQueueStats(),
+    getReconciliationQueueStats(),
     listRecentRawDocumentsForUser(session.user.id, 10),
     listRecentModelRunsForUser(session.user.id, 12),
-    listRecentExtractionFailuresForUser(session.user.id, 6),
     listRecentJobRunsForQueues(
-      [DOCUMENT_NORMALIZATION_QUEUE_NAME, AI_EXTRACTION_QUEUE_NAME],
+      [
+        DOCUMENT_NORMALIZATION_QUEUE_NAME,
+        AI_EXTRACTION_QUEUE_NAME,
+        RECONCILIATION_QUEUE_NAME,
+      ],
       12,
     ),
   ])
 
   const rawDocumentIds = recentRawDocuments.map((document) => document.id)
-  const [attachments, modelRunsByDocument, extractedSignals] = await Promise.all([
-    listDocumentAttachmentsForRawDocumentIds(rawDocumentIds),
-    listModelRunsForRawDocumentIds(rawDocumentIds),
-    listExtractedSignalsForRawDocumentIds(rawDocumentIds),
-  ])
+  const [attachments, modelRunsByDocument, extractedSignals, eventSources, reviewItems] =
+    await Promise.all([
+      listDocumentAttachmentsForRawDocumentIds(rawDocumentIds),
+      listModelRunsForRawDocumentIds(rawDocumentIds),
+      listExtractedSignalsForRawDocumentIds(rawDocumentIds),
+      listFinancialEventSourcesForRawDocumentIds(rawDocumentIds),
+      listRecentReviewQueueItemsForRawDocumentIds(rawDocumentIds),
+    ])
 
   const attachmentsByDocument = new Map<string, typeof attachments>()
   for (const attachment of attachments) {
@@ -77,9 +93,36 @@ export default async function ExtractionOpsPage() {
     signalsMap.set(signal.rawDocumentId, existing)
   }
 
+  const eventSourceMap = new Map<string, typeof eventSources>()
+  for (const source of eventSources) {
+    const rawDocumentId = source.source.rawDocumentId
+
+    if (!rawDocumentId) {
+      continue
+    }
+
+    const existing = eventSourceMap.get(rawDocumentId) ?? []
+    existing.push(source)
+    eventSourceMap.set(rawDocumentId, existing)
+  }
+
+  const reviewItemsMap = new Map<string, typeof reviewItems>()
+  for (const reviewItem of reviewItems) {
+    const rawDocumentId = reviewItem.rawDocumentId
+
+    if (!rawDocumentId) {
+      continue
+    }
+
+    const existing = reviewItemsMap.get(rawDocumentId) ?? []
+    existing.push(reviewItem)
+    reviewItemsMap.set(rawDocumentId, existing)
+  }
+
   const queueCards: Array<[string, Record<string, number>]> = [
     ["Document normalization", normalizationStats],
     ["AI extraction", extractionStats],
+    ["Reconciliation", reconciliationStats],
   ]
 
   return (
@@ -96,8 +139,8 @@ export default async function ExtractionOpsPage() {
       <div className="grid gap-4 lg:grid-cols-4">
         <MetricCard label="Accepted raw documents" value={rawDocumentCount} />
         <MetricCard label="Extracted signals" value={extractedSignalCount} />
-        <MetricCard label="Recent model runs" value={recentModelRuns.length} />
-        <MetricCard label="Recent extraction failures" value={recentFailures.length} />
+        <MetricCard label="Canonical ledger events" value={financialEventCount} />
+        <MetricCard label="Open review items" value={openReviewCount} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -181,6 +224,8 @@ export default async function ExtractionOpsPage() {
           const documentAttachments = attachmentsByDocument.get(document.id) ?? []
           const documentModelRuns = modelRunsMap.get(document.id) ?? []
           const documentSignals = signalsMap.get(document.id) ?? []
+          const documentEventSources = eventSourceMap.get(document.id) ?? []
+          const documentReviewItems = reviewItemsMap.get(document.id) ?? []
 
           return (
             <div
@@ -207,7 +252,7 @@ export default async function ExtractionOpsPage() {
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-6 lg:grid-cols-3">
+              <div className="mt-6 grid gap-6 lg:grid-cols-5">
                 <div>
                   <h3 className="text-sm font-medium text-zinc-950">Attachment parse state</h3>
                   <ul className="mt-3 grid gap-3 text-sm text-zinc-700">
@@ -262,6 +307,44 @@ export default async function ExtractionOpsPage() {
                     ) : (
                       <li className="rounded-2xl bg-zinc-50 p-3 text-zinc-600">
                         No extracted signals yet
+                      </li>
+                    )}
+                  </ul>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-950">Reconciliation</h3>
+                  <ul className="mt-3 grid gap-3 text-sm text-zinc-700">
+                    {documentEventSources.length > 0 ? (
+                      documentEventSources.map(({ source, event }) => (
+                        <li key={source.id} className="rounded-2xl bg-zinc-50 p-3">
+                          <p className="font-medium">{source.linkReason}</p>
+                          <p className="mt-1 text-zinc-600">
+                            Event {event?.eventType ?? "unknown"} · {event?.id ?? "n/a"}
+                          </p>
+                        </li>
+                      ))
+                    ) : (
+                      <li className="rounded-2xl bg-zinc-50 p-3 text-zinc-600">
+                        No canonical event yet
+                      </li>
+                    )}
+                  </ul>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-950">Review queue</h3>
+                  <ul className="mt-3 grid gap-3 text-sm text-zinc-700">
+                    {documentReviewItems.length > 0 ? (
+                      documentReviewItems.map((reviewItem) => (
+                        <li key={reviewItem.id} className="rounded-2xl bg-zinc-50 p-3">
+                          <p className="font-medium">{reviewItem.status}</p>
+                          <p className="mt-1 text-zinc-600">{reviewItem.title}</p>
+                        </li>
+                      ))
+                    ) : (
+                      <li className="rounded-2xl bg-zinc-50 p-3 text-zinc-600">
+                        No review items
                       </li>
                     )}
                   </ul>

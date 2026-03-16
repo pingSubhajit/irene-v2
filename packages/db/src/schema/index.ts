@@ -38,10 +38,51 @@ export {
   type ModelRunStatus,
   type ModelRunTaskType,
 } from "./extraction"
+export {
+  categories,
+  financialEvents,
+  financialEventSources,
+  merchantAliases,
+  merchants,
+  paymentInstruments,
+  reviewQueueItems,
+  type CategoryInsert,
+  type CategoryKind,
+  type CategorySelect,
+  type FinancialEventDirection,
+  type FinancialEventInsert,
+  type FinancialEventSelect,
+  type FinancialEventSourceInsert,
+  type FinancialEventSourceSelect,
+  type FinancialEventStatus,
+  type FinancialEventType,
+  type MerchantAliasInsert,
+  type MerchantAliasSelect,
+  type MerchantInsert,
+  type MerchantSelect,
+  type MerchantType,
+  type PaymentInstrumentInsert,
+  type PaymentInstrumentSelect,
+  type PaymentInstrumentStatus,
+  type PaymentInstrumentType,
+  type ReviewQueueItemInsert,
+  type ReviewQueueItemSelect,
+  type ReviewQueueItemStatus,
+  type ReviewQueueItemType,
+} from "./ledger"
 
 import { authSchema } from "./auth"
 import { jobRuns, userSettings } from "./app"
 import { extractedSignals, modelRuns } from "./extraction"
+import {
+  categories,
+  financialEvents,
+  financialEventSources,
+  merchantAliases,
+  merchants,
+  paymentInstruments,
+  reviewQueueItems,
+} from "./ledger"
 import {
   documentAttachments,
   emailSyncCursors,
@@ -59,4 +100,11 @@ export const schema = {
   documentAttachments,
   modelRuns,
   extractedSignals,
+  merchants,
+  merchantAliases,
+  paymentInstruments,
+  categories,
+  financialEvents,
+  financialEventSources,
+  reviewQueueItems,
 }
