@@ -1,18 +1,20 @@
-import { Geist, Geist_Mono } from "next/font/google"
+import { Manrope } from "next/font/google"
+import localFont from "next/font/local"
 
 import "@workspace/ui/globals.css"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { ThemeProvider } from "@/components/theme-provider"
 
-const fontSans = Geist({
+const fontSans = Manrope({
   subsets: ["latin"],
   variable: "--font-sans",
 })
 
-const fontMono = Geist_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
+const fontDisplay = localFont({
+  src: "../../../packages/ui/src/fonts/cirka/Cirka-Variable.ttf",
+  display: "swap",
+  variable: "--font-display",
 })
 
 export default function RootLayout({
@@ -24,9 +26,9 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", fontSans.variable)}
+      className={cn("dark antialiased", fontSans.variable, fontDisplay.variable)}
     >
-      <body className="bg-zinc-50 text-zinc-950">
+      <body className="bg-background font-sans text-foreground">
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

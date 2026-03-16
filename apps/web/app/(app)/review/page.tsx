@@ -1,11 +1,14 @@
 import {
   countOpenReviewQueueItemsForUser,
   ensureSystemCategories,
+  getReviewQueueContext,
   listCategoriesForUser,
   listReviewQueueItemsForUser,
-  getReviewQueueContext,
 } from "@workspace/db"
+import { Badge } from "@workspace/ui/components/badge"
+import { Card } from "@workspace/ui/components/card"
 
+import { ReviewDecisionCard } from "@/components/review-decision-card"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
@@ -21,9 +24,7 @@ type ProposedResolution = {
     eventType?: string
     amountMinor?: number
     currency?: string
-    description?: string | null
   }
-  reasonCode?: string
 }
 
 function asSingleValue(value: string | string[] | undefined) {
@@ -32,7 +33,7 @@ function asSingleValue(value: string | string[] | undefined) {
 
 function formatAmount(amountMinor: number | undefined, currency: string | undefined) {
   if (typeof amountMinor !== "number" || !currency) {
-    return "Unknown amount"
+    return "Amount unclear"
   }
 
   const amount = amountMinor / 100
@@ -48,10 +49,25 @@ function formatAmount(amountMinor: number | undefined, currency: string | undefi
   }
 }
 
+function formatStatusMessage(value: string | undefined) {
+  switch (value) {
+    case "resolved":
+      return "Resolution saved. Irene updated the ledger."
+    case "merged":
+      return "Resolution merged into an existing event."
+    case "ignored":
+      return "Signal ignored."
+    case "already-reconciled":
+      return "This item was already reconciled earlier."
+    default:
+      return null
+  }
+}
+
 export default async function ReviewPage({ searchParams }: ReviewPageProps) {
   const session = await requireSession()
   const params = (await searchParams) ?? {}
-  const statusMessage = asSingleValue(params.status)
+  const statusMessage = formatStatusMessage(asSingleValue(params.status))
 
   await ensureSystemCategories(session.user.id)
 
@@ -61,208 +77,118 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
     listReviewQueueItemsForUser({
       userId: session.user.id,
       status: "open",
-      limit: 50,
+      limit: 40,
     }),
   ])
 
-  const contexts = await Promise.all(items.map((item) => getReviewQueueContext(item.id)))
-  const validContexts = contexts.filter((context) => Boolean(context))
+  const contexts = (await Promise.all(items.map((item) => getReviewQueueContext(item.id)))).filter(
+    (context): context is NonNullable<Awaited<ReturnType<typeof getReviewQueueContext>>> =>
+      context !== null,
+  )
 
   return (
     <section className="grid gap-6">
-      <div className="rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <p className="text-xs font-medium uppercase tracking-[0.28em] text-zinc-500">
-          Phase 4
-        </p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">Review queue</h1>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-600">
-          Canonical ledger creation uses a balanced auto-apply policy. Anything that
-          looks plausible but not trustworthy enough to auto-merge lands here for an
-          explicit owner decision.
-        </p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-medium text-zinc-950">Open review items</p>
-          <p className="mt-3 text-3xl font-semibold tracking-tight text-zinc-950">
-            {openCount}
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div>
+          <p className="neo-kicker">Review</p>
+          <h1 className="mt-4 max-w-[12ch] font-display text-[3rem] leading-[0.92] text-white md:text-[4rem]">
+            resolve what
+            <br />
+            Irene is unsure
+            <br />
+            about.
+          </h1>
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-white/58">
+            These are the moments where the system saw a plausible money event but
+            wants your final word before treating it as truth.
           </p>
         </div>
-        <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-medium text-zinc-950">Resolution status</p>
-          <p className="mt-3 text-sm text-zinc-600">{statusMessage ?? "No recent action"}</p>
+
+        <div className="grid gap-4 self-start">
+          <Card className="p-5">
+            <p className="neo-kicker">Open queue</p>
+            <div className="mt-4 flex items-end justify-between gap-4">
+              <div>
+                <p className="font-display text-[3rem] leading-none text-white">
+                  {openCount}
+                </p>
+                <p className="mt-3 text-sm leading-6 text-white/56">
+                  Items still need a decision before they can become canonical ledger
+                  events.
+                </p>
+              </div>
+              <Badge variant={openCount > 0 ? "warning" : "success"}>
+                {openCount > 0 ? "Needs attention" : "Clear"}
+              </Badge>
+            </div>
+          </Card>
+
+          {statusMessage ? (
+            <Card className="border-[var(--neo-green)]/25 bg-[rgba(114,255,194,0.06)] p-5">
+              <p className="neo-kicker text-[var(--neo-green)]">Latest change</p>
+              <p className="mt-3 text-sm leading-6 text-white/76">{statusMessage}</p>
+            </Card>
+          ) : null}
         </div>
       </div>
 
       <div className="grid gap-4">
-        {validContexts.length > 0 ? (
-          validContexts.map((context) => {
-            if (!context) {
-              return null
-            }
-
+        {contexts.length > 0 ? (
+          contexts.map((context) => {
             const proposal = (context.item.proposedResolutionJson ?? {}) as ProposedResolution
+            const confidence = Number(context.signal?.confidence ?? 0).toFixed(2)
+            const rawDocumentTitle = context.rawDocument?.subject ?? "Raw document unavailable"
+            const rawDocumentSubtitle = [
+              context.rawDocument?.fromAddress ?? "Unknown sender",
+              context.rawDocument?.messageTimestamp
+                ? new Intl.DateTimeFormat("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }).format(context.rawDocument.messageTimestamp)
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
 
             return (
-              <article
+              <ReviewDecisionCard
                 key={context.item.id}
-                className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-lg font-semibold text-zinc-950">{context.item.title}</p>
-                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
-                      {context.item.explanation}
-                    </p>
-                  </div>
-                  <div className="rounded-full bg-amber-50 px-4 py-2 text-xs font-medium uppercase tracking-[0.24em] text-amber-700">
-                    {context.item.itemType}
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-4 lg:grid-cols-3">
-                  <ContextCard
-                    title="Raw document"
-                    lines={[
-                      context.rawDocument?.subject ?? "No raw document",
-                      context.rawDocument?.fromAddress ?? "",
-                      context.rawDocument?.snippet ?? "",
-                    ]}
-                  />
-                  <ContextCard
-                    title="Extracted signal"
-                    lines={[
-                      context.signal?.signalType ?? "No signal",
-                      context.signal?.candidateEventType ?? "No candidate event type",
-                      `Confidence ${Number(context.signal?.confidence ?? 0).toFixed(2)}`,
-                    ]}
-                  />
-                  <ContextCard
-                    title="Proposed resolution"
-                    lines={[
-                      proposal.action ?? "No proposed action",
-                      proposal.eventDraft?.eventType ?? "No event type",
-                      formatAmount(proposal.eventDraft?.amountMinor, proposal.eventDraft?.currency),
-                    ]}
-                  />
-                </div>
-
-                {proposal.matchedEventIds && proposal.matchedEventIds.length > 0 ? (
-                  <div className="mt-4 rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-700">
-                    <p className="font-medium text-zinc-950">Matched candidate events</p>
-                    <p className="mt-2 break-all">{proposal.matchedEventIds.join(", ")}</p>
-                  </div>
-                ) : null}
-
-                <form
-                  action="/api/review/resolve"
-                  method="post"
-                  className="mt-6 grid gap-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-5"
-                >
-                  <input type="hidden" name="reviewItemId" value={context.item.id} />
-
-                  <div className="grid gap-4 lg:grid-cols-4">
-                    <label className="grid gap-2 text-sm text-zinc-700">
-                      <span className="font-medium text-zinc-950">Resolution</span>
-                      <select
-                        name="resolution"
-                        defaultValue={proposal.action === "merge" ? "merge" : "approve"}
-                        className="rounded-2xl border border-zinc-200 px-4 py-3 outline-none transition focus:border-zinc-400"
-                      >
-                        <option value="approve">Approve proposed event</option>
-                        <option value="merge">Merge into existing event</option>
-                        <option value="ignore">Ignore signal</option>
-                      </select>
-                    </label>
-
-                    <label className="grid gap-2 text-sm text-zinc-700">
-                      <span className="font-medium text-zinc-950">Merge target event ID</span>
-                      <input
-                        type="text"
-                        name="targetEventId"
-                        defaultValue={proposal.matchedEventIds?.[0] ?? ""}
-                        placeholder="Only needed for merge"
-                        className="rounded-2xl border border-zinc-200 px-4 py-3 outline-none transition focus:border-zinc-400"
-                      />
-                    </label>
-
-                    <label className="grid gap-2 text-sm text-zinc-700">
-                      <span className="font-medium text-zinc-950">Override merchant</span>
-                      <input
-                        type="text"
-                        name="overrideMerchant"
-                        placeholder="Optional merchant override"
-                        className="rounded-2xl border border-zinc-200 px-4 py-3 outline-none transition focus:border-zinc-400"
-                      />
-                    </label>
-
-                    <label className="grid gap-2 text-sm text-zinc-700">
-                      <span className="font-medium text-zinc-950">Override event type</span>
-                      <select
-                        name="overrideEventType"
-                        defaultValue=""
-                        className="rounded-2xl border border-zinc-200 px-4 py-3 outline-none transition focus:border-zinc-400"
-                      >
-                        <option value="">Use proposed type</option>
-                        <option value="purchase">Purchase</option>
-                        <option value="income">Income</option>
-                        <option value="subscription_charge">Subscription</option>
-                        <option value="emi_payment">EMI</option>
-                        <option value="bill_payment">Bill</option>
-                        <option value="refund">Refund</option>
-                        <option value="transfer">Transfer</option>
-                      </select>
-                    </label>
-                  </div>
-
-                  <label className="grid gap-2 text-sm text-zinc-700 lg:max-w-sm">
-                    <span className="font-medium text-zinc-950">Override category</span>
-                    <select
-                      name="overrideCategoryId"
-                      defaultValue=""
-                      className="rounded-2xl border border-zinc-200 px-4 py-3 outline-none transition focus:border-zinc-400"
-                    >
-                      <option value="">Use proposed category</option>
-                      {categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <div className="flex gap-3">
-                    <button
-                      type="submit"
-                      className="rounded-full bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
-                    >
-                      Apply resolution
-                    </button>
-                  </div>
-                </form>
-              </article>
+                reviewItemId={context.item.id}
+                itemType={context.item.itemType.replaceAll("_", " ")}
+                title={context.item.title}
+                explanation={context.item.explanation}
+                rawDocumentTitle={rawDocumentTitle}
+                rawDocumentSubtitle={rawDocumentSubtitle}
+                signalType={context.signal?.signalType ?? "signal unavailable"}
+                candidateEventType={context.signal?.candidateEventType ?? "untyped"}
+                confidenceLabel={`confidence ${confidence}`}
+                proposedAction={proposal.action ?? "review"}
+                proposedEventType={proposal.eventDraft?.eventType ?? "generic_finance"}
+                proposedAmount={formatAmount(
+                  proposal.eventDraft?.amountMinor,
+                  proposal.eventDraft?.currency,
+                )}
+                matchedEventIds={proposal.matchedEventIds ?? []}
+                categories={categories}
+              />
             )
           })
         ) : (
-          <div className="rounded-3xl border border-dashed border-zinc-300 bg-white p-10 text-sm text-zinc-600">
-            No open review items right now.
-          </div>
+          <Card className="p-6 md:p-8">
+            <p className="neo-kicker">All clear</p>
+            <h2 className="mt-4 font-display text-[2.2rem] leading-none text-white">
+              no open decisions.
+            </h2>
+            <p className="mt-4 max-w-xl text-sm leading-6 text-white/58">
+              Irene can reconcile the current activity without your input right now.
+              When something becomes ambiguous, it will appear here as a quick decision
+              instead of a hidden system conflict.
+            </p>
+          </Card>
         )}
       </div>
     </section>
-  )
-}
-
-function ContextCard(props: { title: string; lines: string[] }) {
-  return (
-    <div className="rounded-2xl bg-zinc-50 p-4">
-      <p className="text-sm font-medium text-zinc-950">{props.title}</p>
-      <div className="mt-3 space-y-2 text-sm text-zinc-700">
-        {props.lines.filter(Boolean).map((line) => (
-          <p key={line}>{line}</p>
-        ))}
-      </div>
-    </div>
   )
 }

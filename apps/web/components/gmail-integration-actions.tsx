@@ -15,10 +15,11 @@ export function GmailIntegrationActions({
   const [message, setMessage] = useState<string | null>(null)
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-3">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <Button
           disabled={isPending}
+          variant="secondary"
           onClick={() => {
             window.location.href = "/api/integrations/email/google/connect"
           }}
@@ -36,16 +37,16 @@ export function GmailIntegrationActions({
               })
 
               if (!response.ok) {
-                setMessage("Failed to enqueue Gmail sync.")
+                setMessage("Could not queue a sync. Try again in a moment.")
                 return
               }
 
-              const data = (await response.json()) as { jobRunId: string }
-              setMessage(`Enqueued Gmail sync: ${data.jobRunId}`)
+              await response.json()
+              setMessage("Sync queued. Irene will refresh the inbox picture shortly.")
             })
           }}
         >
-          {isPending ? "Enqueueing..." : "Sync now"}
+          {isPending ? "Queueing..." : "Sync now"}
         </Button>
         <Button
           disabled={!connected || isPending}
@@ -61,7 +62,7 @@ export function GmailIntegrationActions({
               )
 
               if (!response.ok) {
-                setMessage("Failed to disconnect Gmail.")
+                setMessage("Could not disconnect Gmail right now.")
                 return
               }
 
@@ -72,7 +73,7 @@ export function GmailIntegrationActions({
           Disconnect
         </Button>
       </div>
-      {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+      {message ? <p className="text-sm leading-6 text-white/56">{message}</p> : null}
     </div>
   )
 }

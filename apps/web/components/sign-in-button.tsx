@@ -14,6 +14,9 @@ export function SignInButton() {
     <div className="flex flex-col gap-3">
       <Button
         disabled={isPending}
+        variant="secondary"
+        size="lg"
+        className="w-full justify-center"
         onClick={() => {
           setError(null)
           startTransition(async () => {
@@ -27,7 +30,7 @@ export function SignInButton() {
       >
         {isPending ? "Redirecting..." : "Continue with Google"}
       </Button>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm leading-6 text-[var(--neo-coral)]">{error}</p> : null}
     </div>
   )
 }

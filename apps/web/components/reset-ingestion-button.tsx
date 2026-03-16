@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 
 import { Button } from "@workspace/ui/components/button"
+import { Input } from "@workspace/ui/components/input"
 
 const CONFIRMATION_PHRASE = "RESET INGESTION"
 
@@ -24,15 +25,16 @@ export function ResetIngestionButton() {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm leading-6 text-zinc-600">
+      <p className="text-sm leading-6 text-white/56">
         This permanently deletes currently ingested Gmail raw documents, attachment
         records, and stored blobs for your connected inbox, then immediately starts a
         fresh 90-day backfill.
       </p>
-      <label className="grid gap-2 text-sm font-medium text-zinc-950">
-        Type <span className="font-mono">{CONFIRMATION_PHRASE}</span> to confirm
-        <input
-          className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-400"
+      <label className="grid gap-2 text-sm font-medium text-white">
+        <span>
+          Type <span className="font-mono text-[var(--neo-yellow)]">{CONFIRMATION_PHRASE}</span> to confirm
+        </span>
+        <Input
           value={confirmation}
           onChange={(event) => setConfirmation(event.target.value)}
           placeholder={CONFIRMATION_PHRASE}
@@ -56,13 +58,13 @@ export function ResetIngestionButton() {
               })
 
               if (!response.ok) {
-                setMessage("Failed to reset Gmail ingestion data.")
+                setMessage("Could not reset the inbox data.")
                 return
               }
 
               const data = (await response.json()) as ResetResponse
               setMessage(
-                `Deleted ${data.deletedRawDocuments} documents, ${data.deletedAttachments} attachments, and ${data.deletedStorageObjects} stored objects. Re-enqueued backfill: ${data.backfillJobRunId}`,
+                `Deleted ${data.deletedRawDocuments} documents, ${data.deletedAttachments} attachments, and ${data.deletedStorageObjects} stored objects. A fresh backfill is now running.`,
               )
               setConfirmation("")
               router.refresh()
@@ -71,7 +73,7 @@ export function ResetIngestionButton() {
         >
           {isPending ? "Resetting..." : "Reset Gmail ingestion data"}
         </Button>
-        {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+        {message ? <p className="text-sm leading-6 text-white/56">{message}</p> : null}
       </div>
     </div>
   )
