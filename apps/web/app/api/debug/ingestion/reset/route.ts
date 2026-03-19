@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
   await deletePrivateObjects(artifacts.storageKeys)
 
-  const resetResult = await resetGmailIngestionForConnection(connection.id)
+  const resetResult = await resetGmailIngestionForConnection(connection.id, session.user.id)
   const cursor = await ensureEmailSyncCursor(connection.id, GMAIL_CURSOR_NAME)
   const { jobRun } = await triggerGmailBackfill({
     userId: session.user.id,
@@ -71,6 +71,9 @@ export async function POST(request: Request) {
     deletedRawDocuments: resetResult.deletedRawDocuments,
     deletedAttachments: resetResult.deletedAttachments,
     deletedStorageObjects: artifacts.storageKeys.length,
+    deletedFinancialEvents: resetResult.deletedFinancialEvents,
+    deletedRecurringObligations: resetResult.deletedRecurringObligations,
+    deletedIncomeStreams: resetResult.deletedIncomeStreams,
     backfillJobRunId: jobRun.id,
   })
 

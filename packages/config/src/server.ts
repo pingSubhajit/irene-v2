@@ -60,6 +60,11 @@ const aiEnvSchema = z.object({
   AI_GATEWAY_API_KEY: z.string().min(1),
 })
 
+const fxEnvSchema = z.object({
+  CURRENCYAPI_API_KEY: z.string().min(1).optional(),
+  CURRENCYAPI_BASE_URL: z.url().default("https://api.currencyapi.com/v3"),
+})
+
 const cronEnvSchema = z.object({
   CRON_SECRET: z.string().min(1).optional(),
 })
@@ -71,6 +76,7 @@ const serverEnvSchema = runtimeEnvSchema
   .extend(redisEnvSchema.shape)
   .extend(storageEnvSchema.shape)
   .extend(aiEnvSchema.shape)
+  .extend(fxEnvSchema.shape)
   .extend(cronEnvSchema.shape)
 
 export type RuntimeEnv = z.infer<typeof runtimeEnvSchema>
@@ -80,6 +86,7 @@ export type SecurityEnv = z.infer<typeof securityEnvSchema>
 export type RedisEnv = z.infer<typeof redisEnvSchema>
 export type StorageEnv = z.infer<typeof storageEnvSchema>
 export type AiEnv = z.infer<typeof aiEnvSchema>
+export type FxEnv = z.infer<typeof fxEnvSchema>
 export type CronEnv = z.infer<typeof cronEnvSchema>
 export type ServerEnv = z.infer<typeof serverEnvSchema>
 
@@ -93,6 +100,7 @@ let securityEnvCache: SecurityEnv | null = null
 let redisEnvCache: RedisEnv | null = null
 let storageEnvCache: StorageEnv | null = null
 let aiEnvCache: AiEnv | null = null
+let fxEnvCache: FxEnv | null = null
 let cronEnvCache: CronEnv | null = null
 let serverEnvCache: ServerEnv | null = null
 
@@ -197,6 +205,17 @@ export function getAiEnv(): AiEnv {
   return aiEnvCache
 }
 
+export function getFxEnv(): FxEnv {
+  ensureEnvLoaded()
+
+  if (fxEnvCache) {
+    return fxEnvCache
+  }
+
+  fxEnvCache = fxEnvSchema.parse(process.env)
+  return fxEnvCache
+}
+
 export function getCronEnv(): CronEnv {
   ensureEnvLoaded()
 
@@ -241,6 +260,7 @@ export function getEnvSanityChecks() {
   const redis = getRedisEnv()
   const storage = getStorageEnv()
   const ai = getAiEnv()
+  const fx = getFxEnv()
   return {
     nodeEnv: runtime.NODE_ENV,
     auth: Boolean(
@@ -263,6 +283,7 @@ export function getEnvSanityChecks() {
         storage.GCS_PRIVATE_KEY,
     ),
     ai: Boolean(ai.AI_GATEWAY_API_KEY),
+    fx: Boolean(fx.CURRENCYAPI_API_KEY),
     allowlistSize: getAllowedEmails().size,
   }
 }

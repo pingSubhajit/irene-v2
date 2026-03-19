@@ -1,14 +1,32 @@
 import { RiFlashlightFill } from "@remixicon/react"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar"
 
 import { BottomTabBar } from "@/components/bottom-tab-bar"
 
 type AppShellProps = {
-  email: string
+  user: {
+    name: string
+    email: string
+    image?: string | null
+  }
   children: React.ReactNode
 }
 
-export function AppShell({ email, children }: AppShellProps) {
-  const label = email.split("@")[0] ?? email
+function getInitials(name: string) {
+  const parts = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+
+  return parts.map((part) => part.slice(0, 1)).join("") || "I"
+}
+
+export function AppShell({ user, children }: AppShellProps) {
+  const initials = getInitials(user.name)
 
   return (
     <div className="min-h-svh bg-transparent text-foreground">
@@ -22,12 +40,17 @@ export function AppShell({ email, children }: AppShellProps) {
               <p className="neo-kicker text-[0.62rem]">
                 Irene
               </p>
-              <p className="text-sm text-white/62">welcome back, {label}</p>
+              <p className="text-sm font-semibold text-white">{user.name}</p>
+              <p className="text-xs text-white/48">{user.email}</p>
             </div>
           </div>
-          <div className="flex size-11 items-center justify-center border border-white/10 bg-white/4 text-sm uppercase tracking-[0.2em] text-white/56">
-            {label.slice(0, 1)}
-          </div>
+          <Avatar className="size-11">
+            {user.image ? (
+              <AvatarImage src={user.image} alt={user.name} />
+            ) : (
+              <AvatarFallback>{initials}</AvatarFallback>
+            )}
+          </Avatar>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 md:px-6 md:pb-32 md:pt-8">

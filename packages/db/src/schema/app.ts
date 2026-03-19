@@ -20,6 +20,7 @@ export const userSettings = pgTable(
     userId: text("user_id")
       .primaryKey()
       .references(() => users.id, { onDelete: "cascade" }),
+    reportingCurrency: text("reporting_currency").notNull().default("INR"),
     forecastHorizonDays: integer("forecast_horizon_days").notNull().default(30),
     salaryDayHint: integer("salary_day_hint"),
     lowBalanceThreshold: bigint("low_balance_threshold", { mode: "number" })
@@ -49,6 +50,10 @@ export const userSettings = pgTable(
     check(
       "user_settings_forecast_horizon_positive",
       sql`${table.forecastHorizonDays} > 0`,
+    ),
+    check(
+      "user_settings_reporting_currency_check",
+      sql`${table.reportingCurrency} ~ '^[A-Z]{3}$'`,
     ),
     check(
       "user_settings_salary_day_range",

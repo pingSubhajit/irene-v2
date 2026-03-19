@@ -10,6 +10,14 @@ import { Select } from "@workspace/ui/components/select"
 
 type ReviewDecisionCardProps = {
   reviewItemId: string
+  reviewKind:
+    | "event"
+    | "recurring_obligation"
+    | "emi_plan"
+    | "income_stream"
+    | "payment_instrument_resolution"
+    | "merchant_resolution"
+    | "category_resolution"
   itemType: string
   title: string
   explanation: string
@@ -19,14 +27,15 @@ type ReviewDecisionCardProps = {
   candidateEventType: string
   confidenceLabel: string
   proposedAction: string
-  proposedEventType: string
+  proposedType: string
   proposedAmount: string
-  matchedEventIds: string[]
+  matchedIds: string[]
   categories: Array<{ id: string; name: string }>
 }
 
 export function ReviewDecisionCard({
   reviewItemId,
+  reviewKind,
   itemType,
   title,
   explanation,
@@ -36,12 +45,24 @@ export function ReviewDecisionCard({
   candidateEventType,
   confidenceLabel,
   proposedAction,
-  proposedEventType,
+  proposedType,
   proposedAmount,
-  matchedEventIds,
+  matchedIds,
   categories,
 }: ReviewDecisionCardProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const isRecurring =
+    reviewKind === "recurring_obligation" ||
+    reviewKind === "emi_plan" ||
+    reviewKind === "income_stream"
+  const isInstrumentResolution = reviewKind === "payment_instrument_resolution"
+  const isMerchantResolution =
+    reviewKind === "merchant_resolution" || reviewKind === "category_resolution"
+  const canOverrideCategory =
+    reviewKind === "event" ||
+    reviewKind === "recurring_obligation" ||
+    reviewKind === "emi_plan" ||
+    isMerchantResolution
 
   return (
     <>
@@ -58,7 +79,7 @@ export function ReviewDecisionCard({
         <div className="mt-6 grid gap-3 md:grid-cols-3">
           <ContextBlock title="Raw document" primary={rawDocumentTitle} secondary={rawDocumentSubtitle} />
           <ContextBlock title="Extracted signal" primary={signalType} secondary={`${candidateEventType} · ${confidenceLabel}`} />
-          <ContextBlock title="Proposal" primary={proposedEventType} secondary={`${proposedAction} · ${proposedAmount}`} />
+          <ContextBlock title="Proposal" primary={proposedType} secondary={`${proposedAction} · ${proposedAmount}`} />
         </div>
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -99,59 +120,167 @@ export function ReviewDecisionCard({
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-2 text-sm text-white/72">
                   <span className="font-medium text-white">Resolution</span>
-                  <Select name="resolution" defaultValue={matchedEventIds.length > 0 ? "merge" : "approve"}>
-                    <option value="approve">Approve proposed event</option>
-                    <option value="merge">Merge into existing event</option>
-                    <option value="ignore">Ignore signal</option>
+                  <Select name="resolution" defaultValue={matchedIds.length > 0 ? "merge" : "approve"}>
+                    <option value="approve">
+                      {isInstrumentResolution
+                        ? "Approve instrument resolution"
+                        : isMerchantResolution
+                          ? "Approve merchant resolution"
+                        : isRecurring
+                          ? "Confirm recurring model"
+                          : "Approve proposed event"}
+                    </option>
+                    <option value="merge">
+                      {isInstrumentResolution
+                        ? "Merge into existing instrument"
+                        : isMerchantResolution
+                          ? "Merge into existing merchant"
+                        : isRecurring
+                          ? "Merge into existing recurring model"
+                          : "Merge into existing event"}
+                    </option>
+                    <option value="ignore">
+                      {isInstrumentResolution
+                        ? "Ignore instrument observations"
+                        : isMerchantResolution
+                          ? "Ignore merchant observations"
+                        : isRecurring
+                          ? "Ignore recurring hypothesis"
+                          : "Ignore signal"}
+                    </option>
                   </Select>
                 </label>
 
                 <label className="grid gap-2 text-sm text-white/72">
-                  <span className="font-medium text-white">Merge target event ID</span>
+                  <span className="font-medium text-white">
+                    {isInstrumentResolution
+                      ? "Merge target instrument ID"
+                      : isMerchantResolution
+                        ? "Merge target merchant ID"
+                      : isRecurring
+                        ? "Merge target recurring model ID"
+                        : "Merge target event ID"}
+                  </span>
                   <Input
-                    name="targetEventId"
-                    defaultValue={matchedEventIds[0] ?? ""}
-                    placeholder="Only needed for merge"
+                    name={
+                      isInstrumentResolution
+                        ? "targetPaymentInstrumentId"
+                        : isMerchantResolution
+                          ? "targetMerchantId"
+                        : isRecurring
+                          ? "targetRecurringModelId"
+                          : "targetEventId"
+                    }
+                    defaultValue={matchedIds[0] ?? ""}
+                    placeholder={isRecurring ? "Only needed for merge" : "Only needed for merge"}
                   />
                 </label>
 
-                <label className="grid gap-2 text-sm text-white/72">
-                  <span className="font-medium text-white">Override merchant</span>
-                  <Input name="overrideMerchant" placeholder="Optional merchant override" />
-                </label>
+                {isMerchantResolution ? (
+                  <label className="grid gap-2 text-sm text-white/72">
+                    <span className="font-medium text-white">Target processor ID</span>
+                    <Input
+                      name="targetProcessorId"
+                      placeholder="Optional existing processor"
+                    />
+                  </label>
+                ) : null}
 
                 <label className="grid gap-2 text-sm text-white/72">
-                  <span className="font-medium text-white">Override event type</span>
-                  <Select name="overrideEventType" defaultValue="">
-                    <option value="">Use proposed type</option>
-                    <option value="purchase">Purchase</option>
-                    <option value="income">Income</option>
-                    <option value="subscription_charge">Subscription</option>
-                    <option value="emi_payment">EMI</option>
-                    <option value="bill_payment">Bill</option>
-                    <option value="refund">Refund</option>
-                    <option value="transfer">Transfer</option>
-                  </Select>
+                  <span className="font-medium text-white">
+                    {isInstrumentResolution ? "Override institution" : "Override merchant"}
+                  </span>
+                  <Input
+                    name={isInstrumentResolution ? "overrideInstitution" : "overrideMerchant"}
+                    placeholder={
+                      isInstrumentResolution
+                        ? "Optional institution override"
+                        : "Optional merchant override"
+                    }
+                  />
                 </label>
+
+                {isMerchantResolution ? (
+                  <label className="grid gap-2 text-sm text-white/72">
+                    <span className="font-medium text-white">Override processor</span>
+                    <Input
+                      name="overrideProcessor"
+                      placeholder="Optional processor override"
+                    />
+                  </label>
+                ) : null}
+
+                {reviewKind === "event" ? (
+                  <label className="grid gap-2 text-sm text-white/72">
+                    <span className="font-medium text-white">Override event type</span>
+                    <Select name="overrideEventType" defaultValue="">
+                      <option value="">Use proposed type</option>
+                      <option value="purchase">Purchase</option>
+                      <option value="income">Income</option>
+                      <option value="subscription_charge">Subscription</option>
+                      <option value="emi_payment">EMI</option>
+                      <option value="bill_payment">Bill</option>
+                      <option value="refund">Refund</option>
+                      <option value="transfer">Transfer</option>
+                    </Select>
+                  </label>
+                ) : reviewKind === "payment_instrument_resolution" ? (
+                  <label className="grid gap-2 text-sm text-white/72">
+                    <span className="font-medium text-white">Override instrument type</span>
+                    <Select name="overrideInstrumentType" defaultValue="">
+                      <option value="">Use proposed type</option>
+                      <option value="credit_card">Credit card</option>
+                      <option value="debit_card">Debit card</option>
+                      <option value="bank_account">Bank account</option>
+                      <option value="upi">UPI</option>
+                      <option value="wallet">Wallet</option>
+                      <option value="unknown">Unknown</option>
+                    </Select>
+                  </label>
+                ) : isMerchantResolution ? (
+                  <div className="hidden md:block" />
+                ) : reviewKind === "recurring_obligation" || reviewKind === "emi_plan" ? (
+                  <label className="grid gap-2 text-sm text-white/72">
+                    <span className="font-medium text-white">Override recurring type</span>
+                    <Select name="overrideRecurringType" defaultValue="">
+                      <option value="">Use proposed type</option>
+                      <option value="subscription">Subscription</option>
+                      <option value="bill">Bill</option>
+                      <option value="emi">EMI</option>
+                    </Select>
+                  </label>
+                ) : (
+                  <div className="hidden md:block" />
+                )}
               </div>
 
-              <label className="grid gap-2 text-sm text-white/72">
-                <span className="font-medium text-white">Override category</span>
-                <Select name="overrideCategoryId" defaultValue="">
-                  <option value="">Use proposed category</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              {canOverrideCategory ? (
+                <label className="grid gap-2 text-sm text-white/72">
+                  <span className="font-medium text-white">Override category</span>
+                  <Select name="overrideCategoryId" defaultValue="">
+                    <option value="">Use proposed category</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              ) : null}
 
-              {matchedEventIds.length > 0 ? (
+              {matchedIds.length > 0 ? (
                 <div className="border border-white/8 bg-black/20 p-4">
-                  <p className="neo-kicker">Candidate events</p>
+                  <p className="neo-kicker">
+                    {isInstrumentResolution
+                      ? "Candidate instruments"
+                      : isMerchantResolution
+                        ? "Candidate merchants / processors"
+                      : isRecurring
+                        ? "Candidate recurring models"
+                        : "Candidate events"}
+                  </p>
                   <p className="mt-3 break-all text-sm text-white/66">
-                    {matchedEventIds.join(", ")}
+                    {matchedIds.join(", ")}
                   </p>
                 </div>
               ) : null}

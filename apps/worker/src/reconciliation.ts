@@ -10,7 +10,6 @@ import {
   getOrCreateMerchantForAlias,
   getRawDocumentById,
   listCandidateFinancialEvents,
-  maybeResolvePaymentInstrument,
   refreshFinancialEventSourceCount,
   resolveCategoryForSignal,
   updateExtractedSignalStatus,
@@ -58,7 +57,9 @@ type EventDraft = Pick<
   | "postedAt"
   | "merchantId"
   | "paymentInstrumentId"
+  | "paymentProcessorId"
   | "categoryId"
+  | "merchantDescriptorRaw"
   | "description"
   | "notes"
   | "confidence"
@@ -91,6 +92,66 @@ function extractSenderDisplayName(input: string | null | undefined) {
   }
 
   return normalized.slice(0, angleIndex).replace(/^"+|"+$/g, "").trim() || normalized
+}
+
+function extractSenderEmail(input: string | null | undefined) {
+  const normalized = normalizeWhitespace(input)
+
+  if (!normalized) {
+    return null
+  }
+
+  const match = normalized.match(/<([^>]+)>/)
+  if (match?.[1]) {
+    return match[1].trim().toLowerCase()
+  }
+
+  return normalized.includes("@") ? normalized.toLowerCase() : null
+}
+
+function looksLikeIssuerOrSenderAlias(input: string | null | undefined) {
+  const lowered = input?.toLowerCase() ?? ""
+
+  return (
+    lowered.includes("@") ||
+    /\b(bank|credit[_ ]?cards?|debit[_ ]?cards?|instaalert|statement|alerts?|transaction|noreply|no-reply)\b/.test(
+      lowered,
+    )
+  )
+}
+
+function getProvisionalMerchantAlias(
+  signal: ExtractedSignalSelect,
+  rawDocument: RawDocumentSelect,
+) {
+  const candidates = [
+    normalizeWhitespace(signal.merchantNameCandidate),
+    normalizeWhitespace(signal.merchantHint),
+    normalizeWhitespace(signal.merchantRaw),
+    normalizeWhitespace(signal.merchantDescriptorRaw),
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue
+    }
+
+    if (!looksLikeIssuerOrSenderAlias(candidate)) {
+      return candidate
+    }
+  }
+
+  const senderDisplayName = extractSenderDisplayName(rawDocument.fromAddress)
+  if (senderDisplayName && !looksLikeIssuerOrSenderAlias(senderDisplayName)) {
+    return senderDisplayName
+  }
+
+  const senderEmail = extractSenderEmail(rawDocument.fromAddress)
+  if (senderEmail && !looksLikeIssuerOrSenderAlias(senderEmail)) {
+    return senderEmail
+  }
+
+  return null
 }
 
 function mapCandidateEventTypeToFinancialEventType(
@@ -207,11 +268,7 @@ async function buildEventDraft(input: {
   rawDocument: RawDocumentSelect
   eventType: FinancialEventType
 }) {
-  const senderDisplayName = extractSenderDisplayName(input.rawDocument.fromAddress)
-  const merchantAlias =
-    normalizeWhitespace(input.signal.merchantHint) ||
-    normalizeWhitespace(input.signal.merchantRaw) ||
-    senderDisplayName
+  const merchantAlias = getProvisionalMerchantAlias(input.signal, input.rawDocument)
 
   const merchant = merchantAlias
     ? await getOrCreateMerchantForAlias({
@@ -223,12 +280,6 @@ async function buildEventDraft(input: {
     : null
 
   const category = await resolveCategoryForSignal(input.userId, input.signal)
-  const paymentInstrument = await maybeResolvePaymentInstrument({
-    userId: input.userId,
-    hint: input.signal.paymentInstrumentHint,
-    merchantName: merchant?.displayName ?? senderDisplayName ?? null,
-    currency: input.signal.currency ?? "INR",
-  })
 
   return {
     userId: input.userId,
@@ -239,9 +290,15 @@ async function buildEventDraft(input: {
     eventOccurredAt: buildOccurredAt(input.signal, input.rawDocument),
     postedAt: input.rawDocument.messageTimestamp,
     merchantId: merchant?.id ?? null,
-    paymentInstrumentId: paymentInstrument?.id ?? null,
+    paymentInstrumentId: null,
+    paymentProcessorId: null,
     categoryId: category?.id ?? null,
+    merchantDescriptorRaw: input.signal.merchantDescriptorRaw ?? null,
     description:
+      merchant?.displayName ??
+      normalizeWhitespace(input.signal.merchantNameCandidate) ??
+      normalizeWhitespace(input.signal.merchantHint) ??
+      normalizeWhitespace(input.signal.merchantDescriptorRaw) ??
       normalizeWhitespace(input.rawDocument.subject) ??
       normalizeWhitespace(input.signal.merchantHint) ??
       normalizeWhitespace(input.signal.merchantRaw) ??
@@ -328,6 +385,10 @@ async function mergeIntoFinancialEvent(input: {
 
   if (!event.merchantId && input.eventDraft.merchantId) {
     patch.merchantId = input.eventDraft.merchantId
+  }
+
+  if (!event.merchantDescriptorRaw && input.eventDraft.merchantDescriptorRaw) {
+    patch.merchantDescriptorRaw = input.eventDraft.merchantDescriptorRaw
   }
 
   if (!event.paymentInstrumentId && input.eventDraft.paymentInstrumentId) {

@@ -17,6 +17,8 @@ import {
 import { users } from "./auth"
 import { extractedSignals } from "./extraction"
 import { rawDocuments } from "./ingestion"
+import { financialInstitutions } from "./instrument-resolution"
+import { paymentProcessors } from "./merchant-resolution"
 
 export type MerchantType =
   | "merchant"
@@ -66,6 +68,12 @@ export type ReviewQueueItemType =
   | "duplicate_match"
   | "merchant_conflict"
   | "instrument_conflict"
+  | "payment_instrument_resolution"
+  | "merchant_resolution"
+  | "category_resolution"
+  | "recurring_obligation_ambiguity"
+  | "emi_plan_ambiguity"
+  | "income_stream_ambiguity"
 
 export type ReviewQueueItemStatus = "open" | "resolved" | "ignored"
 
@@ -150,6 +158,10 @@ export const paymentInstruments = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    financialInstitutionId: uuid("financial_institution_id").references(
+      () => financialInstitutions.id,
+      { onDelete: "set null" },
+    ),
     instrumentType: text("instrument_type")
       .$type<PaymentInstrumentType>()
       .notNull(),
@@ -176,8 +188,8 @@ export const paymentInstruments = pgTable(
     ),
     uniqueIndex("payment_instrument_user_identity_unique").on(
       table.userId,
+      table.financialInstitutionId,
       table.instrumentType,
-      table.providerName,
       table.maskedIdentifier,
     ),
     check(
@@ -261,9 +273,14 @@ export const financialEvents = pgTable(
       () => paymentInstruments.id,
       { onDelete: "set null" },
     ),
+    paymentProcessorId: uuid("payment_processor_id").references(
+      () => paymentProcessors.id,
+      { onDelete: "set null" },
+    ),
     categoryId: uuid("category_id").references(() => categories.id, {
       onDelete: "set null",
     }),
+    merchantDescriptorRaw: text("merchant_descriptor_raw"),
     description: text("description"),
     notes: text("notes"),
     confidence: numeric("confidence", {
@@ -300,6 +317,10 @@ export const financialEvents = pgTable(
     ),
     index("financial_event_payment_instrument_occurred_at_idx").on(
       table.paymentInstrumentId,
+      table.eventOccurredAt,
+    ),
+    index("financial_event_payment_processor_occurred_at_idx").on(
+      table.paymentProcessorId,
       table.eventOccurredAt,
     ),
     index("financial_event_category_occurred_at_idx").on(
@@ -409,7 +430,7 @@ export const reviewQueueItems = pgTable(
     index("review_queue_item_financial_event_idx").on(table.financialEventId),
     check(
       "review_queue_item_type_check",
-      sql`${table.itemType} in ('signal_reconciliation', 'duplicate_match', 'merchant_conflict', 'instrument_conflict')`,
+      sql`${table.itemType} in ('signal_reconciliation', 'duplicate_match', 'merchant_conflict', 'instrument_conflict', 'payment_instrument_resolution', 'merchant_resolution', 'category_resolution', 'recurring_obligation_ambiguity', 'emi_plan_ambiguity', 'income_stream_ambiguity')`,
     ),
     check(
       "review_queue_item_status_check",

@@ -36,3 +36,19 @@ export async function getUserSettings(userId: string) {
 
   return created
 }
+
+export async function updateUserSettings(
+  userId: string,
+  input: Partial<typeof userSettings.$inferInsert>,
+) {
+  const [settings] = await db
+    .update(userSettings)
+    .set({
+      ...input,
+      updatedAt: new Date(),
+    })
+    .where(eq(userSettings.userId, userId))
+    .returning()
+
+  return settings ?? null
+}

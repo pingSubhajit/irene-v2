@@ -63,13 +63,24 @@ const extractedSignalSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .nullable()
     .optional(),
+  issuerNameHint: z.string().max(160).nullable().optional(),
+  instrumentLast4Hint: z.string().max(16).nullable().optional(),
+  merchantDescriptorRaw: z.string().max(240).nullable().optional(),
+  merchantNameCandidate: z.string().max(240).nullable().optional(),
+  processorNameCandidate: z.string().max(160).nullable().optional(),
+  channelHint: z
+    .enum(["card", "wallet", "upi", "bank_transfer", "other"])
+    .nullable()
+    .optional(),
   merchantRaw: z.string().max(240).nullable().optional(),
   merchantHint: z.string().max(240).nullable().optional(),
   paymentInstrumentHint: z.string().max(120).nullable().optional(),
   categoryHint: z.string().max(120).nullable().optional(),
+  categoryCandidates: z.array(z.string().max(120)).max(4).default([]),
   isRecurringHint: z.boolean().default(false),
   isEmiHint: z.boolean().default(false),
   confidence: z.number().min(0).max(1),
+  roleConfidence: z.number().min(0).max(1).nullable().optional(),
   evidenceSnippets: z.array(z.string().max(280)).max(4),
   explanation: z.string().max(240).optional(),
 })
@@ -273,6 +284,13 @@ export async function extractStructuredSignals(input: {
     "Promotional or offer emails must not produce purchase_signal, emi_signal, bill_signal, subscription_signal, refund_signal, transfer_signal, or income_signal unless the email clearly proves a completed money movement, an active obligation, or a due/reminder for an existing obligation.",
     "Examples that should become generic_finance_signal: EMI offers, card upgrade offers, cashback campaigns, 'save up to' promotions, shopping deals with financing language, and pre-approved loan offers.",
     "If the email advertises financing terms like 'EMI starting at' without confirming enrollment or payment, return generic_finance_signal.",
+    "For purchase-like or bank-alert documents, explicitly separate issuer, merchant, and processor when possible.",
+    "Sender email or sender display name is usually issuer evidence, not merchant evidence, for bank alerts.",
+    "Descriptor strings like PAYPAL *UBISOFTEMEA often contain both a processor and a merchant. Prefer processor=PayPal and merchant=Ubisoft rather than using the whole descriptor as merchant.",
+    "merchantNameCandidate should be who the user actually paid. processorNameCandidate should be an intermediary like PayPal, Razorpay, Google, Apple, or Amazon Pay when present.",
+    "merchantDescriptorRaw should preserve the raw descriptor fragment if one is visible.",
+    "channelHint should capture payment channel when inferable: card, wallet, upi, bank_transfer, or other.",
+    "categoryCandidates should contain up to four candidate slugs in priority order such as gaming, software, digital_goods, food, transport, subscriptions, bills, shopping, salary, utilities, travel, entertainment.",
     "",
     ...routeSpecificInstructions[input.routeLabel],
     "",

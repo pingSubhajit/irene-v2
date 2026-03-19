@@ -19,6 +19,9 @@ import { rawDocuments } from "./ingestion"
 export type ModelRunTaskType =
   | "document_extraction"
   | "classification_support"
+  | "entity_resolution"
+  | "merchant_resolution"
+  | "category_resolution"
   | "advice_generation"
   | "review_summary"
 
@@ -87,7 +90,7 @@ export const modelRuns = pgTable(
     ),
     check(
       "model_run_task_type_check",
-      sql`${table.taskType} in ('document_extraction', 'classification_support', 'advice_generation', 'review_summary')`,
+      sql`${table.taskType} in ('document_extraction', 'classification_support', 'entity_resolution', 'merchant_resolution', 'category_resolution', 'advice_generation', 'review_summary')`,
     ),
     check(
       "model_run_status_check",
@@ -128,6 +131,12 @@ export const extractedSignals = pgTable(
     amountMinor: bigint("amount_minor", { mode: "number" }),
     currency: text("currency"),
     eventDate: date("event_date", { mode: "string" }),
+    issuerNameHint: text("issuer_name_hint"),
+    instrumentLast4Hint: text("instrument_last4_hint"),
+    merchantDescriptorRaw: text("merchant_descriptor_raw"),
+    merchantNameCandidate: text("merchant_name_candidate"),
+    processorNameCandidate: text("processor_name_candidate"),
+    channelHint: text("channel_hint"),
     merchantRaw: text("merchant_raw"),
     merchantHint: text("merchant_hint"),
     paymentInstrumentHint: text("payment_instrument_hint"),
@@ -185,6 +194,10 @@ export const extractedSignals = pgTable(
     check(
       "extracted_signal_currency_check",
       sql`${table.currency} IS NULL OR ${table.currency} ~ '^[A-Z]{3}$'`,
+    ),
+    check(
+      "extracted_signal_channel_hint_check",
+      sql`${table.channelHint} IS NULL OR ${table.channelHint} in ('card', 'wallet', 'upi', 'bank_transfer', 'other')`,
     ),
     check(
       "extracted_signal_amount_minor_check",

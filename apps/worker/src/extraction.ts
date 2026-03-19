@@ -50,6 +50,12 @@ export type WorkerExtractedSignal = {
   amountMinor: number | null
   currency: string | null
   eventDate: string | null
+  issuerNameHint: string | null
+  instrumentLast4Hint: string | null
+  merchantDescriptorRaw: string | null
+  merchantNameCandidate: string | null
+  processorNameCandidate: string | null
+  channelHint: "card" | "wallet" | "upi" | "bank_transfer" | "other" | null
   merchantRaw: string | null
   merchantHint: string | null
   paymentInstrumentHint: string | null
@@ -159,8 +165,92 @@ function inferPaymentInstrumentHint(text: string) {
   return cardMatch?.[1] ?? null
 }
 
+function getMerchantDescriptor(text: string) {
+  const patterns = [
+    /\binfo:\s*([A-Z0-9* ./_-]{6,80})/i,
+    /\bmerchant[:\s-]+([A-Z0-9* ./_-]{4,80})/i,
+    /\b(?:at|to)\s+([A-Z0-9* ./_-]{4,80})/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match?.[1]) {
+      return normalizeWhitespace(match[1].replace(/\s{2,}/g, " "))
+    }
+  }
+
+  return null
+}
+
+function stripMerchantNoise(input: string) {
+  return input
+    .replace(/\b(?:txn|transaction|ref|id|order|merchant|invoice)\b.*$/i, "")
+    .replace(/\b(?:pvt|ltd|limited|india|services?|private|online|technologies|technolog(?:y|ies)|payments?)\b/gi, " ")
+    .replace(/[*_/.-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function parseMerchantAndProcessor(text: string) {
+  const descriptor = getMerchantDescriptor(text)
+  if (!descriptor) {
+    return {
+      merchantDescriptorRaw: null,
+      merchantNameCandidate: null,
+      processorNameCandidate: null,
+    }
+  }
+
+  const normalized = descriptor.toUpperCase()
+  const processorMap = [
+    { prefix: "PAYPAL", display: "PayPal" },
+    { prefix: "RAZORPAY", display: "Razorpay" },
+    { prefix: "GOOGLE", display: "Google" },
+    { prefix: "AMAZON PAY", display: "Amazon Pay" },
+    { prefix: "APPLE.COM/BILL", display: "Apple" },
+    { prefix: "APPLE", display: "Apple" },
+  ]
+
+  for (const candidate of processorMap) {
+    if (normalized.startsWith(candidate.prefix)) {
+      const rest = stripMerchantNoise(
+        normalized.slice(candidate.prefix.length).replace(/^[:* -]+/, ""),
+      )
+
+      return {
+        merchantDescriptorRaw: descriptor,
+        merchantNameCandidate: rest
+          ? toDisplayName(rest)
+          : candidate.display,
+        processorNameCandidate: candidate.display,
+      }
+    }
+  }
+
+  return {
+    merchantDescriptorRaw: descriptor,
+    merchantNameCandidate: toDisplayName(stripMerchantNoise(descriptor)),
+    processorNameCandidate: null,
+  }
+}
+
+function toDisplayName(input: string | null) {
+  if (!input) {
+    return null
+  }
+
+  return input
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
+    .join(" ")
+}
+
 function inferMerchantHint(document: NormalizedExtractionDocument) {
-  return extractSenderName(document.sender)
+  const combined = getCombinedText(document)
+  const parsed = parseMerchantAndProcessor(combined)
+
+  return parsed.merchantNameCandidate ?? extractSenderName(document.sender)
 }
 
 export async function buildNormalizedExtractionDocument(rawDocument: RawDocumentSelect) {
@@ -251,6 +341,7 @@ export function runDeterministicExtraction(
   const amount = parseCurrencyAndAmount(combined)
   const senderName = extractSenderName(document.sender)
   const paymentInstrumentHint = inferPaymentInstrumentHint(combined)
+  const roleHints = parseMerchantAndProcessor(combined)
   const eventDate = document.messageTimestamp.slice(0, 10)
 
   if (/\b(salary credited|salary for|payroll|stipend|payout)\b/i.test(lowered)) {
@@ -263,6 +354,12 @@ export function runDeterministicExtraction(
           amountMinor: amount.amountMinor,
           currency: amount.currency ?? "INR",
           eventDate,
+          issuerNameHint: senderName,
+          instrumentLast4Hint: paymentInstrumentHint,
+          merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
+          merchantNameCandidate: roleHints.merchantNameCandidate,
+          processorNameCandidate: roleHints.processorNameCandidate,
+          channelHint: "bank_transfer",
           merchantRaw: senderName,
           merchantHint: senderName,
           paymentInstrumentHint,
@@ -287,6 +384,12 @@ export function runDeterministicExtraction(
           amountMinor: amount.amountMinor,
           currency: amount.currency ?? "INR",
           eventDate,
+          issuerNameHint: senderName,
+          instrumentLast4Hint: paymentInstrumentHint,
+          merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
+          merchantNameCandidate: roleHints.merchantNameCandidate,
+          processorNameCandidate: roleHints.processorNameCandidate,
+          channelHint: "card",
           merchantRaw: senderName,
           merchantHint: senderName,
           paymentInstrumentHint,
@@ -317,8 +420,14 @@ export function runDeterministicExtraction(
           amountMinor: amount.amountMinor,
           currency: amount.currency ?? "INR",
           eventDate,
-          merchantRaw: senderName,
-          merchantHint: senderName,
+          issuerNameHint: senderName,
+          instrumentLast4Hint: paymentInstrumentHint,
+          merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
+          merchantNameCandidate: roleHints.merchantNameCandidate,
+          processorNameCandidate: roleHints.processorNameCandidate,
+          channelHint: "card",
+          merchantRaw: roleHints.merchantDescriptorRaw ?? senderName,
+          merchantHint: roleHints.merchantNameCandidate ?? senderName,
           paymentInstrumentHint,
           categoryHint: isIncome ? "income" : null,
           isRecurringHint: false,
@@ -341,7 +450,13 @@ export function runDeterministicExtraction(
           amountMinor: amount.amountMinor,
           currency: amount.currency ?? "INR",
           eventDate,
-          merchantRaw: senderName,
+          issuerNameHint: senderName,
+          instrumentLast4Hint: paymentInstrumentHint,
+          merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
+          merchantNameCandidate: roleHints.merchantNameCandidate,
+          processorNameCandidate: roleHints.processorNameCandidate,
+          channelHint: "card",
+          merchantRaw: roleHints.merchantDescriptorRaw ?? senderName,
           merchantHint: inferMerchantHint(document),
           paymentInstrumentHint,
           categoryHint: null,

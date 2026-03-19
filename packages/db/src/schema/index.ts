@@ -39,6 +39,42 @@ export {
   type ModelRunTaskType,
 } from "./extraction"
 export {
+  financialEventValuations,
+  fxRatesDaily,
+  type FinancialEventValuationInsert,
+  type FinancialEventValuationKind,
+  type FinancialEventValuationSelect,
+  type FxRateDailyInsert,
+  type FxRateDailySelect,
+  type FxRateProvider,
+} from "./fx"
+export {
+  financialInstitutionAliases,
+  financialInstitutions,
+  paymentInstrumentObservations,
+  type FinancialInstitutionAliasInsert,
+  type FinancialInstitutionAliasSelect,
+  type FinancialInstitutionInsert,
+  type FinancialInstitutionSelect,
+  type ObservationResolutionStatus,
+  type ObservationSourceKind,
+  type PaymentInstrumentObservationInsert,
+  type PaymentInstrumentObservationSelect,
+} from "./instrument-resolution"
+export {
+  merchantObservations,
+  paymentProcessorAliases,
+  paymentProcessors,
+  type MerchantObservationInsert,
+  type MerchantObservationSelect,
+  type MerchantObservationSourceKind,
+  type PaymentProcessorAliasInsert,
+  type PaymentProcessorAliasSelect,
+  type PaymentProcessorInsert,
+  type PaymentProcessorSelect,
+  type PaymentProcessorAliasResolutionStatus,
+} from "./merchant-resolution"
+export {
   categories,
   financialEvents,
   financialEventSources,
@@ -70,10 +106,38 @@ export {
   type ReviewQueueItemStatus,
   type ReviewQueueItemType,
 } from "./ledger"
+export {
+  emiPlans,
+  incomeStreams,
+  recurringObligations,
+  type EmiPlanInsert,
+  type EmiPlanSelect,
+  type EmiPlanStatus,
+  type IncomeStreamInsert,
+  type IncomeStreamSelect,
+  type IncomeStreamStatus,
+  type IncomeStreamType,
+  type RecurringCadence,
+  type RecurringObligationInsert,
+  type RecurringObligationSelect,
+  type RecurringObligationStatus,
+  type RecurringObligationType,
+} from "./recurring"
 
 import { authSchema } from "./auth"
 import { jobRuns, userSettings } from "./app"
 import { extractedSignals, modelRuns } from "./extraction"
+import { financialEventValuations, fxRatesDaily } from "./fx"
+import {
+  financialInstitutionAliases,
+  financialInstitutions,
+  paymentInstrumentObservations,
+} from "./instrument-resolution"
+import {
+  merchantObservations,
+  paymentProcessorAliases,
+  paymentProcessors,
+} from "./merchant-resolution"
 import {
   categories,
   financialEvents,
@@ -83,6 +147,7 @@ import {
   paymentInstruments,
   reviewQueueItems,
 } from "./ledger"
+import { emiPlans, incomeStreams, recurringObligations } from "./recurring"
 import {
   documentAttachments,
   emailSyncCursors,
@@ -100,6 +165,14 @@ export const schema = {
   documentAttachments,
   modelRuns,
   extractedSignals,
+  fxRatesDaily,
+  financialEventValuations,
+  financialInstitutions,
+  financialInstitutionAliases,
+  paymentInstrumentObservations,
+  paymentProcessors,
+  paymentProcessorAliases,
+  merchantObservations,
   merchants,
   merchantAliases,
   paymentInstruments,
@@ -107,4 +180,7 @@ export const schema = {
   financialEvents,
   financialEventSources,
   reviewQueueItems,
+  recurringObligations,
+  emiPlans,
+  incomeStreams,
 }

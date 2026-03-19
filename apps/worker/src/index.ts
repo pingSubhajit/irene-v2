@@ -18,7 +18,9 @@ import {
   getEmailSyncCursorById,
   getOauthConnectionById,
   getRawDocumentById,
+  getUserSettings,
   hasExtractedSignalsForRawDocument,
+  listUserIdsForInstrumentRepair,
   updateEmailSyncCursor,
   updateJobRun,
   updateModelRun,
@@ -46,11 +48,23 @@ import {
   DOCUMENT_EXTRACT_STRUCTURED_JOB_NAME,
   DOCUMENT_NORMALIZATION_QUEUE_NAME,
   DOCUMENT_NORMALIZE_JOB_NAME,
+  ENTITY_RESOLUTION_QUEUE_NAME,
   EMAIL_SYNC_QUEUE_NAME,
+  EVENT_EXTRACT_INSTRUMENT_OBSERVATION_JOB_NAME,
+  EVENT_EXTRACT_MERCHANT_OBSERVATION_JOB_NAME,
   GMAIL_BACKFILL_PAGE_JOB_NAME,
   GMAIL_BACKFILL_START_JOB_NAME,
   GMAIL_INCREMENTAL_POLL_JOB_NAME,
   GMAIL_MESSAGE_INGEST_JOB_NAME,
+  FX_EVENT_REFRESH_JOB_NAME,
+  FX_QUEUE_NAME,
+  FX_RATE_WARM_JOB_NAME,
+  FX_USER_BACKFILL_JOB_NAME,
+  INSTRUMENT_REPAIR_BACKFILL_JOB_NAME,
+  INSTRUMENT_RESOLVE_JOB_NAME,
+  MERCHANT_REPAIR_BACKFILL_JOB_NAME,
+  MERCHANT_RESOLUTION_QUEUE_NAME,
+  MERCHANT_RESOLVE_JOB_NAME,
   RECONCILIATION_QUEUE_NAME,
   QUEUE_PREFIX,
   SIGNAL_RECONCILE_JOB_NAME,
@@ -61,17 +75,47 @@ import {
   documentExtractRouteJobPayloadSchema,
   documentExtractStructuredJobPayloadSchema,
   documentNormalizeJobPayloadSchema,
+  enqueueEventExtractInstrumentObservation,
+  enqueueEventExtractMerchantObservation,
   enqueueDocumentExtractRoute,
   enqueueDocumentExtractStructured,
   enqueueDocumentNormalize,
   enqueueGmailBackfillPage,
   enqueueGmailMessageIngest,
+  enqueueFxEventRefresh,
+  enqueueIncomeStreamDetection,
+  enqueueEventResolveCategory,
+  enqueueInstrumentRepairBackfill,
+  enqueueInstrumentResolve,
+  enqueueMerchantRepairBackfill,
+  enqueueMerchantResolve,
+  enqueueRecurringObligationDetection,
   enqueueSignalReconcile,
+  eventExtractMerchantObservationJobPayloadSchema,
+  eventResolveCategoryJobPayloadSchema,
+  eventExtractInstrumentObservationJobPayloadSchema,
+  fxEventRefreshJobPayloadSchema,
+  fxRateWarmJobPayloadSchema,
+  fxUserBackfillJobPayloadSchema,
   gmailBackfillPageJobPayloadSchema,
   gmailBackfillStartJobPayloadSchema,
   gmailIncrementalPollJobPayloadSchema,
   gmailMessageIngestJobPayloadSchema,
+  incomeStreamDetectionJobPayloadSchema,
+  incomeStreamRefreshJobPayloadSchema,
+  instrumentRepairBackfillJobPayloadSchema,
+  instrumentResolveJobPayloadSchema,
+  merchantRepairBackfillJobPayloadSchema,
+  merchantResolveJobPayloadSchema,
+  EVENT_DETECT_INCOME_STREAM_JOB_NAME,
+  EVENT_DETECT_RECURRING_OBLIGATION_JOB_NAME,
+  EVENT_RESOLVE_CATEGORY_JOB_NAME,
+  INCOME_STREAM_REFRESH_JOB_NAME,
+  obligationRefreshJobPayloadSchema,
+  OBLIGATION_REFRESH_JOB_NAME,
+  RECURRING_DETECTION_QUEUE_NAME,
   reconciliationJobPayloadSchema,
+  recurringObligationDetectionJobPayloadSchema,
   systemHealthcheckJobPayloadSchema,
 } from "@workspace/workflows"
 
@@ -80,6 +124,29 @@ import {
   runDeterministicExtraction,
   type WorkerExtractedSignal,
 } from "./extraction"
+import {
+  backfillFinancialEventValuationsForUser,
+  refreshFinancialEventValuation,
+  warmRecentFxRates,
+} from "./fx"
+import {
+  extractInstrumentObservationsFromEvent,
+  resolveInstrumentCluster,
+  runInstrumentRepairBackfill,
+} from "./instrument-resolution"
+import {
+  extractMerchantObservationsFromEvent,
+  listUsersForMerchantRepair,
+  resolveEventCategory,
+  resolveMerchantCluster,
+  runMerchantRepairBackfill,
+} from "./merchant-resolution"
+import {
+  detectIncomeStreamFromEvent,
+  detectRecurringObligationFromEvent,
+  refreshIncomeStream,
+  refreshRecurringObligation,
+} from "./recurring"
 import { reconcileExtractedSignal } from "./reconciliation"
 
 const logger = createLogger("worker")
@@ -185,7 +252,7 @@ async function enqueueTrackedMessageIngest(input: {
   relevanceScore: number
   relevanceReasons: string[]
 }) {
-  const jobKey = `${GMAIL_MESSAGE_INGEST_JOB_NAME}:${input.oauthConnectionId}:${input.providerMessageId}`
+  const jobKey = `${GMAIL_MESSAGE_INGEST_JOB_NAME}:${input.oauthConnectionId}:${input.correlationId}:${input.providerMessageId}`
   const jobRun = await ensureJobRun({
     queueName: EMAIL_SYNC_QUEUE_NAME,
     jobName: GMAIL_MESSAGE_INGEST_JOB_NAME,
@@ -379,6 +446,301 @@ async function enqueueTrackedDocumentExtractStructured(input: {
   })
 }
 
+async function enqueueTrackedRecurringObligationDetection(input: {
+  userId: string
+  financialEventId: string
+  correlationId: string
+}) {
+  const jobKey = `${EVENT_DETECT_RECURRING_OBLIGATION_JOB_NAME}:${input.financialEventId}`
+  const jobRun = await ensureJobRun({
+    queueName: RECURRING_DETECTION_QUEUE_NAME,
+    jobName: EVENT_DETECT_RECURRING_OBLIGATION_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      source: "worker",
+    },
+  })
+
+  await enqueueRecurringObligationDetection({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    financialEventId: input.financialEventId,
+    source: "worker",
+  })
+}
+
+async function enqueueTrackedFxEventRefresh(input: {
+  userId: string
+  financialEventId: string
+  targetCurrency: string
+  correlationId: string
+}) {
+  const jobKey = `${FX_EVENT_REFRESH_JOB_NAME}:${input.financialEventId}:${input.targetCurrency}`
+  const jobRun = await ensureJobRun({
+    queueName: FX_QUEUE_NAME,
+    jobName: FX_EVENT_REFRESH_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      targetCurrency: input.targetCurrency,
+    },
+  })
+
+  await enqueueFxEventRefresh({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    financialEventId: input.financialEventId,
+    targetCurrency: input.targetCurrency,
+  })
+}
+
+async function enqueueTrackedIncomeStreamDetection(input: {
+  userId: string
+  financialEventId: string
+  correlationId: string
+}) {
+  const jobKey = `${EVENT_DETECT_INCOME_STREAM_JOB_NAME}:${input.financialEventId}`
+  const jobRun = await ensureJobRun({
+    queueName: RECURRING_DETECTION_QUEUE_NAME,
+    jobName: EVENT_DETECT_INCOME_STREAM_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      source: "worker",
+    },
+  })
+
+  await enqueueIncomeStreamDetection({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    financialEventId: input.financialEventId,
+    source: "worker",
+  })
+}
+
+async function enqueueTrackedInstrumentObservationExtraction(input: {
+  userId: string
+  financialEventId: string
+  correlationId: string
+  source: "worker" | "web" | "startup"
+}) {
+  const jobKey = `${EVENT_EXTRACT_INSTRUMENT_OBSERVATION_JOB_NAME}:${input.financialEventId}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: ENTITY_RESOLUTION_QUEUE_NAME,
+    jobName: EVENT_EXTRACT_INSTRUMENT_OBSERVATION_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      source: input.source,
+    },
+  })
+
+  await enqueueEventExtractInstrumentObservation({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    financialEventId: input.financialEventId,
+    source: input.source,
+  })
+}
+
+async function enqueueTrackedInstrumentResolve(input: {
+  userId: string
+  maskedIdentifier: string
+  correlationId: string
+  source: "worker" | "web" | "startup"
+}) {
+  const jobKey = `${INSTRUMENT_RESOLVE_JOB_NAME}:${input.userId}:${input.maskedIdentifier}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: ENTITY_RESOLUTION_QUEUE_NAME,
+    jobName: INSTRUMENT_RESOLVE_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      maskedIdentifier: input.maskedIdentifier,
+      source: input.source,
+    },
+  })
+
+  await enqueueInstrumentResolve({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    maskedIdentifier: input.maskedIdentifier,
+    source: input.source,
+  })
+}
+
+async function enqueueTrackedInstrumentRepairBackfill(input: {
+  userId: string
+  correlationId: string
+  source: "worker" | "web" | "startup"
+}) {
+  const jobKey = `${INSTRUMENT_REPAIR_BACKFILL_JOB_NAME}:${input.userId}:v1`
+  const jobRun = await ensureJobRun({
+    queueName: ENTITY_RESOLUTION_QUEUE_NAME,
+    jobName: INSTRUMENT_REPAIR_BACKFILL_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      source: input.source,
+    },
+  })
+
+  await enqueueInstrumentRepairBackfill({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    source: input.source,
+  })
+}
+
+async function enqueueTrackedMerchantObservationExtraction(input: {
+  userId: string
+  financialEventId: string
+  correlationId: string
+  source: "worker" | "web" | "startup"
+}) {
+  const jobKey = `${EVENT_EXTRACT_MERCHANT_OBSERVATION_JOB_NAME}:${input.financialEventId}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: MERCHANT_RESOLUTION_QUEUE_NAME,
+    jobName: EVENT_EXTRACT_MERCHANT_OBSERVATION_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      source: input.source,
+    },
+  })
+
+  await enqueueEventExtractMerchantObservation({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    financialEventId: input.financialEventId,
+    source: input.source,
+  })
+}
+
+async function enqueueTrackedMerchantResolve(input: {
+  userId: string
+  financialEventId: string
+  observationClusterKey: string
+  correlationId: string
+  source: "worker" | "web" | "startup"
+}) {
+  const jobKey = `${MERCHANT_RESOLVE_JOB_NAME}:${input.userId}:${input.financialEventId}:${input.observationClusterKey}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: MERCHANT_RESOLUTION_QUEUE_NAME,
+    jobName: MERCHANT_RESOLVE_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      observationClusterKey: input.observationClusterKey,
+      source: input.source,
+    },
+  })
+
+  await enqueueMerchantResolve({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    financialEventId: input.financialEventId,
+    observationClusterKey: input.observationClusterKey,
+    source: input.source,
+  })
+}
+
+async function enqueueTrackedMerchantRepairBackfill(input: {
+  userId: string
+  correlationId: string
+  source: "worker" | "web" | "startup"
+}) {
+  const jobKey = `${MERCHANT_REPAIR_BACKFILL_JOB_NAME}:${input.userId}:v1`
+  const jobRun = await ensureJobRun({
+    queueName: MERCHANT_RESOLUTION_QUEUE_NAME,
+    jobName: MERCHANT_REPAIR_BACKFILL_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      source: input.source,
+    },
+  })
+
+  await enqueueMerchantRepairBackfill({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    source: input.source,
+  })
+}
+
+async function enqueueTrackedCategoryResolve(input: {
+  userId: string
+  financialEventId: string
+  correlationId: string
+  source: "worker" | "web" | "startup"
+}) {
+  const jobKey = `${EVENT_RESOLVE_CATEGORY_JOB_NAME}:${input.financialEventId}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: MERCHANT_RESOLUTION_QUEUE_NAME,
+    jobName: EVENT_RESOLVE_CATEGORY_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      source: input.source,
+    },
+  })
+
+  await enqueueEventResolveCategory({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    financialEventId: input.financialEventId,
+    source: input.source,
+  })
+}
+
 async function enqueueTrackedSignalReconcile(input: {
   userId: string
   extractedSignalId: string
@@ -444,6 +806,12 @@ async function persistExtractedSignals(input: {
       eventDate: signal.eventDate ?? null,
       merchantRaw: signal.merchantRaw ?? null,
       merchantHint: signal.merchantHint ?? null,
+      issuerNameHint: signal.issuerNameHint ?? null,
+      instrumentLast4Hint: signal.instrumentLast4Hint ?? null,
+      merchantDescriptorRaw: signal.merchantDescriptorRaw ?? null,
+      merchantNameCandidate: signal.merchantNameCandidate ?? null,
+      processorNameCandidate: signal.processorNameCandidate ?? null,
+      channelHint: signal.channelHint ?? null,
       paymentInstrumentHint: signal.paymentInstrumentHint ?? null,
       categoryHint: signal.categoryHint ?? null,
       isRecurringHint: signal.isRecurringHint,
@@ -1203,6 +1571,12 @@ async function handleDocumentExtractStructured(job: Job) {
             eventDate: signal.eventDate ?? null,
             merchantRaw: signal.merchantRaw ?? null,
             merchantHint: signal.merchantHint ?? null,
+            issuerNameHint: signal.issuerNameHint ?? null,
+            instrumentLast4Hint: signal.instrumentLast4Hint ?? null,
+            merchantDescriptorRaw: signal.merchantDescriptorRaw ?? null,
+            merchantNameCandidate: signal.merchantNameCandidate ?? null,
+            processorNameCandidate: signal.processorNameCandidate ?? null,
+            channelHint: signal.channelHint ?? null,
             paymentInstrumentHint: signal.paymentInstrumentHint ?? null,
             categoryHint: signal.categoryHint ?? null,
             isRecurringHint: signal.isRecurringHint,
@@ -1220,6 +1594,12 @@ async function handleDocumentExtractStructured(job: Job) {
               eventDate: rawDocument.messageTimestamp.toISOString().slice(0, 10),
               merchantRaw: rawDocument.fromAddress,
               merchantHint: rawDocument.fromAddress,
+              issuerNameHint: null,
+              instrumentLast4Hint: null,
+              merchantDescriptorRaw: null,
+              merchantNameCandidate: null,
+              processorNameCandidate: null,
+              channelHint: null,
               paymentInstrumentHint: null,
               categoryHint: null,
               isRecurringHint: false,
@@ -1273,8 +1653,253 @@ async function handleSignalReconcile(job: Job) {
     rawDocumentId: payload.rawDocumentId,
   })
 
+  if (
+    (outcome.action === "created" || outcome.action === "merged") &&
+    "financialEventId" in outcome &&
+    outcome.financialEventId
+  ) {
+    const settings = await getUserSettings(payload.userId)
+
+    await Promise.all([
+      enqueueTrackedFxEventRefresh({
+        userId: payload.userId,
+        financialEventId: outcome.financialEventId,
+        targetCurrency: settings.reportingCurrency,
+        correlationId: payload.correlationId,
+      }),
+      enqueueTrackedRecurringObligationDetection({
+        userId: payload.userId,
+        financialEventId: outcome.financialEventId,
+        correlationId: payload.correlationId,
+      }),
+      enqueueTrackedIncomeStreamDetection({
+        userId: payload.userId,
+        financialEventId: outcome.financialEventId,
+        correlationId: payload.correlationId,
+      }),
+      enqueueTrackedInstrumentObservationExtraction({
+        userId: payload.userId,
+        financialEventId: outcome.financialEventId,
+        correlationId: payload.correlationId,
+        source: "worker",
+      }),
+      enqueueTrackedMerchantObservationExtraction({
+        userId: payload.userId,
+        financialEventId: outcome.financialEventId,
+        correlationId: payload.correlationId,
+        source: "worker",
+      }),
+    ])
+  }
+
   await markJobSucceeded(job, payload, outcome)
 
+  return outcome
+}
+
+async function handleEventExtractInstrumentObservation(job: Job) {
+  const payload = eventExtractInstrumentObservationJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await extractInstrumentObservationsFromEvent(payload.financialEventId)
+
+  if (outcome.action === "observed") {
+    await Promise.all(
+      (outcome.maskedIdentifiers ?? []).map((maskedIdentifier) =>
+        enqueueTrackedInstrumentResolve({
+          userId: payload.userId,
+          maskedIdentifier,
+          correlationId: `${payload.correlationId}:${maskedIdentifier}`,
+          source: "worker",
+        }),
+      ),
+    )
+  }
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleInstrumentResolve(job: Job) {
+  const payload = instrumentResolveJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await resolveInstrumentCluster({
+    userId: payload.userId,
+    maskedIdentifier: payload.maskedIdentifier,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleInstrumentRepairBackfill(job: Job) {
+  const payload = instrumentRepairBackfillJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await runInstrumentRepairBackfill(payload.userId)
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleEventExtractMerchantObservation(job: Job) {
+  const payload = eventExtractMerchantObservationJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await extractMerchantObservationsFromEvent(payload.financialEventId)
+
+  if (outcome.action === "observed") {
+    await Promise.all(
+      (outcome.clusterKeys ?? []).map((observationClusterKey) =>
+        enqueueTrackedMerchantResolve({
+          userId: payload.userId,
+          financialEventId: payload.financialEventId,
+          observationClusterKey,
+          correlationId: `${payload.correlationId}:${observationClusterKey}`,
+          source: "worker",
+        }),
+      ),
+    )
+  }
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleMerchantResolve(job: Job) {
+  const payload = merchantResolveJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await resolveMerchantCluster({
+    userId: payload.userId,
+    financialEventId: payload.financialEventId,
+    observationClusterKey: payload.observationClusterKey,
+  })
+
+  if (
+    (outcome.action === "linked" ||
+      outcome.action === "created" ||
+      outcome.action === "updated" ||
+      outcome.action === "merged") &&
+    !outcome.categoryId
+  ) {
+    await enqueueTrackedCategoryResolve({
+      userId: payload.userId,
+      financialEventId: payload.financialEventId,
+      correlationId: payload.correlationId,
+      source: "worker",
+    })
+  }
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleMerchantRepairBackfill(job: Job) {
+  const payload = merchantRepairBackfillJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await runMerchantRepairBackfill(payload.userId)
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleEventResolveCategory(job: Job) {
+  const payload = eventResolveCategoryJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await resolveEventCategory({
+    userId: payload.userId,
+    financialEventId: payload.financialEventId,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleRecurringObligationDetection(job: Job) {
+  const payload = recurringObligationDetectionJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await detectRecurringObligationFromEvent(payload.financialEventId)
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleIncomeStreamDetection(job: Job) {
+  const payload = incomeStreamDetectionJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await detectIncomeStreamFromEvent(payload.financialEventId)
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleObligationRefresh(job: Job) {
+  const payload = obligationRefreshJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await refreshRecurringObligation(payload.recurringObligationId)
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleIncomeStreamRefresh(job: Job) {
+  const payload = incomeStreamRefreshJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await refreshIncomeStream(payload.incomeStreamId)
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleFxEventRefresh(job: Job) {
+  const payload = fxEventRefreshJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const valuation = await refreshFinancialEventValuation({
+    financialEventId: payload.financialEventId,
+    targetCurrency: payload.targetCurrency,
+  })
+  const outcome = {
+    financialEventId: payload.financialEventId,
+    targetCurrency: payload.targetCurrency,
+    valuationId: valuation.id,
+    valuationKind: valuation.valuationKind,
+  }
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleFxUserBackfill(job: Job) {
+  const payload = fxUserBackfillJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await backfillFinancialEventValuationsForUser({
+    userId: payload.userId,
+    targetCurrency: payload.targetCurrency,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleFxRateWarm(job: Job) {
+  const payload = fxRateWarmJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await warmRecentFxRates({
+    lookbackDays: payload.lookbackDays,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
   return outcome
 }
 
@@ -1334,6 +1959,30 @@ const emailSyncWorker = new Worker(
   },
 )
 
+const fxWorker = new Worker(
+  FX_QUEUE_NAME,
+  async (job) => {
+    if (job.name === FX_EVENT_REFRESH_JOB_NAME) {
+      return handleFxEventRefresh(job)
+    }
+
+    if (job.name === FX_USER_BACKFILL_JOB_NAME) {
+      return handleFxUserBackfill(job)
+    }
+
+    if (job.name === FX_RATE_WARM_JOB_NAME) {
+      return handleFxRateWarm(job)
+    }
+
+    throw new Error(`Unsupported job: ${job.name}`)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 2,
+  },
+)
+
 const documentNormalizationWorker = new Worker(
   DOCUMENT_NORMALIZATION_QUEUE_NAME,
   async (job) => {
@@ -1386,13 +2035,97 @@ const reconciliationWorker = new Worker(
   },
 )
 
+const recurringDetectionWorker = new Worker(
+  RECURRING_DETECTION_QUEUE_NAME,
+  async (job) => {
+    if (job.name === EVENT_DETECT_RECURRING_OBLIGATION_JOB_NAME) {
+      return handleRecurringObligationDetection(job)
+    }
+
+    if (job.name === EVENT_DETECT_INCOME_STREAM_JOB_NAME) {
+      return handleIncomeStreamDetection(job)
+    }
+
+    if (job.name === OBLIGATION_REFRESH_JOB_NAME) {
+      return handleObligationRefresh(job)
+    }
+
+    if (job.name === INCOME_STREAM_REFRESH_JOB_NAME) {
+      return handleIncomeStreamRefresh(job)
+    }
+
+    throw new Error(`Unsupported job: ${job.name}`)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 3,
+  },
+)
+
+const entityResolutionWorker = new Worker(
+  ENTITY_RESOLUTION_QUEUE_NAME,
+  async (job) => {
+    if (job.name === EVENT_EXTRACT_INSTRUMENT_OBSERVATION_JOB_NAME) {
+      return handleEventExtractInstrumentObservation(job)
+    }
+
+    if (job.name === INSTRUMENT_RESOLVE_JOB_NAME) {
+      return handleInstrumentResolve(job)
+    }
+
+    if (job.name === INSTRUMENT_REPAIR_BACKFILL_JOB_NAME) {
+      return handleInstrumentRepairBackfill(job)
+    }
+
+    throw new Error(`Unsupported job: ${job.name}`)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 2,
+  },
+)
+
+const merchantResolutionWorker = new Worker(
+  MERCHANT_RESOLUTION_QUEUE_NAME,
+  async (job) => {
+    if (job.name === EVENT_EXTRACT_MERCHANT_OBSERVATION_JOB_NAME) {
+      return handleEventExtractMerchantObservation(job)
+    }
+
+    if (job.name === MERCHANT_RESOLVE_JOB_NAME) {
+      return handleMerchantResolve(job)
+    }
+
+    if (job.name === MERCHANT_REPAIR_BACKFILL_JOB_NAME) {
+      return handleMerchantRepairBackfill(job)
+    }
+
+    if (job.name === EVENT_RESOLVE_CATEGORY_JOB_NAME) {
+      return handleEventResolveCategory(job)
+    }
+
+    throw new Error(`Unsupported job: ${job.name}`)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 2,
+  },
+)
+
 for (const [queueName, worker] of [
   [SYSTEM_QUEUE_NAME, systemWorker],
   [BACKFILL_IMPORT_QUEUE_NAME, backfillWorker],
   [EMAIL_SYNC_QUEUE_NAME, emailSyncWorker],
+  [FX_QUEUE_NAME, fxWorker],
   [DOCUMENT_NORMALIZATION_QUEUE_NAME, documentNormalizationWorker],
   [AI_EXTRACTION_QUEUE_NAME, aiExtractionWorker],
   [RECONCILIATION_QUEUE_NAME, reconciliationWorker],
+  [RECURRING_DETECTION_QUEUE_NAME, recurringDetectionWorker],
+  [ENTITY_RESOLUTION_QUEUE_NAME, entityResolutionWorker],
+  [MERCHANT_RESOLUTION_QUEUE_NAME, merchantResolutionWorker],
 ] as const) {
   worker.on("ready", () => {
     logger.info("Worker ready", { queueName })
@@ -1435,13 +2168,46 @@ async function shutdown(signal: string) {
     systemWorker.close(),
     backfillWorker.close(),
     emailSyncWorker.close(),
+    fxWorker.close(),
     documentNormalizationWorker.close(),
     aiExtractionWorker.close(),
     reconciliationWorker.close(),
+    recurringDetectionWorker.close(),
+    entityResolutionWorker.close(),
+    merchantResolutionWorker.close(),
   ])
   await closeWorkflowConnections()
   await closeDatabase()
 }
+
+void (async () => {
+  const [instrumentUserIds, merchantUserIds] = await Promise.all([
+    listUserIdsForInstrumentRepair(),
+    listUsersForMerchantRepair(),
+  ])
+
+  await Promise.all(
+    instrumentUserIds.map((userId) =>
+      enqueueTrackedInstrumentRepairBackfill({
+        userId,
+        correlationId: `startup:${userId}`,
+        source: "startup",
+      }),
+    ),
+  )
+
+  await Promise.all(
+    merchantUserIds.map((userId) =>
+      enqueueTrackedMerchantRepairBackfill({
+        userId,
+        correlationId: `startup:${userId}`,
+        source: "startup",
+      }),
+    ),
+  )
+})().catch((error) => {
+  logger.errorWithCause("Failed to schedule startup repair backfills", error)
+})
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {

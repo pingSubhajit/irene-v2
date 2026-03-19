@@ -1,13 +1,20 @@
 import {
+  countIncomeStreams,
   countOpenReviewQueueItemsForUser,
+  countRecurringObligationsByType,
+  listDashboardLedgerEventsForUser,
   listFinancialEventSourcesForEventIds,
+  listIncomeStreamsForUser,
   listLedgerEventsForUser,
+  listRecurringObligationsForUser,
 } from "@workspace/db"
 
 import { ActionTile } from "@/components/action-tile"
 import { HeroBalanceCard } from "@/components/hero-balance-card"
+import { RecurringModelCard } from "@/components/recurring-model-card"
 import { SnapshotStatStrip } from "@/components/snapshot-stat-strip"
 import { TransactionCard } from "@/components/transaction-card"
+import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { requireSession } from "@/lib/session"
 
@@ -40,21 +47,58 @@ function formatEventDate(date: Date) {
   }).format(date)
 }
 
+function formatShortDate(date: Date | null) {
+  if (!date) {
+    return "date still unclear"
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+  }).format(date)
+}
+
 export default async function DashboardPage() {
   const session = await requireSession()
   const monthStart = startOfCurrentMonth()
+  const valuationCoverage = await ensureUserFinancialEventValuationCoverage(session.user.id, {
+    dateFrom: monthStart,
+    limit: 240,
+  })
+  const reportingCurrency = valuationCoverage.reportingCurrency
 
-  const [gmailState, openReviewCount, monthEvents, recentEvents] = await Promise.all([
+  const [
+    gmailState,
+    openReviewCount,
+    monthEvents,
+    recentEvents,
+    recurringCounts,
+    incomeStreamCounts,
+    recurringObligations,
+    incomeStreams,
+  ] = await Promise.all([
     getGmailIntegrationState(session.user.id),
     countOpenReviewQueueItemsForUser(session.user.id),
-    listLedgerEventsForUser({
+    listDashboardLedgerEventsForUser({
       userId: session.user.id,
+      targetCurrency: reportingCurrency,
       dateFrom: monthStart,
       limit: 240,
     }),
     listLedgerEventsForUser({
       userId: session.user.id,
       limit: 6,
+    }),
+    countRecurringObligationsByType(session.user.id),
+    countIncomeStreams(session.user.id),
+    listRecurringObligationsForUser({
+      userId: session.user.id,
+      status: "active",
+      limit: 4,
+    }),
+    listIncomeStreamsForUser({
+      userId: session.user.id,
+      limit: 3,
     }),
   ])
 
@@ -71,40 +115,50 @@ export default async function DashboardPage() {
   let monthSpendMinor = 0
   let monthIncomeMinor = 0
   let monthRefundMinor = 0
-  let obligationCount = 0
+  let pendingValuationCount = 0
   const categoryTotals = new Map<string, number>()
-  const dailySpendMap = new Map<number, number>()
+  const dailySpendMap = new Map<
+    number,
+    { amountMinor: number; originalCurrencies: Set<string> }
+  >()
 
-  for (const { event, category } of monthEvents) {
+  for (const { event, category, reportingAmountMinor } of monthEvents) {
+    if (reportingAmountMinor === null) {
+      pendingValuationCount += 1
+      continue
+    }
+
     if (event.direction === "outflow" && !event.isTransfer) {
-      monthSpendMinor += event.amountMinor
+      monthSpendMinor += reportingAmountMinor
       const day = event.eventOccurredAt.getUTCDate()
-      dailySpendMap.set(day, (dailySpendMap.get(day) ?? 0) + event.amountMinor)
+      const dailySpend = dailySpendMap.get(day) ?? {
+        amountMinor: 0,
+        originalCurrencies: new Set<string>(),
+      }
+      dailySpend.amountMinor += reportingAmountMinor
+      dailySpend.originalCurrencies.add(event.currency)
+      dailySpendMap.set(day, dailySpend)
       if (category?.name) {
-        categoryTotals.set(category.name, (categoryTotals.get(category.name) ?? 0) + event.amountMinor)
+        categoryTotals.set(
+          category.name,
+          (categoryTotals.get(category.name) ?? 0) + reportingAmountMinor,
+        )
       }
     }
 
     if (event.direction === "inflow") {
-      monthIncomeMinor += event.amountMinor
+      monthIncomeMinor += reportingAmountMinor
       if (event.eventType === "refund") {
-        monthRefundMinor += event.amountMinor
+        monthRefundMinor += reportingAmountMinor
       }
-    }
-
-    if (
-      event.eventType === "subscription_charge" ||
-      event.eventType === "emi_payment" ||
-      event.eventType === "bill_payment"
-    ) {
-      obligationCount += 1
     }
   }
 
   const todayDate = new Date().getUTCDate()
   const dailySpend = Array.from({ length: todayDate }, (_, i) => ({
     day: i + 1,
-    amount: (dailySpendMap.get(i + 1) ?? 0) / 100,
+    amount: (dailySpendMap.get(i + 1)?.amountMinor ?? 0) / 100,
+    originalCurrencies: Array.from(dailySpendMap.get(i + 1)?.originalCurrencies ?? []),
   }))
 
   const netFlowMinor = monthIncomeMinor - monthSpendMinor
@@ -151,12 +205,18 @@ export default async function DashboardPage() {
           <HeroBalanceCard
             label="Primary snapshot"
             headline="total spend so far"
-            amount={formatCurrency(monthSpendMinor)}
-            income={formatCurrency(monthIncomeMinor)}
-            netFlow={formatCurrency(netFlowMinor)}
+            amount={formatCurrency(monthSpendMinor, reportingCurrency)}
+            amountCaption={
+              pendingValuationCount > 0
+                ? `${pendingValuationCount} transactions are still being normalized to ${reportingCurrency}.`
+                : `Normalized to ${reportingCurrency} using historical FX on the transaction date.`
+            }
+            income={formatCurrency(monthIncomeMinor, reportingCurrency)}
+            netFlow={formatCurrency(netFlowMinor, reportingCurrency)}
             netFlowDirection={netFlowMinor > 0 ? "positive" : netFlowMinor < 0 ? "negative" : "zero"}
-            refunds={formatCurrency(monthRefundMinor)}
+            refunds={formatCurrency(monthRefundMinor, reportingCurrency)}
             dailySpend={dailySpend}
+            reportingCurrency={reportingCurrency}
             actionHref="/activity"
             actionLabel="Open activity"
           />
@@ -165,12 +225,12 @@ export default async function DashboardPage() {
             stats={[
               {
                 label: "Income",
-                value: formatCurrency(monthIncomeMinor),
+                value: formatCurrency(monthIncomeMinor, reportingCurrency),
                 tone: "positive",
               },
               {
                 label: "Net movement",
-                value: formatCurrency(netFlowMinor),
+                value: formatCurrency(netFlowMinor, reportingCurrency),
                 tone: netFlowMinor >= 0 ? "positive" : "default",
               },
               {
@@ -180,7 +240,7 @@ export default async function DashboardPage() {
               },
               {
                 label: "Obligations",
-                value: `${obligationCount} logged`,
+                value: `${recurringCounts.subscriptions + recurringCounts.emis + recurringCounts.bills} active`,
                 tone: "default",
               },
             ]}
@@ -211,6 +271,16 @@ export default async function DashboardPage() {
             }
             badge={gmailState.connection ? "Connected" : "Connect"}
             badgeVariant={gmailState.connection ? "success" : "warning"}
+          />
+          <ActionTile
+            href="/activity?view=subscriptions"
+            eyebrow="Recurring layer"
+            title={`${recurringCounts.subscriptions} subscriptions · ${recurringCounts.emis} EMIs`}
+            description={`${incomeStreamCounts.active} active income streams and ${recurringCounts.suspected + incomeStreamCounts.suspected} suspected patterns are now shaping next-step finance views.`}
+            badge={recurringCounts.suspected + incomeStreamCounts.suspected > 0 ? "Suspected" : "Stable"}
+            badgeVariant={
+              recurringCounts.suspected + incomeStreamCounts.suspected > 0 ? "warning" : "cream"
+            }
           />
           {setupBlocker ? (
             <ActionTile
@@ -247,7 +317,7 @@ export default async function DashboardPage() {
                     <p className="mt-2 text-lg font-semibold text-white">{categoryName}</p>
                   </div>
                   <p className="text-lg font-semibold text-white">
-                    {formatCurrency(amountMinor)}
+                    {formatCurrency(amountMinor, reportingCurrency)}
                   </p>
                 </div>
               ))
@@ -273,6 +343,7 @@ export default async function DashboardPage() {
               recentEvents.map(({ event, merchant, category, paymentInstrument }) => (
                 <TransactionCard
                   key={event.id}
+                  eventId={event.id}
                   merchant={merchant?.displayName ?? event.description ?? "Unmapped event"}
                   amount={formatCurrency(event.amountMinor, event.currency)}
                   dateLabel={formatEventDate(event.eventOccurredAt)}
@@ -281,16 +352,93 @@ export default async function DashboardPage() {
                   eventType={event.eventType}
                   needsReview={event.needsReview}
                   paymentInstrument={paymentInstrument?.displayName ?? null}
-                  traces={(sourcesByEventId.get(event.id) ?? []).map(({ source, rawDocument, extractedSignal }) => ({
-                    linkReason: source.linkReason,
-                    signalType: extractedSignal?.signalType ?? null,
-                    rawDocumentLabel: rawDocument?.subject ?? rawDocument?.id ?? "source unavailable",
-                  }))}
+                  traceCount={(sourcesByEventId.get(event.id) ?? []).length}
                 />
               ))
             ) : (
               <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-5 text-sm leading-6 text-white/54">
                 No canonical activity yet. Connect Gmail or wait for more ingestion to finish reconciling.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="neo-panel p-5 md:p-6">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="neo-kicker">Recurring rail</p>
+              <h2 className="mt-3 font-display text-[2.1rem] leading-none text-white">
+                obligations ahead
+              </h2>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-4">
+            {recurringObligations.length > 0 ? (
+              recurringObligations.map(({ obligation, merchant }) => (
+                <RecurringModelCard
+                  key={obligation.id}
+                  eyebrow={obligation.obligationType.replace("_", " ")}
+                  title={merchant?.displayName ?? obligation.name}
+                  subtitle={`Tracks the pattern Irene sees around this ${obligation.obligationType}.`}
+                  amount={formatCurrency(obligation.amountMinor ?? 0, obligation.currency ?? "INR")}
+                  cadence={obligation.cadence}
+                  scheduleLabel={
+                    obligation.nextDueAt
+                      ? `next ${formatShortDate(obligation.nextDueAt)}`
+                      : "still estimating"
+                  }
+                  confidenceLabel={`${Math.round(Number(obligation.detectionConfidence) * 100)}%`}
+                  status={obligation.status}
+                />
+              ))
+            ) : (
+              <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-5 text-sm leading-6 text-white/54">
+                As recurring patterns harden, Irene will surface subscriptions, bills, and EMIs here before forecasting begins.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="neo-panel p-5 md:p-6">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="neo-kicker">Income rhythm</p>
+              <h2 className="mt-3 font-display text-[2.1rem] leading-none text-white">
+                expected credits
+              </h2>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-4">
+            {incomeStreams.length > 0 ? (
+              incomeStreams.map(({ incomeStream, merchant }) => (
+                <RecurringModelCard
+                  key={incomeStream.id}
+                  eyebrow={incomeStream.incomeType.replace("_", " ")}
+                  title={merchant?.displayName ?? incomeStream.name}
+                  subtitle="Repeatable inflows Irene now treats as recurring income signals."
+                  amount={formatCurrency(
+                    incomeStream.expectedAmountMinor ?? 0,
+                    incomeStream.currency ?? "INR",
+                  )}
+                  cadence={
+                    incomeStream.expectedDayOfMonth
+                      ? `monthly · day ${incomeStream.expectedDayOfMonth}`
+                      : "pattern building"
+                  }
+                  scheduleLabel={
+                    incomeStream.nextExpectedAt
+                      ? `next ${formatShortDate(incomeStream.nextExpectedAt)}`
+                      : "still estimating"
+                  }
+                  confidenceLabel={`${Math.round(Number(incomeStream.confidence) * 100)}%`}
+                  status={incomeStream.status}
+                />
+              ))
+            ) : (
+              <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-5 text-sm leading-6 text-white/54">
+                Once repeatable credits are stable enough, Irene will show them here as income streams you can trust.
               </div>
             )}
           </div>

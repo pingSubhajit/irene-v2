@@ -8,5 +8,5 @@ export default async function AuthenticatedLayout({
 }>) {
   const session = await requireSession()
 
-  return <AppShell email={session.user.email}>{children}</AppShell>
+  return <AppShell user={session.user}>{children}</AppShell>
 }

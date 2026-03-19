@@ -1,15 +1,16 @@
-import { Badge } from "@workspace/ui/components/badge"
-import { Button } from "@workspace/ui/components/button"
-import { Card } from "@workspace/ui/components/card"
+import Link from "next/link"
 
-type SourceTrace = {
-  linkReason: string
-  signalType: string | null
-  rawDocumentLabel: string
-}
+import {
+  RiArrowLeftDownLine,
+  RiArrowRightUpLine,
+  RiErrorWarningLine,
+  RiSwapLine,
+} from "@remixicon/react"
 
 type TransactionCardProps = {
+  eventId: string
   merchant: string
+  processor?: string | null
   amount: string
   dateLabel: string
   category: string
@@ -17,83 +18,100 @@ type TransactionCardProps = {
   eventType: string
   needsReview: boolean
   paymentInstrument: string | null
-  traces?: SourceTrace[]
+  traceCount?: number
 }
 
-function getBadgeVariant(
-  direction: TransactionCardProps["direction"],
-  needsReview: boolean,
-) {
+function getInitials(name: string) {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.slice(0, 1))
+      .join("")
+      .toUpperCase() || "?"
+  )
+}
+
+function DirectionIcon({
+  direction,
+  needsReview,
+}: {
+  direction: TransactionCardProps["direction"]
+  needsReview: boolean
+}) {
   if (needsReview) {
-    return "warning"
+    return <RiErrorWarningLine className="size-3.5 text-[var(--neo-yellow)]" />
   }
 
   if (direction === "inflow") {
-    return "success"
+    return <RiArrowLeftDownLine className="size-3.5 text-[var(--neo-green)]" />
   }
 
   if (direction === "neutral") {
-    return "violet"
+    return <RiSwapLine className="size-3.5 text-white/36" />
   }
 
-  return "cream"
+  return <RiArrowRightUpLine className="size-3.5 text-[var(--neo-coral)]" />
+}
+
+function formatRowTime(isoString: string) {
+  try {
+    const date = new Date(isoString)
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "numeric",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date)
+  } catch {
+    return isoString
+  }
 }
 
 export function TransactionCard({
+  eventId,
   merchant,
+  processor,
   amount,
   dateLabel,
-  category,
   direction,
-  eventType,
   needsReview,
-  paymentInstrument,
-  traces = [],
+  traceCount = 0,
 }: TransactionCardProps) {
-  return (
-    <Card className="border-white/8 bg-[rgba(18,18,20,0.94)] p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="neo-kicker">{dateLabel}</p>
-          <h2 className="mt-3 text-lg font-semibold tracking-tight text-white">{merchant}</h2>
-          <p className="mt-2 text-sm text-white/54">
-            {category} · {paymentInstrument ?? "unlinked"}
+  const content = (
+    <div className="flex items-center gap-3.5 py-4">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/[0.07] text-xs font-semibold tracking-wide text-white/50">
+        {getInitials(merchant)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-medium text-white">
+          {merchant}
+        </p>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <DirectionIcon direction={direction} needsReview={needsReview} />
+          <p className="truncate text-sm text-white/32">
+            {processor ? `via ${processor} · ` : ""}
+            {formatRowTime(dateLabel)}
           </p>
         </div>
-        <div className="text-right">
-          <Badge variant={getBadgeVariant(direction, needsReview)}>
-            {needsReview ? "Review" : direction}
-          </Badge>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-white">{amount}</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.22em] text-white/34">{eventType}</p>
-        </div>
       </div>
-
-      {traces.length > 0 ? (
-        <details className="mt-5 border-t border-white/8 pt-4">
-          <summary className="cursor-pointer list-none text-sm font-medium text-white/72">
-            Trace this event
-          </summary>
-          <div className="mt-4 grid gap-3">
-            {traces.map((trace) => (
-              <div key={`${trace.linkReason}-${trace.rawDocumentLabel}`} className="border border-white/8 bg-black/20 p-3">
-                <p className="text-xs uppercase tracking-[0.22em] text-white/36">
-                  {trace.linkReason}
-                </p>
-                <p className="mt-2 text-sm text-white/72">
-                  {trace.signalType ?? "signal unavailable"} · {trace.rawDocumentLabel}
-                </p>
-              </div>
-            ))}
-          </div>
-        </details>
-      ) : (
-        <div className="mt-5">
-          <Button variant="ghost" size="sm" disabled>
-            No source detail
-          </Button>
-        </div>
-      )}
-    </Card>
+      <p className="shrink-0 text-[15px] font-semibold tabular-nums text-white">
+        {amount}
+      </p>
+    </div>
   )
+
+  if (traceCount > 0) {
+    return (
+      <Link
+        href={`/activity/${eventId}/trace`}
+        className="block transition hover:bg-white/[0.02]"
+      >
+        {content}
+      </Link>
+    )
+  }
+
+  return content
 }

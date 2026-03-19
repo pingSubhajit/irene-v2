@@ -15,11 +15,13 @@ type HeroBalanceCardProps = {
   label: string
   headline: string
   amount: string
+  amountCaption?: string
   income: string
   netFlow: string
   netFlowDirection: "positive" | "negative" | "zero"
   refunds: string
-  dailySpend: { day: number; amount: number }[]
+  dailySpend: { day: number; amount: number; originalCurrencies: string[] }[]
+  reportingCurrency: string
   actionHref: string
   actionLabel: string
   accent?: "yellow" | "green" | "violet"
@@ -29,11 +31,13 @@ export function HeroBalanceCard({
   label,
   headline,
   amount,
+  amountCaption,
   income,
   netFlow,
   netFlowDirection,
   refunds,
   dailySpend,
+  reportingCurrency,
   actionHref,
   actionLabel,
   accent = "yellow",
@@ -53,9 +57,14 @@ export function HeroBalanceCard({
         <p className="font-display text-[3.4rem] leading-none tracking-tight text-white md:text-[4.2rem]">
           {amount}
         </p>
+        {amountCaption ? (
+          <p className="mt-3 max-w-xl text-xs leading-5 text-white/60">
+            {amountCaption}
+          </p>
+        ) : null}
 
         <div className="mt-5">
-          <DailySpendChart data={dailySpend} />
+          <DailySpendChart data={dailySpend} currency={reportingCurrency} />
         </div>
 
         <div className="mt-5 flex justify-between">

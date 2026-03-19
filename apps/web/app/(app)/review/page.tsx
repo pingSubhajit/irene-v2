@@ -20,6 +20,26 @@ type ReviewPageProps = {
 type ProposedResolution = {
   action?: "create" | "merge"
   matchedEventIds?: string[]
+  matchedRecurringModelIds?: string[]
+  matchedPaymentInstrumentIds?: string[]
+  kind?:
+    | "event"
+    | "recurring_obligation"
+    | "emi_plan"
+    | "income_stream"
+    | "payment_instrument_resolution"
+    | "merchant_resolution"
+    | "category_resolution"
+  recurringType?: "subscription" | "bill" | "emi"
+  incomeType?: "salary" | "freelance" | "reimbursement" | "transfer_in" | "other"
+  canonicalInstitutionName?: string | null
+  canonicalInstrumentType?: string | null
+  canonicalMerchantName?: string | null
+  canonicalProcessorName?: string | null
+  categorySlug?: string | null
+  categoryReason?: string | null
+  matchedMerchantIds?: string[]
+  matchedProcessorIds?: string[]
   eventDraft?: {
     eventType?: string
     amountMinor?: number
@@ -136,8 +156,16 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
         {contexts.length > 0 ? (
           contexts.map((context) => {
             const proposal = (context.item.proposedResolutionJson ?? {}) as ProposedResolution
-            const confidence = Number(context.signal?.confidence ?? 0).toFixed(2)
-            const rawDocumentTitle = context.rawDocument?.subject ?? "Raw document unavailable"
+            const confidence = Number(
+              context.signal?.confidence ??
+                (typeof context.item.proposedResolutionJson?.confidence === "number"
+                  ? context.item.proposedResolutionJson.confidence
+                  : 0),
+            ).toFixed(2)
+            const rawDocumentTitle =
+              context.rawDocument?.subject ??
+              context.event?.description ??
+              "Supporting context unavailable"
             const rawDocumentSubtitle = [
               context.rawDocument?.fromAddress ?? "Unknown sender",
               context.rawDocument?.messageTimestamp
@@ -151,11 +179,40 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
             ]
               .filter(Boolean)
               .join(" · ")
+            const reviewKind = proposal.kind ?? "event"
+            const proposedType =
+              reviewKind === "payment_instrument_resolution"
+                ? `${proposal.canonicalInstitutionName ?? "Unknown issuer"} · ${
+                    proposal.canonicalInstrumentType ?? "unknown"
+                  }`
+                : reviewKind === "merchant_resolution" || reviewKind === "category_resolution"
+                ? [
+                    proposal.canonicalMerchantName ?? "Unknown merchant",
+                    proposal.canonicalProcessorName
+                      ? `via ${proposal.canonicalProcessorName}`
+                      : null,
+                    proposal.categorySlug ?? null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : reviewKind === "income_stream"
+                ? proposal.incomeType ?? "income stream"
+                : reviewKind === "recurring_obligation" || reviewKind === "emi_plan"
+                  ? proposal.recurringType ?? "recurring model"
+                  : proposal.eventDraft?.eventType ?? "generic_finance"
+            const matchedIds =
+              proposal.matchedProcessorIds ??
+              proposal.matchedMerchantIds ??
+              proposal.matchedPaymentInstrumentIds ??
+              proposal.matchedRecurringModelIds ??
+              proposal.matchedEventIds ??
+              []
 
             return (
               <ReviewDecisionCard
                 key={context.item.id}
                 reviewItemId={context.item.id}
+                reviewKind={reviewKind}
                 itemType={context.item.itemType.replaceAll("_", " ")}
                 title={context.item.title}
                 explanation={context.item.explanation}
@@ -165,12 +222,12 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
                 candidateEventType={context.signal?.candidateEventType ?? "untyped"}
                 confidenceLabel={`confidence ${confidence}`}
                 proposedAction={proposal.action ?? "review"}
-                proposedEventType={proposal.eventDraft?.eventType ?? "generic_finance"}
+                proposedType={proposedType}
                 proposedAmount={formatAmount(
                   proposal.eventDraft?.amountMinor,
                   proposal.eventDraft?.currency,
                 )}
-                matchedEventIds={proposal.matchedEventIds ?? []}
+                matchedIds={matchedIds}
                 categories={categories}
               />
             )

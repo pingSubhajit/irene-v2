@@ -20,6 +20,7 @@ import {
   extractedSignals,
   financialEvents,
   financialEventSources,
+  paymentProcessors,
   merchants,
   merchantAliases,
   paymentInstruments,
@@ -41,11 +42,18 @@ const SYSTEM_CATEGORY_DEFINITIONS: Array<{
   kind: CategoryKind
 }> = [
   { slug: "income", name: "Income", kind: "income" },
+  { slug: "salary", name: "Salary", kind: "income" },
   { slug: "shopping", name: "Shopping", kind: "expense" },
   { slug: "food", name: "Food", kind: "expense" },
   { slug: "transport", name: "Transport", kind: "expense" },
   { slug: "subscriptions", name: "Subscriptions", kind: "expense" },
   { slug: "bills", name: "Bills", kind: "expense" },
+  { slug: "gaming", name: "Gaming", kind: "expense" },
+  { slug: "software", name: "Software", kind: "expense" },
+  { slug: "digital_goods", name: "Digital Goods", kind: "expense" },
+  { slug: "entertainment", name: "Entertainment", kind: "expense" },
+  { slug: "travel", name: "Travel", kind: "expense" },
+  { slug: "utilities", name: "Utilities", kind: "expense" },
   { slug: "debt", name: "Debt", kind: "debt" },
   { slug: "transfers", name: "Transfers", kind: "transfer" },
   { slug: "refunds", name: "Refunds", kind: "refund" },
@@ -93,10 +101,17 @@ function inferCategorySlug(signal: ExtractedSignalSelect) {
 
   if (hint) {
     if (hint.includes("income")) return "income"
+    if (hint.includes("salary")) return "salary"
     if (hint.includes("food")) return "food"
     if (hint.includes("transport")) return "transport"
     if (hint.includes("subscription")) return "subscriptions"
     if (hint.includes("bill")) return "bills"
+    if (hint.includes("gaming")) return "gaming"
+    if (hint.includes("software")) return "software"
+    if (hint.includes("digital")) return "digital_goods"
+    if (hint.includes("entertainment")) return "entertainment"
+    if (hint.includes("travel")) return "travel"
+    if (hint.includes("utilities")) return "utilities"
     if (hint.includes("debt")) return "debt"
     if (hint.includes("refund")) return "refunds"
     if (hint.includes("transfer")) return "transfers"
@@ -599,6 +614,39 @@ export async function listRecentReviewQueueItemsForRawDocumentIds(rawDocumentIds
     .orderBy(desc(reviewQueueItems.createdAt))
 }
 
+export async function findOpenReviewQueueItem(input: {
+  userId: string
+  itemType: ReviewQueueItemSelect["itemType"]
+  financialEventId?: string | null
+  rawDocumentId?: string | null
+}) {
+  const conditions = [
+    eq(reviewQueueItems.userId, input.userId),
+    eq(reviewQueueItems.itemType, input.itemType),
+    eq(reviewQueueItems.status, "open"),
+  ]
+
+  if (input.financialEventId || input.rawDocumentId) {
+    conditions.push(
+      or(
+        input.financialEventId
+          ? eq(reviewQueueItems.financialEventId, input.financialEventId)
+          : undefined,
+        input.rawDocumentId ? eq(reviewQueueItems.rawDocumentId, input.rawDocumentId) : undefined,
+      )!,
+    )
+  }
+
+  const [item] = await db
+    .select()
+    .from(reviewQueueItems)
+    .where(and(...conditions))
+    .orderBy(desc(reviewQueueItems.createdAt))
+    .limit(1)
+
+  return item ?? null
+}
+
 export async function listLedgerEventsForUser(input: {
   userId: string
   eventType?: FinancialEventType
@@ -638,6 +686,7 @@ export async function listLedgerEventsForUser(input: {
         ilike(financialEvents.description, pattern),
         ilike(financialEvents.notes, pattern),
         existsMerchantMatch(input.query.trim()),
+        existsProcessorMatch(input.query.trim()),
       )!,
     )
   }
@@ -648,6 +697,7 @@ export async function listLedgerEventsForUser(input: {
       merchant: merchants,
       category: categories,
       paymentInstrument: paymentInstruments,
+      paymentProcessor: paymentProcessors,
     })
     .from(financialEvents)
     .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
@@ -655,6 +705,10 @@ export async function listLedgerEventsForUser(input: {
     .leftJoin(
       paymentInstruments,
       eq(financialEvents.paymentInstrumentId, paymentInstruments.id),
+    )
+    .leftJoin(
+      paymentProcessors,
+      eq(financialEvents.paymentProcessorId, paymentProcessors.id),
     )
     .where(and(...conditions))
     .orderBy(desc(financialEvents.eventOccurredAt), desc(financialEvents.createdAt))
@@ -668,6 +722,16 @@ function existsMerchantMatch(query: string) {
     select 1 from merchant
     where merchant.id = ${financialEvents.merchantId}
       and (merchant.display_name ilike ${pattern} or merchant.normalized_name ilike ${pattern})
+  )`
+}
+
+function existsProcessorMatch(query: string) {
+  const pattern = `%${query}%`
+
+  return sql<boolean>`exists (
+    select 1 from payment_processor
+    where payment_processor.id = ${financialEvents.paymentProcessorId}
+      and (payment_processor.display_name ilike ${pattern} or payment_processor.normalized_name ilike ${pattern})
   )`
 }
 

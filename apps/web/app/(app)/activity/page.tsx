@@ -1,10 +1,12 @@
 import {
+  listIncomeStreamsForUser,
   listFinancialEventSourcesForEventIds,
   listLedgerEventsForUser,
+  listRecurringObligationsForUser,
 } from "@workspace/db"
-import { Badge } from "@workspace/ui/components/badge"
 import { Input } from "@workspace/ui/components/input"
 
+import { RecurringModelCard } from "@/components/recurring-model-card"
 import { TransactionCard } from "@/components/transaction-card"
 import { requireSession } from "@/lib/session"
 
@@ -18,18 +20,10 @@ const primaryViews = [
   { value: "all", label: "All" },
   { value: "outflow", label: "Outflows" },
   { value: "inflow", label: "Inflows" },
-  { value: "review", label: "Needs review" },
-] as const
-
-const eventTypes = [
-  { value: "", label: "Everything" },
-  { value: "purchase", label: "Purchases" },
+  { value: "review", label: "Review" },
+  { value: "subscriptions", label: "Subs" },
+  { value: "emis", label: "EMIs" },
   { value: "income", label: "Income" },
-  { value: "subscription_charge", label: "Subscriptions" },
-  { value: "emi_payment", label: "EMIs" },
-  { value: "bill_payment", label: "Bills" },
-  { value: "refund", label: "Refunds" },
-  { value: "transfer", label: "Transfers" },
 ] as const
 
 function asSingleValue(value: string | string[] | undefined) {
@@ -50,41 +44,103 @@ function formatCurrency(amountMinor: number, currency = "INR") {
   }
 }
 
-function formatGroupLabel(date: Date) {
+function formatMonthGroup(dateKey: string) {
+  const date = new Date(`${dateKey}-01T00:00:00.000Z`)
+  const month = date
+    .toLocaleDateString("en-IN", { month: "short" })
+    .toUpperCase()
+  const year = date.getFullYear().toString().slice(-2)
+  return `${month} '${year}`
+}
+
+function formatScheduleDate(date: Date | null) {
+  if (!date) return "still estimating"
+
   return new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
-    month: "long",
-    year: "numeric",
+    month: "short",
   }).format(date)
 }
 
-export default async function ActivityPage({ searchParams }: ActivityPageProps) {
+export default async function ActivityPage({
+  searchParams,
+}: ActivityPageProps) {
   const session = await requireSession()
   const params = (await searchParams) ?? {}
   const query = asSingleValue(params.query)?.trim() || undefined
   const view = asSingleValue(params.view) || "all"
-  const eventType = asSingleValue(params.eventType) || undefined
 
-  const events = await listLedgerEventsForUser({
-    userId: session.user.id,
-    query,
-    eventType:
-      eventType && eventType !== "all"
-        ? (eventType as Parameters<typeof listLedgerEventsForUser>[0]["eventType"])
-        : undefined,
-    needsReview: view === "review" ? true : undefined,
-    limit: 160,
-  })
+  const [events, subscriptions, emis, incomeStreams] = await Promise.all([
+    listLedgerEventsForUser({
+      userId: session.user.id,
+      query,
+      needsReview: view === "review" ? true : undefined,
+      limit: 160,
+    }),
+    listRecurringObligationsForUser({
+      userId: session.user.id,
+      obligationType: "subscription",
+      limit: 40,
+    }),
+    listRecurringObligationsForUser({
+      userId: session.user.id,
+      obligationType: "emi",
+      limit: 40,
+    }),
+    listIncomeStreamsForUser({
+      userId: session.user.id,
+      limit: 40,
+    }),
+  ])
 
+  const isRecurringView =
+    view === "subscriptions" || view === "emis" || view === "income"
+
+  const recurringRows =
+    view === "subscriptions"
+      ? subscriptions
+      : view === "emis"
+        ? emis
+        : []
+  const filteredRecurringRows = recurringRows.filter(
+    ({ obligation, merchant }) => {
+      if (!query) return true
+
+      const haystack = [
+        obligation.name,
+        merchant?.displayName,
+        obligation.obligationType,
+        obligation.status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+
+      return haystack.includes(query.toLowerCase())
+    },
+  )
+
+  const filteredIncomeStreams = incomeStreams.filter(
+    ({ incomeStream, merchant }) => {
+      if (!query) return true
+
+      const haystack = [
+        incomeStream.name,
+        merchant?.displayName,
+        incomeStream.incomeType,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+
+      return haystack.includes(query.toLowerCase())
+    },
+  )
+
+  const eventsInputView = isRecurringView ? "all" : view
   const filteredEvents = events.filter(({ event }) => {
-    if (view === "outflow") {
-      return event.direction === "outflow"
-    }
-
-    if (view === "inflow") {
-      return event.direction === "inflow"
-    }
-
+    if (eventsInputView === "outflow") return event.direction === "outflow"
+    if (eventsInputView === "inflow") return event.direction === "inflow"
     return true
   })
 
@@ -93,58 +149,52 @@ export default async function ActivityPage({ searchParams }: ActivityPageProps) 
   const sourcesByEventId = new Map<string, typeof sources>()
 
   for (const source of sources) {
-    const existing = sourcesByEventId.get(source.source.financialEventId) ?? []
+    const existing =
+      sourcesByEventId.get(source.source.financialEventId) ?? []
     existing.push(source)
     sourcesByEventId.set(source.source.financialEventId, existing)
   }
 
   const grouped = new Map<string, typeof filteredEvents>()
   for (const row of filteredEvents) {
-    const key = row.event.eventOccurredAt.toISOString().slice(0, 10)
+    const key = row.event.eventOccurredAt.toISOString().slice(0, 7)
     const existing = grouped.get(key) ?? []
     existing.push(row)
     grouped.set(key, existing)
   }
 
-  const orderedGroups = [...grouped.entries()].sort((left, right) => right[0].localeCompare(left[0]))
+  const orderedGroups = [...grouped.entries()].sort((left, right) =>
+    right[0].localeCompare(left[0]),
+  )
+
+  const resultCount = isRecurringView
+    ? view === "income"
+      ? filteredIncomeStreams.length
+      : filteredRecurringRows.length
+    : filteredEvents.length
 
   return (
-    <section className="grid gap-6">
-      <div>
-        <p className="neo-kicker">Activity</p>
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="font-display text-[3rem] leading-[0.92] text-white md:text-[4rem]">
-              your transaction
-              <br />
-              timeline.
-            </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-6 text-white/58">
-              Canonical activity, grouped by time, with traceable evidence available only when you need to go deeper.
-            </p>
-          </div>
-          <Badge variant="cream">{filteredEvents.length} events</Badge>
-        </div>
-      </div>
+    <section className="mx-auto max-w-lg">
+      {/* Header */}
+      <h1 className="py-6 text-[1.65rem] font-semibold tracking-tight text-white">
+        activity
+      </h1>
 
-      <form className="sticky top-[84px] z-30 grid gap-4 neo-shell border border-white/8 p-4 md:top-[92px]">
-        <div className="flex gap-3">
-          <Input
-            type="search"
-            name="query"
-            defaultValue={query}
-            placeholder="Search merchant or note"
-            className="flex-1"
-          />
-          <button type="submit" className="hidden" />
-        </div>
+      {/* Filters */}
+      <form className="sticky top-[76px] z-30 -mx-4 border-b border-white/[0.06] bg-[var(--neo-black)] px-4 pb-4 md:-mx-6 md:top-[84px] md:px-6">
+        <Input
+          type="search"
+          name="query"
+          defaultValue={query}
+          placeholder="search merchant or note"
+          className="mb-3 h-10 border-white/[0.06] bg-white/[0.03] text-sm placeholder:text-white/24"
+        />
 
-        <div className="neo-scrollbar flex gap-3 overflow-x-auto pb-1">
+        <div className="neo-scrollbar flex gap-2 overflow-x-auto pb-0.5">
           {primaryViews.map((chip) => {
             const active = view === chip.value
             const nextParams = new URLSearchParams()
             if (query) nextParams.set("query", query)
-            if (eventType) nextParams.set("eventType", eventType)
             if (chip.value !== "all") nextParams.set("view", chip.value)
 
             return (
@@ -152,10 +202,10 @@ export default async function ActivityPage({ searchParams }: ActivityPageProps) 
                 key={chip.value}
                 href={`/activity${nextParams.size > 0 ? `?${nextParams.toString()}` : ""}`}
                 className={[
-                  "shrink-0 border px-4 py-3 text-xs font-semibold uppercase tracking-[0.24em] transition",
+                  "shrink-0 border px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.18em] transition",
                   active
                     ? "border-[var(--neo-yellow)] bg-[var(--neo-yellow)] text-[var(--neo-black)]"
-                    : "border-white/10 bg-white/5 text-white/56",
+                    : "border-white/10 bg-transparent text-white/40 hover:bg-white/[0.04]",
                 ].join(" ")}
               >
                 {chip.label}
@@ -164,70 +214,128 @@ export default async function ActivityPage({ searchParams }: ActivityPageProps) 
           })}
         </div>
 
-        <div className="neo-scrollbar flex gap-3 overflow-x-auto pb-1">
-          {eventTypes.map((chip) => {
-            const active = (eventType ?? "") === chip.value
-            const nextParams = new URLSearchParams()
-            if (query) nextParams.set("query", query)
-            if (view && view !== "all") nextParams.set("view", view)
-            if (chip.value) nextParams.set("eventType", chip.value)
-
-            return (
-              <a
-                key={chip.label}
-                href={`/activity${nextParams.size > 0 ? `?${nextParams.toString()}` : ""}`}
-                className={[
-                  "shrink-0 border px-4 py-3 text-xs font-semibold uppercase tracking-[0.24em] transition",
-                  active
-                    ? "border-white/16 bg-white/10 text-white"
-                    : "border-white/8 bg-transparent text-white/46",
-                ].join(" ")}
-              >
-                {chip.label}
-              </a>
-            )
-          })}
-        </div>
+        <p className="mt-3 text-xs text-white/24">
+          {resultCount} {resultCount === 1 ? "result" : "results"}
+        </p>
       </form>
 
-      <div className="grid gap-6">
-        {orderedGroups.length > 0 ? (
-          orderedGroups.map(([dateKey, rows]) => (
-            <section key={dateKey} className="grid gap-4">
-              <div className="flex items-center gap-3">
-                <span className="neo-kicker">Date</span>
-                <h2 className="font-display text-3xl leading-none text-white">
-                  {formatGroupLabel(new Date(`${dateKey}T00:00:00.000Z`))}
-                </h2>
-              </div>
-              <div className="grid gap-4">
-                {rows.map(({ event, merchant, category, paymentInstrument }) => (
-                  <TransactionCard
-                    key={event.id}
-                    merchant={merchant?.displayName ?? event.description ?? "Unmapped event"}
-                    amount={formatCurrency(event.amountMinor, event.currency)}
-                    dateLabel={event.eventOccurredAt.toISOString()}
-                    category={category?.name ?? "Uncategorized"}
-                    direction={event.direction}
-                    eventType={event.eventType}
-                    needsReview={event.needsReview}
-                    paymentInstrument={paymentInstrument?.displayName ?? null}
-                    traces={(sourcesByEventId.get(event.id) ?? []).map(({ source, rawDocument, extractedSignal }) => ({
-                      linkReason: source.linkReason,
-                      signalType: extractedSignal?.signalType ?? null,
-                      rawDocumentLabel: rawDocument?.subject ?? rawDocument?.id ?? "source unavailable",
-                    }))}
-                  />
-                ))}
+      {/* Content */}
+      <div className="mt-2">
+        {view === "income" ? (
+          filteredIncomeStreams.length > 0 ? (
+            <div className="divide-y divide-white/[0.06]">
+              {filteredIncomeStreams.map(({ incomeStream, merchant }) => (
+                <RecurringModelCard
+                  key={incomeStream.id}
+                  eyebrow={incomeStream.incomeType.replace("_", " ")}
+                  title={merchant?.displayName ?? incomeStream.name}
+                  subtitle=""
+                  amount={formatCurrency(
+                    incomeStream.expectedAmountMinor ?? 0,
+                    incomeStream.currency ?? "INR",
+                  )}
+                  cadence={
+                    incomeStream.expectedDayOfMonth
+                      ? `monthly · day ${incomeStream.expectedDayOfMonth}`
+                      : "pattern building"
+                  }
+                  scheduleLabel={
+                    incomeStream.nextExpectedAt
+                      ? `next ${formatScheduleDate(incomeStream.nextExpectedAt)}`
+                      : "still estimating"
+                  }
+                  confidenceLabel={`${Math.round(Number(incomeStream.confidence) * 100)}%`}
+                  status={incomeStream.status}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState message="no income streams match the current filters." />
+          )
+        ) : view === "subscriptions" || view === "emis" ? (
+          filteredRecurringRows.length > 0 ? (
+            <div className="divide-y divide-white/[0.06]">
+              {filteredRecurringRows.map(({ obligation, merchant }) => (
+                <RecurringModelCard
+                  key={obligation.id}
+                  eyebrow={obligation.obligationType.replace("_", " ")}
+                  title={merchant?.displayName ?? obligation.name}
+                  subtitle=""
+                  amount={formatCurrency(
+                    obligation.amountMinor ?? 0,
+                    obligation.currency ?? "INR",
+                  )}
+                  cadence={obligation.cadence}
+                  scheduleLabel={
+                    obligation.nextDueAt
+                      ? `next ${formatScheduleDate(obligation.nextDueAt)}`
+                      : "still estimating"
+                  }
+                  confidenceLabel={`${Math.round(Number(obligation.detectionConfidence) * 100)}%`}
+                  status={obligation.status}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState message="no recurring models match the current filters." />
+          )
+        ) : orderedGroups.length > 0 ? (
+          orderedGroups.map(([monthKey, rows]) => (
+            <section key={monthKey}>
+              <p className="mb-1 mt-8 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-white/28 first:mt-4">
+                {formatMonthGroup(monthKey)}
+              </p>
+              <div className="divide-y divide-white/[0.06]">
+                {rows.map(
+                  ({
+                    event,
+                    merchant,
+                    category,
+                    paymentInstrument,
+                    paymentProcessor,
+                  }) => (
+                    <TransactionCard
+                      key={event.id}
+                      eventId={event.id}
+                      merchant={
+                        merchant?.displayName ??
+                        event.description ??
+                        "Unmapped event"
+                      }
+                      amount={formatCurrency(
+                        event.amountMinor,
+                        event.currency,
+                      )}
+                      dateLabel={event.eventOccurredAt.toISOString()}
+                      category={category?.name ?? "Uncategorized"}
+                      direction={event.direction}
+                      eventType={event.eventType}
+                      needsReview={event.needsReview}
+                      processor={paymentProcessor?.displayName ?? null}
+                      paymentInstrument={
+                        paymentInstrument?.displayName ?? null
+                      }
+                      traceCount={
+                        (sourcesByEventId.get(event.id) ?? []).length
+                      }
+                    />
+                  ),
+                )}
               </div>
             </section>
           ))
         ) : (
-          <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-8 text-sm leading-6 text-white/56">
-            No activity matches the current search and filter state.
-          </div>
+          <EmptyState message="no activity matches the current filters." />
         )}
       </div>
     </section>
+  )
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="py-16 text-center">
+      <p className="text-sm text-white/32">{message}</p>
+    </div>
   )
 }

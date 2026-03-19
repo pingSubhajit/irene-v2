@@ -17,9 +17,17 @@ const chartConfig = {
 
 export function DailySpendChart({
   data,
+  currency,
 }: {
-  data: { day: number; amount: number }[]
+  data: { day: number; amount: number; originalCurrencies: string[] }[]
+  currency: string
 }) {
+  const formatter = new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  })
+
   return (
     <ChartContainer
       config={chartConfig}
@@ -36,6 +44,33 @@ export function DailySpendChart({
               labelFormatter={(_, payload) => {
                 const day = payload?.[0]?.payload?.day
                 return day ? `Day ${day}` : ""
+              }}
+              formatter={(_, __, item) => {
+                const point = item.payload as {
+                  amount: number
+                  originalCurrencies: string[]
+                }
+                const currencies = point.originalCurrencies.filter(
+                  (code) => code !== currency,
+                )
+
+                return (
+                  <div className="grid gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-[2px] bg-white" />
+                      <span className="text-muted-foreground">Spend</span>
+                      <span className="ml-auto font-medium text-foreground">
+                        {formatter.format(point.amount)}
+                      </span>
+                    </div>
+                    {currencies.length > 0 ? (
+                      <div className="text-[0.7rem] text-muted-foreground">
+                        Includes {Array.from(new Set(currencies)).join(", ")} normalized
+                        to {currency}.
+                      </div>
+                    ) : null}
+                  </div>
+                )
               }}
             />
           }

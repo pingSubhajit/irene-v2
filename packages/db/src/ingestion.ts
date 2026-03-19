@@ -4,8 +4,22 @@ import { db } from "./client"
 import {
   documentAttachments,
   emailSyncCursors,
+  financialEvents,
+  financialEventSources,
+  financialInstitutionAliases,
+  financialInstitutions,
+  incomeStreams,
+  merchantObservations,
+  merchants,
+  modelRuns,
   oauthConnections,
+  paymentInstrumentObservations,
+  paymentInstruments,
+  paymentProcessorAliases,
+  paymentProcessors,
   rawDocuments,
+  recurringObligations,
+  reviewQueueItems,
   type RawDocumentRelevanceLabel,
   type RawDocumentRelevanceStage,
   type DocumentAttachmentParseStatus,
@@ -434,11 +448,103 @@ export async function getGmailIngestionArtifactsForConnection(oauthConnectionId:
   }
 }
 
-export async function resetGmailIngestionForConnection(oauthConnectionId: string) {
+export async function resetGmailIngestionForConnection(
+  oauthConnectionId: string,
+  userId: string,
+) {
   const artifacts = await getGmailIngestionArtifactsForConnection(oauthConnectionId)
 
   return db.transaction(async (tx) => {
+    const [
+      reviewItems,
+      recurringRows,
+      incomeRows,
+      financialEventRows,
+      modelRunRows,
+      merchantRows,
+      institutionRows,
+      observationRows,
+      merchantObservationRows,
+      paymentInstrumentRows,
+      paymentProcessorRows,
+    ] = await Promise.all([
+      tx.select({ id: reviewQueueItems.id }).from(reviewQueueItems).where(eq(reviewQueueItems.userId, userId)),
+      tx
+        .select({ id: recurringObligations.id })
+        .from(recurringObligations)
+        .where(eq(recurringObligations.userId, userId)),
+      tx.select({ id: incomeStreams.id }).from(incomeStreams).where(eq(incomeStreams.userId, userId)),
+      tx
+        .select({ id: financialEvents.id })
+        .from(financialEvents)
+        .where(eq(financialEvents.userId, userId)),
+      tx.select({ id: modelRuns.id }).from(modelRuns).where(eq(modelRuns.userId, userId)),
+      tx.select({ id: merchants.id }).from(merchants).where(eq(merchants.userId, userId)),
+      tx
+        .select({ id: financialInstitutions.id })
+        .from(financialInstitutions)
+        .where(eq(financialInstitutions.userId, userId)),
+      tx
+        .select({ id: paymentInstrumentObservations.id })
+        .from(paymentInstrumentObservations)
+        .where(eq(paymentInstrumentObservations.userId, userId)),
+      tx
+        .select({ id: merchantObservations.id })
+        .from(merchantObservations)
+        .where(eq(merchantObservations.userId, userId)),
+      tx
+        .select({ id: paymentInstruments.id })
+        .from(paymentInstruments)
+        .where(eq(paymentInstruments.userId, userId)),
+      tx
+        .select({ id: paymentProcessors.id })
+        .from(paymentProcessors)
+        .where(eq(paymentProcessors.userId, userId)),
+    ])
+
+    await tx.delete(reviewQueueItems).where(eq(reviewQueueItems.userId, userId))
+    await tx.delete(incomeStreams).where(eq(incomeStreams.userId, userId))
+    await tx.delete(recurringObligations).where(eq(recurringObligations.userId, userId))
+    await tx.delete(financialEvents).where(eq(financialEvents.userId, userId))
+    await tx.delete(modelRuns).where(eq(modelRuns.userId, userId))
+    await tx
+      .delete(paymentInstrumentObservations)
+      .where(eq(paymentInstrumentObservations.userId, userId))
+    await tx
+      .delete(merchantObservations)
+      .where(eq(merchantObservations.userId, userId))
+
+    if (artifacts.rawDocumentIds.length > 0) {
+      await tx
+        .delete(financialEventSources)
+        .where(inArray(financialEventSources.rawDocumentId, artifacts.rawDocumentIds))
+    }
+
     await tx.delete(rawDocuments).where(eq(rawDocuments.oauthConnectionId, oauthConnectionId))
+    await tx.delete(paymentInstruments).where(eq(paymentInstruments.userId, userId))
+    await tx.delete(paymentProcessors).where(eq(paymentProcessors.userId, userId))
+    if (institutionRows.length > 0) {
+      await tx
+        .delete(financialInstitutionAliases)
+        .where(
+          inArray(
+            financialInstitutionAliases.financialInstitutionId,
+            institutionRows.map((row) => row.id),
+          ),
+        )
+    }
+    if (paymentProcessorRows.length > 0) {
+      await tx
+        .delete(paymentProcessorAliases)
+        .where(
+          inArray(
+            paymentProcessorAliases.paymentProcessorId,
+            paymentProcessorRows.map((row) => row.id),
+          ),
+        )
+    }
+    await tx.delete(financialInstitutions).where(eq(financialInstitutions.userId, userId))
+    await tx.delete(merchants).where(eq(merchants.userId, userId))
 
     await tx
       .update(emailSyncCursors)
@@ -465,6 +571,17 @@ export async function resetGmailIngestionForConnection(oauthConnectionId: string
       deletedRawDocuments: artifacts.rawDocumentCount,
       deletedAttachments: artifacts.attachmentCount,
       deletedStorageObjects: artifacts.storageKeys.length,
+      deletedReviewItems: reviewItems.length,
+      deletedRecurringObligations: recurringRows.length,
+      deletedIncomeStreams: incomeRows.length,
+      deletedFinancialEvents: financialEventRows.length,
+      deletedModelRuns: modelRunRows.length,
+      deletedMerchants: merchantRows.length,
+      deletedFinancialInstitutions: institutionRows.length,
+      deletedPaymentInstrumentObservations: observationRows.length,
+      deletedMerchantObservations: merchantObservationRows.length,
+      deletedPaymentInstruments: paymentInstrumentRows.length,
+      deletedPaymentProcessors: paymentProcessorRows.length,
     }
   })
 }

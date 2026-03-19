@@ -1,11 +1,15 @@
 import Link from "next/link"
+import { RiArrowRightSLine } from "@remixicon/react"
+import { getAuthUserProfile, getUserSettings } from "@workspace/db"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar"
 
-import { Badge } from "@workspace/ui/components/badge"
-import { Card } from "@workspace/ui/components/card"
-
-import { GmailIntegrationActions } from "@/components/gmail-integration-actions"
-import { ResetIngestionButton } from "@/components/reset-ingestion-button"
-import { SignOutButton } from "@/components/sign-out-button"
+import { InboxSettingsRows } from "@/components/inbox-settings-rows"
+import { ReportingCurrencyRow } from "@/components/reporting-currency-row"
+import { SignOutRow } from "@/components/sign-out-row"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { requireSession } from "@/lib/session"
 
@@ -31,15 +35,19 @@ function getStatusMessage(value: string | undefined) {
       return "Google returned an OAuth error before the inbox could be connected."
     case "connect-failed":
       return "Irene could not finish the Gmail connection. Try again."
+    case "updated":
+      return "Reporting currency updated. Irene has started revaluing your historical events."
+    case "invalid-currency":
+      return "The selected reporting currency is not supported yet."
+    case "save-failed":
+      return "Irene could not save the new reporting currency."
     default:
       return null
   }
 }
 
 function formatDateTime(value: Date | null | undefined) {
-  if (!value) {
-    return "Not yet"
-  }
+  if (!value) return "not yet"
 
   return new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
@@ -49,180 +57,182 @@ function formatDateTime(value: Date | null | undefined) {
   }).format(value)
 }
 
-export default async function SettingsPage({ searchParams }: SettingsPageProps) {
+function formatMemberSince(value: Date | null | undefined) {
+  if (!value) return "recently"
+
+  return new Intl.DateTimeFormat("en-IN", {
+    month: "short",
+    year: "numeric",
+  }).format(value)
+}
+
+function getInitials(name: string) {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.slice(0, 1))
+      .join("") || "I"
+  )
+}
+
+export default async function SettingsPage({
+  searchParams,
+}: SettingsPageProps) {
   const session = await requireSession()
   const params = (await searchParams) ?? {}
-  const gmailState = await getGmailIntegrationState(session.user.id)
-  const statusMessage = getStatusMessage(asSingleValue(params.gmail))
+  const [gmailState, settings, authUser] = await Promise.all([
+    getGmailIntegrationState(session.user.id),
+    getUserSettings(session.user.id),
+    getAuthUserProfile(session.user.id),
+  ])
+
+  const statusMessage =
+    getStatusMessage(asSingleValue(params.gmail)) ??
+    getStatusMessage(asSingleValue(params.fx))
   const backfillState = gmailState.cursor?.backfillCompletedAt
-    ? "Ready"
+    ? "ready"
     : gmailState.cursor?.backfillStartedAt
-      ? "In progress"
-      : "Not started"
+      ? "in progress"
+      : "not started"
+  const displayName = session.user.name
+  const displayImage = session.user.image
+  const memberSince = formatMemberSince(authUser?.createdAt ?? null)
 
   return (
-    <section className="grid gap-6">
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <div>
-          <p className="neo-kicker">Settings</p>
-          <h1 className="mt-4 max-w-[12ch] font-display text-[3rem] leading-[0.92] text-white md:text-[4rem]">
-            keep Irene
-            <br />
-            connected and
-            <br />
-            current.
-          </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-white/58">
-            Manage your inbox connection, refresh the activity picture, and keep your
-            personal finance surface healthy without surfacing the underlying system
-            machinery.
+    <section className="mx-auto max-w-lg">
+      {/* Profile */}
+      <div className="flex items-center gap-4 py-8">
+        <Avatar className="size-14 rounded-full">
+          {displayImage ? (
+            <AvatarImage src={displayImage} alt={displayName} />
+          ) : (
+            <AvatarFallback className="text-base">
+              {getInitials(displayName)}
+            </AvatarFallback>
+          )}
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xl font-semibold tracking-tight text-white">
+            {displayName}
+          </p>
+          <p className="mt-0.5 text-sm text-white/36">
+            member since {memberSince}
           </p>
         </div>
+      </div>
 
-        <div className="grid gap-4 self-start">
-          <Card className="p-5">
-            <p className="neo-kicker">Owner account</p>
-            <p className="mt-4 text-lg font-semibold text-white">{session.user.email}</p>
-            <p className="mt-3 text-sm leading-6 text-white/56">
-              Irene is locked to this owner identity and the matching Gmail inbox.
-            </p>
-            <div className="mt-5">
-              <SignOutButton />
-            </div>
-          </Card>
+      <p className="text-sm text-white/44">{session.user.email}</p>
 
-          {statusMessage ? (
-            <Card className="border-[var(--neo-green)]/25 bg-[rgba(114,255,194,0.06)] p-5">
-              <p className="neo-kicker text-[var(--neo-green)]">Status</p>
-              <p className="mt-3 text-sm leading-6 text-white/76">{statusMessage}</p>
-            </Card>
-          ) : null}
+      {/* Status toast */}
+      {statusMessage && (
+        <div className="mt-5 border-l-2 border-[var(--neo-green)] bg-[rgba(111,247,184,0.04)] px-4 py-3">
+          <p className="text-sm leading-relaxed text-white/68">
+            {statusMessage}
+          </p>
         </div>
+      )}
+
+      {/* Quick stats */}
+      <div className="mt-10 divide-y divide-white/[0.06]">
+        <InfoRow
+          label="inbox"
+          value={
+            gmailState.connection
+              ? gmailState.connection.providerAccountEmail ?? "connected"
+              : "not linked"
+          }
+        />
+        <InfoRow
+          label="reporting currency"
+          value={settings.reportingCurrency}
+        />
+        <InfoRow
+          label="last sync"
+          value={formatDateTime(
+            gmailState.connection?.lastSuccessfulSyncAt,
+          )}
+        />
+        <InfoRow label="backfill" value={backfillState} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-        <Card className="p-5 md:p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="neo-kicker">Inbox connection</p>
-              <h2 className="mt-4 font-display text-[2.2rem] leading-none text-white">
-                {gmailState.connection ? "Gmail is linked." : "Gmail is not connected."}
-              </h2>
-            </div>
-            <Badge variant={gmailState.connection ? "success" : "warning"}>
-              {gmailState.connection ? "Connected" : "Action"}
-            </Badge>
-          </div>
+      {/* Inbox */}
+      <SectionHeader>Inbox</SectionHeader>
+      <InboxSettingsRows connected={Boolean(gmailState.connection)} />
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <InfoBlock
-              label="Connected inbox"
-              value={gmailState.connection?.providerAccountEmail ?? "None yet"}
-            />
-            <InfoBlock label="Backfill" value={backfillState} />
-            <InfoBlock
-              label="Last successful sync"
-              value={formatDateTime(gmailState.connection?.lastSuccessfulSyncAt)}
-            />
-            <InfoBlock
-              label="Last failed sync"
-              value={formatDateTime(gmailState.connection?.lastFailedSyncAt)}
-            />
-          </div>
-
-          <div className="mt-6">
-            <GmailIntegrationActions connected={Boolean(gmailState.connection)} />
-          </div>
-        </Card>
-
-        <Card className="p-5 md:p-6">
-          <p className="neo-kicker">Recent inbox evidence</p>
-          <h2 className="mt-4 font-display text-[2.2rem] leading-none text-white">
-            what Irene recently pulled in.
-          </h2>
-          <div className="mt-6 grid gap-3">
-            {gmailState.recentRawDocuments.length > 0 ? (
-              gmailState.recentRawDocuments.map((document) => (
-                <div
-                  key={document.id}
-                  className="border border-white/8 bg-black/20 p-4"
-                >
-                  <p className="text-sm font-semibold text-white">
-                    {document.subject ?? "(no subject)"}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-white/56">
-                    {document.fromAddress ?? "Unknown sender"}
-                  </p>
-                  <p className="mt-2 text-xs uppercase tracking-[0.22em] text-white/34">
-                    {formatDateTime(document.messageTimestamp)}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-5 text-sm leading-6 text-white/56">
-                No accepted inbox evidence yet. Connect Gmail or wait for the first sync
-                to complete.
-              </div>
-            )}
-          </div>
-        </Card>
+      {/* Preferences */}
+      <SectionHeader>Preferences</SectionHeader>
+      <div className="divide-y divide-white/[0.06]">
+        <ReportingCurrencyRow
+          currentCurrency={settings.reportingCurrency}
+        />
       </div>
 
-      <Card className="p-5 md:p-6">
-        <p className="neo-kicker">Advanced</p>
-        <h2 className="mt-4 font-display text-[2.2rem] leading-none text-white">
-          low-level controls.
-        </h2>
-        <p className="mt-4 max-w-2xl text-sm leading-6 text-white/56">
-          Use these only when you want to force a clean resync or inspect internal
-          operational pages. They are kept out of the main product flow on purpose.
-        </p>
+      {/* Diagnostics */}
+      <SectionHeader>Diagnostics</SectionHeader>
+      <div className="divide-y divide-white/[0.06]">
+        <NavRow href="/settings/logs" label="unified debug log" />
+        <NavRow href="/ops/extraction" label="extraction ops" />
+        <NavRow href="/ops/queues" label="queue ops" />
+      </div>
 
-        <details className="mt-6 border border-white/8 bg-black/20 p-4">
-          <summary className="cursor-pointer list-none text-sm font-semibold uppercase tracking-[0.22em] text-white/72">
-            Show advanced tools
-          </summary>
+      {/* Data management */}
+      <SectionHeader>Data management</SectionHeader>
+      <div className="divide-y divide-white/[0.06]">
+        <NavRow
+          href="/settings/data"
+          label="reset & rebuild"
+          description="wipe ingested data or reset database state"
+        />
+      </div>
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-[0.62fr_0.38fr]">
-            <div className="border border-white/8 bg-black/20 p-4">
-              <p className="neo-kicker">Reset and reingest</p>
-              <p className="mt-3 text-sm leading-6 text-white/56">
-                Wipe the current Gmail ingestion data and run a fresh backfill under the
-                current filters. Use only when you intentionally want a clean rebuild.
-              </p>
-              <div className="mt-5">
-                <ResetIngestionButton />
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              <Link
-                href="/ops/extraction"
-                className="flex h-12 items-center justify-between border border-white/10 bg-[rgba(20,20,22,0.92)] px-4 text-sm font-semibold text-[var(--neo-cream)] shadow-[0_8px_0_rgba(0,0,0,0.38)] transition hover:-translate-y-px hover:bg-[rgba(28,28,30,0.98)]"
-              >
-                <span>Extraction ops</span>
-                <span aria-hidden="true">→</span>
-              </Link>
-              <Link
-                href="/ops/queues"
-                className="flex h-12 items-center justify-between border border-white/10 bg-[rgba(20,20,22,0.92)] px-4 text-sm font-semibold text-[var(--neo-cream)] shadow-[0_8px_0_rgba(0,0,0,0.38)] transition hover:-translate-y-px hover:bg-[rgba(28,28,30,0.98)]"
-              >
-                <span>Queue ops</span>
-                <span aria-hidden="true">→</span>
-              </Link>
-            </div>
-          </div>
-        </details>
-      </Card>
+      {/* Sign out */}
+      <div className="mt-12 border-t border-white/[0.06] pt-2">
+        <SignOutRow />
+      </div>
     </section>
   )
 }
 
-function InfoBlock(props: { label: string; value: string }) {
+function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border border-white/8 bg-black/20 p-4">
-      <p className="neo-kicker">{props.label}</p>
-      <p className="mt-3 text-sm leading-6 text-white/74">{props.value}</p>
+    <p className="mb-1 mt-10 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-white/28">
+      {children}
+    </p>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between py-4">
+      <span className="text-[15px] text-white/56">{label}</span>
+      <span className="text-[15px] text-white/36">{value}</span>
     </div>
+  )
+}
+
+function NavRow({
+  href,
+  label,
+  description,
+}: {
+  href: string
+  label: string
+  description?: string
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center justify-between py-4 transition hover:bg-white/[0.02]"
+    >
+      <div className="min-w-0 flex-1">
+        <span className="text-[15px] text-white">{label}</span>
+        {description && (
+          <p className="mt-0.5 text-sm text-white/28">{description}</p>
+        )}
+      </div>
+      <RiArrowRightSLine className="size-5 shrink-0 text-white/16" />
+    </Link>
   )
 }
