@@ -246,13 +246,6 @@ function toDisplayName(input: string | null) {
     .join(" ")
 }
 
-function inferMerchantHint(document: NormalizedExtractionDocument) {
-  const combined = getCombinedText(document)
-  const parsed = parseMerchantAndProcessor(combined)
-
-  return parsed.merchantNameCandidate ?? extractSenderName(document.sender)
-}
-
 export async function buildNormalizedExtractionDocument(rawDocument: RawDocumentSelect) {
   const attachments = await listAttachmentsForRawDocument(rawDocument.id)
   let bodyText = normalizeWhitespace(rawDocument.bodyText)
@@ -343,8 +336,16 @@ export function runDeterministicExtraction(
   const paymentInstrumentHint = inferPaymentInstrumentHint(combined)
   const roleHints = parseMerchantAndProcessor(combined)
   const eventDate = document.messageTimestamp.slice(0, 10)
+  const hasParsedAmount =
+    typeof amount.amountMinor === "number" && Number.isFinite(amount.amountMinor)
+  const hasLifecycleAmbiguity = /\b(converted|conversion|emi on card|equated monthly installments?|merchant emi|statement|bill due|minimum due|auto-?debit|standing instruction|subscription|renewal|expiring|refund|reversed|reversal|chargeback|credited back|foreclosure|cancellation|schedule|plan)\b/i.test(
+    lowered,
+  )
+  const hasExplicitMoneyMovement = /\b(transaction (?:alert|notification)|debited|credited|spent|payment received|payment successful|used for a transaction)\b/i.test(
+    lowered,
+  )
 
-  if (/\b(salary credited|salary for|payroll|stipend|payout)\b/i.test(lowered)) {
+  if (hasParsedAmount && /\b(salary credited|salary for|payroll|stipend|payout)\b/i.test(lowered)) {
     return {
       parserName: "salary-credit-parser",
       signals: [
@@ -374,41 +375,7 @@ export function runDeterministicExtraction(
     }
   }
 
-  if (/\b(refund|reversed|reversal|credited back|chargeback)\b/i.test(lowered)) {
-    return {
-      parserName: "refund-parser",
-      signals: [
-        {
-          signalType: "refund_signal",
-          candidateEventType: "refund",
-          amountMinor: amount.amountMinor,
-          currency: amount.currency ?? "INR",
-          eventDate,
-          issuerNameHint: senderName,
-          instrumentLast4Hint: paymentInstrumentHint,
-          merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
-          merchantNameCandidate: roleHints.merchantNameCandidate,
-          processorNameCandidate: roleHints.processorNameCandidate,
-          channelHint: "card",
-          merchantRaw: senderName,
-          merchantHint: senderName,
-          paymentInstrumentHint,
-          categoryHint: null,
-          isRecurringHint: false,
-          isEmiHint: false,
-          confidence: 0.97,
-          evidenceSnippets: pickEvidenceSnippets(document.subject, document.snippet, document.bodyText),
-          explanation: "Detected refund or reversal wording.",
-        },
-      ],
-    }
-  }
-
-  if (
-    /\b(transaction (?:alert|notification)|debited|credited|spent|payment received|payment successful)\b/i.test(
-      lowered,
-    )
-  ) {
+  if (hasParsedAmount && hasExplicitMoneyMovement && !hasLifecycleAmbiguity) {
     const isIncome = /\bcredited\b/i.test(lowered) && !/\brefund|reversal\b/i.test(lowered)
 
     return {
@@ -435,36 +402,6 @@ export function runDeterministicExtraction(
           confidence: 0.96,
           evidenceSnippets: pickEvidenceSnippets(document.subject, document.snippet, document.bodyText),
           explanation: "Detected explicit bank transaction alert wording.",
-        },
-      ],
-    }
-  }
-
-  if (/\b(uber receipt|google play order receipt|google play)\b/i.test(lowered)) {
-    return {
-      parserName: "platform-receipt-parser",
-      signals: [
-        {
-          signalType: "purchase_signal",
-          candidateEventType: "purchase",
-          amountMinor: amount.amountMinor,
-          currency: amount.currency ?? "INR",
-          eventDate,
-          issuerNameHint: senderName,
-          instrumentLast4Hint: paymentInstrumentHint,
-          merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
-          merchantNameCandidate: roleHints.merchantNameCandidate,
-          processorNameCandidate: roleHints.processorNameCandidate,
-          channelHint: "card",
-          merchantRaw: roleHints.merchantDescriptorRaw ?? senderName,
-          merchantHint: inferMerchantHint(document),
-          paymentInstrumentHint,
-          categoryHint: null,
-          isRecurringHint: false,
-          isEmiHint: false,
-          confidence: 0.95,
-          evidenceSnippets: pickEvidenceSnippets(document.subject, document.snippet, document.bodyText),
-          explanation: "Detected known digital receipt template.",
         },
       ],
     }
