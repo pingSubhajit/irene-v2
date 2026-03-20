@@ -17,6 +17,7 @@ import { users } from "./auth"
 import { rawDocuments } from "./ingestion"
 
 export type ModelRunTaskType =
+  | "finance_relevance_classification"
   | "document_extraction"
   | "classification_support"
   | "entity_resolution"
@@ -90,7 +91,7 @@ export const modelRuns = pgTable(
     ),
     check(
       "model_run_task_type_check",
-      sql`${table.taskType} in ('document_extraction', 'classification_support', 'entity_resolution', 'merchant_resolution', 'category_resolution', 'advice_generation', 'review_summary')`,
+      sql`${table.taskType} in ('finance_relevance_classification', 'document_extraction', 'classification_support', 'entity_resolution', 'merchant_resolution', 'category_resolution', 'advice_generation', 'review_summary')`,
     ),
     check(
       "model_run_status_check",

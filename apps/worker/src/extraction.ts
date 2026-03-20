@@ -134,6 +134,15 @@ function getCombinedText(document: NormalizedExtractionDocument) {
     .join("\n")
 }
 
+function getDisambiguationText(document: NormalizedExtractionDocument) {
+  return [
+    document.subject,
+    document.snippet,
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
 function parseCurrencyAndAmount(text: string) {
   const match = text.match(/(?:₹|Rs\.?|INR|\$|USD)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i)
 
@@ -331,6 +340,7 @@ export function runDeterministicExtraction(
 ): DeterministicExtractionResult | null {
   const combined = getCombinedText(document)
   const lowered = combined.toLowerCase()
+  const disambiguationText = getDisambiguationText(document).toLowerCase()
   const amount = parseCurrencyAndAmount(combined)
   const senderName = extractSenderName(document.sender)
   const paymentInstrumentHint = inferPaymentInstrumentHint(combined)
@@ -339,10 +349,10 @@ export function runDeterministicExtraction(
   const hasParsedAmount =
     typeof amount.amountMinor === "number" && Number.isFinite(amount.amountMinor)
   const hasLifecycleAmbiguity = /\b(converted|conversion|emi on card|equated monthly installments?|merchant emi|statement|bill due|minimum due|auto-?debit|standing instruction|subscription|renewal|expiring|refund|reversed|reversal|chargeback|credited back|foreclosure|cancellation|schedule|plan)\b/i.test(
-    lowered,
+    disambiguationText,
   )
   const hasExplicitMoneyMovement = /\b(transaction (?:alert|notification)|debited|credited|spent|payment received|payment successful|used for a transaction)\b/i.test(
-    lowered,
+    disambiguationText,
   )
 
   if (hasParsedAmount && /\b(salary credited|salary for|payroll|stipend|payout)\b/i.test(lowered)) {

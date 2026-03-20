@@ -54,7 +54,7 @@ export async function createModelRun(input: CreateModelRunInput) {
 }
 
 type UpdateModelRunInput = {
-  status: ModelRunStatus
+  status?: ModelRunStatus
   provider?: string
   modelName?: string
   promptVersion?: string
@@ -63,13 +63,14 @@ type UpdateModelRunInput = {
   latencyMs?: number | null
   requestId?: string | null
   errorMessage?: string | null
+  rawDocumentId?: string | null
 }
 
 export async function updateModelRun(modelRunId: string, input: UpdateModelRunInput) {
   const [modelRun] = await db
     .update(modelRuns)
     .set({
-      status: input.status,
+      status: input.status ?? undefined,
       provider: input.provider,
       modelName: input.modelName,
       promptVersion: input.promptVersion,
@@ -78,6 +79,8 @@ export async function updateModelRun(modelRunId: string, input: UpdateModelRunIn
       latencyMs: input.latencyMs ?? undefined,
       requestId: input.requestId ?? undefined,
       errorMessage: input.errorMessage ?? undefined,
+      rawDocumentId:
+        input.rawDocumentId === null ? null : (input.rawDocumentId ?? undefined),
     })
     .where(eq(modelRuns.id, modelRunId))
     .returning()

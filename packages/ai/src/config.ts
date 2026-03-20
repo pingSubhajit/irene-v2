@@ -27,7 +27,7 @@ export const aiModels = {
 export type AiModelPurpose = keyof typeof aiModels
 
 export const aiPromptVersions = {
-  financeRelevanceClassifier: "finance-relevance-v1",
+  financeRelevanceClassifier: "finance-relevance-v2",
   financeDocumentRouter: "finance-document-router-v1",
   financeSignalExtractor: "finance-signal-extractor-v1",
   financeInstrumentResolver: "finance-instrument-resolver-v1",

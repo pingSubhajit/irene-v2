@@ -36,7 +36,6 @@ import {
   getGmailMessageMetadata,
   listGmailHistory,
   listGmailMessageIds,
-  type GmailMessageMetadata,
   type GmailAttachmentBlob,
   buildFinanceSearchQuery,
   uploadPrivateObject,
@@ -142,6 +141,10 @@ import {
   runMerchantRepairBackfill,
 } from "./merchant-resolution"
 import {
+  linkAcceptedRelevanceModelRun,
+  processCandidateMessageRelevance,
+} from "./relevance-classification"
+import {
   detectIncomeStreamFromEvent,
   detectRecurringObligationFromEvent,
   refreshIncomeStream,
@@ -228,17 +231,6 @@ function createTokenPersister(connectionId: string) {
   }
 }
 
-function metadataToClassifierInput(message: GmailMessageMetadata) {
-  return {
-    sender: message.fromAddress,
-    subject: message.subject,
-    snippet: message.snippet,
-    labelIds: message.labelIds,
-    timestamp: message.internalDate?.toISOString() ?? null,
-    attachmentNames: message.attachmentNames,
-  }
-}
-
 async function enqueueTrackedMessageIngest(input: {
   userId: string
   oauthConnectionId: string
@@ -247,8 +239,9 @@ async function enqueueTrackedMessageIngest(input: {
   providerMessageId: string
   sourceKind: "backfill" | "incremental"
   historyId?: string | null
+  relevanceModelRunId: string
   relevanceLabel: "transactional_finance" | "obligation_finance"
-  relevanceStage: "heuristic" | "model"
+  relevanceStage: "model"
   relevanceScore: number
   relevanceReasons: string[]
 }) {
@@ -266,6 +259,7 @@ async function enqueueTrackedMessageIngest(input: {
       source: "worker",
       sourceKind: input.sourceKind,
       historyId: input.historyId ?? null,
+      relevanceModelRunId: input.relevanceModelRunId,
       relevanceLabel: input.relevanceLabel,
       relevanceStage: input.relevanceStage,
       relevanceScore: input.relevanceScore,
@@ -285,6 +279,7 @@ async function enqueueTrackedMessageIngest(input: {
     source: "worker",
     sourceKind: input.sourceKind,
     historyId: input.historyId ?? undefined,
+    relevanceModelRunId: input.relevanceModelRunId,
     relevanceLabel: input.relevanceLabel,
     relevanceStage: input.relevanceStage,
     relevanceScore: input.relevanceScore,
@@ -879,6 +874,8 @@ async function processCandidateMessages(input: {
   let skippedNonFinanceCount = 0
   let latestHistoryId: string | null = null
   let lastSeenMessageAt: Date | null = null
+  const currentAttempt = getAttemptCount(input.job)
+  const maxAttempts = (input.job.opts.attempts as number | undefined) ?? 3
 
   for (const messageId of input.messageIds) {
     const metadata = await getGmailMessageMetadata(connection, messageId, onTokenUpdate)
@@ -892,51 +889,43 @@ async function processCandidateMessages(input: {
           : lastSeenMessageAt
     }
 
-    try {
-      const decision = await classifyFinanceRelevance(metadataToClassifierInput(metadata))
+    const outcome = await processCandidateMessageRelevance(
+      {
+        userId: input.userId,
+        oauthConnectionId: input.oauthConnectionId,
+        cursorId: input.cursorId,
+        correlationId: input.correlationId,
+        sourceKind: input.sourceKind,
+        metadata,
+        currentAttempt,
+        maxAttempts,
+        jobId: input.job.id ?? "unknown-job",
+      },
+      {
+        createModelRun,
+        updateModelRun,
+        classifyFinanceRelevance,
+        enqueueMessageIngest: enqueueTrackedMessageIngest,
+        warn: (message, context) => logger.warn(message, context),
+      },
+    )
 
-      if (decision.decision === "accept") {
-        if (decision.classification === "transactional_finance") {
-          acceptedTransactionalCount += 1
-        } else if (decision.classification === "obligation_finance") {
-          acceptedObligationCount += 1
-        } else {
-          skippedNonFinanceCount += 1
-          continue
-        }
-        await enqueueTrackedMessageIngest({
-          userId: input.userId,
-          oauthConnectionId: input.oauthConnectionId,
-          cursorId: input.cursorId,
-          correlationId: input.correlationId,
-          providerMessageId: metadata.id,
-          sourceKind: input.sourceKind,
-          historyId: metadata.historyId,
-          relevanceLabel: decision.classification,
-          relevanceStage: decision.stage,
-          relevanceScore: decision.score,
-          relevanceReasons: decision.reasons,
-        })
-        continue
-      }
-
-      if (decision.classification === "marketing_finance") {
-        skippedMarketingCount += 1
-      } else {
-        skippedNonFinanceCount += 1
-      }
-    } catch (error) {
-      if (getAttemptCount(input.job) >= ((input.job.opts.attempts as number | undefined) ?? 3)) {
-        logger.warn("Skipping borderline Gmail message after classifier retries exhausted", {
-          jobId: input.job.id,
-          messageId,
-        })
-        skippedNonFinanceCount += 1
-        continue
-      }
-
-      throw error
+    if (outcome === "accepted_transactional") {
+      acceptedTransactionalCount += 1
+      continue
     }
+
+    if (outcome === "accepted_obligation") {
+      acceptedObligationCount += 1
+      continue
+    }
+
+    if (outcome === "skipped_marketing") {
+      skippedMarketingCount += 1
+      continue
+    }
+
+    skippedNonFinanceCount += 1
   }
 
   return {
@@ -1327,6 +1316,17 @@ async function handleGmailMessageIngest(job: Job) {
     relevanceScore: payload.relevanceScore,
     relevanceReasonsJson: payload.relevanceReasons,
   })
+
+  await linkAcceptedRelevanceModelRun(
+    {
+      relevanceModelRunId: payload.relevanceModelRunId,
+      rawDocumentId: rawDocument.id,
+    },
+    {
+      updateModelRun,
+      warn: (message, context) => logger.warn(message, context),
+    },
+  )
 
   const attachmentCount = await storeAttachments({
     connectionId: connection.id,
