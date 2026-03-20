@@ -9,6 +9,7 @@ import {
   getFinancialEventSourceByRawDocument,
   getOrCreateMerchantForAlias,
   getRawDocumentById,
+  listMerchantAliasCandidatesForUser,
   listCandidateFinancialEvents,
   refreshFinancialEventSourceCount,
   resolveCategoryForSignal,
@@ -20,6 +21,9 @@ import {
   type FinancialEventType,
   type RawDocumentSelect,
 } from "@workspace/db"
+
+import { deriveMerchantDisplayName } from "./merchant-name"
+import { resolveExistingMerchantFastPath } from "./merchant-fast-path"
 
 type ReconciliationOutcome =
   | {
@@ -120,11 +124,15 @@ function looksLikeIssuerOrSenderAlias(input: string | null | undefined) {
   )
 }
 
-function getProvisionalMerchantAlias(
+function getProvisionalMerchantAliases(
   signal: ExtractedSignalSelect,
   rawDocument: RawDocumentSelect,
 ) {
   const candidates = [
+    deriveMerchantDisplayName(signal.merchantNameCandidate),
+    deriveMerchantDisplayName(signal.merchantHint),
+    deriveMerchantDisplayName(signal.merchantRaw),
+    deriveMerchantDisplayName(signal.merchantDescriptorRaw),
     normalizeWhitespace(signal.merchantNameCandidate),
     normalizeWhitespace(signal.merchantHint),
     normalizeWhitespace(signal.merchantRaw),
@@ -137,21 +145,42 @@ function getProvisionalMerchantAlias(
     }
 
     if (!looksLikeIssuerOrSenderAlias(candidate)) {
-      return candidate
+      return [candidate]
     }
   }
 
   const senderDisplayName = extractSenderDisplayName(rawDocument.fromAddress)
   if (senderDisplayName && !looksLikeIssuerOrSenderAlias(senderDisplayName)) {
-    return senderDisplayName
+    return [senderDisplayName]
   }
 
   const senderEmail = extractSenderEmail(rawDocument.fromAddress)
   if (senderEmail && !looksLikeIssuerOrSenderAlias(senderEmail)) {
-    return senderEmail
+    candidates.push(senderEmail)
   }
 
-  return null
+  return candidates.filter(
+    (candidate, index, values): candidate is string =>
+      Boolean(candidate) && values.indexOf(candidate) === index,
+  )
+}
+
+function getProvisionalMerchantAlias(
+  signal: ExtractedSignalSelect,
+  rawDocument: RawDocumentSelect,
+) {
+  return getProvisionalMerchantAliases(signal, rawDocument)[0] ?? null
+}
+
+function getSafeEventDescription(
+  signal: ExtractedSignalSelect,
+  rawDocument: RawDocumentSelect,
+) {
+  return (
+    getProvisionalMerchantAlias(signal, rawDocument) ??
+    normalizeWhitespace(rawDocument.subject) ??
+    null
+  )
 }
 
 function mapCandidateEventTypeToFinancialEventType(
@@ -221,7 +250,31 @@ function getEventWindowHours(eventType: FinancialEventType) {
 
 function buildOccurredAt(signal: ExtractedSignalSelect, rawDocument: RawDocumentSelect) {
   if (signal.eventDate) {
-    return new Date(`${signal.eventDate}T00:00:00.000Z`)
+    const parts = signal.eventDate.split("-").map(Number)
+
+    if (parts.length === 3) {
+      const year = parts[0]!
+      const month = parts[1]!
+      const day = parts[2]!
+
+      if (
+        Number.isFinite(year) &&
+        Number.isFinite(month) &&
+        Number.isFinite(day)
+      ) {
+        return new Date(
+          Date.UTC(
+            year,
+            month - 1,
+            day,
+            rawDocument.messageTimestamp.getUTCHours(),
+            rawDocument.messageTimestamp.getUTCMinutes(),
+            rawDocument.messageTimestamp.getUTCSeconds(),
+            rawDocument.messageTimestamp.getUTCMilliseconds(),
+          ),
+        )
+      }
+    }
   }
 
   return rawDocument.messageTimestamp
@@ -268,16 +321,21 @@ async function buildEventDraft(input: {
   rawDocument: RawDocumentSelect
   eventType: FinancialEventType
 }) {
-  const merchantAlias = getProvisionalMerchantAlias(input.signal, input.rawDocument)
-
-  const merchant = merchantAlias
-    ? await getOrCreateMerchantForAlias({
-        userId: input.userId,
-        aliasText: merchantAlias,
-        source: "reconciliation",
-        confidence: input.signal.confidence,
-      })
-    : null
+  const merchantHints = getProvisionalMerchantAliases(input.signal, input.rawDocument)
+  const aliasCandidates = await listMerchantAliasCandidatesForUser(input.userId)
+  const merchantMatch = resolveExistingMerchantFastPath({
+    merchantHints,
+    aliasCandidates,
+  })
+  const merchant =
+    merchantMatch.status === "matched_existing_merchant"
+      ? await getOrCreateMerchantForAlias({
+          userId: input.userId,
+          aliasText: merchantMatch.merchantDisplayName,
+          source: "reconciliation",
+          confidence: input.signal.confidence,
+        })
+      : null
 
   const category = await resolveCategoryForSignal(input.userId, input.signal)
 
@@ -296,12 +354,7 @@ async function buildEventDraft(input: {
     merchantDescriptorRaw: input.signal.merchantDescriptorRaw ?? null,
     description:
       merchant?.displayName ??
-      normalizeWhitespace(input.signal.merchantNameCandidate) ??
-      normalizeWhitespace(input.signal.merchantHint) ??
-      normalizeWhitespace(input.signal.merchantDescriptorRaw) ??
-      normalizeWhitespace(input.rawDocument.subject) ??
-      normalizeWhitespace(input.signal.merchantHint) ??
-      normalizeWhitespace(input.signal.merchantRaw) ??
+      getSafeEventDescription(input.signal, input.rawDocument) ??
       null,
     notes: normalizeWhitespace(
       typeof input.signal.evidenceJson?.explanation === "string"

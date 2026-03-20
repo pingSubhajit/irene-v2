@@ -1,6 +1,7 @@
 import {
   countOpenReviewQueueItemsForUser,
   ensureSystemCategories,
+  getUserSettings,
   getReviewQueueContext,
   listCategoriesForUser,
   listReviewQueueItemsForUser,
@@ -9,6 +10,7 @@ import { Badge } from "@workspace/ui/components/badge"
 import { Card } from "@workspace/ui/components/card"
 
 import { ReviewDecisionCard } from "@/components/review-decision-card"
+import { formatInUserTimeZone } from "@/lib/date-format"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
@@ -91,7 +93,8 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
 
   await ensureSystemCategories(session.user.id)
 
-  const [openCount, categories, items] = await Promise.all([
+  const [settings, openCount, categories, items] = await Promise.all([
+    getUserSettings(session.user.id),
     countOpenReviewQueueItemsForUser(session.user.id),
     listCategoriesForUser(session.user.id),
     listReviewQueueItemsForUser({
@@ -169,12 +172,12 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
             const rawDocumentSubtitle = [
               context.rawDocument?.fromAddress ?? "Unknown sender",
               context.rawDocument?.messageTimestamp
-                ? new Intl.DateTimeFormat("en-IN", {
+                ? formatInUserTimeZone(context.rawDocument.messageTimestamp, settings.timeZone, {
                     day: "numeric",
                     month: "short",
                     hour: "numeric",
                     minute: "2-digit",
-                  }).format(context.rawDocument.messageTimestamp)
+                  })
                 : null,
             ]
               .filter(Boolean)

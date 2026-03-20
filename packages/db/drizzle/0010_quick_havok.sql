@@ -1,0 +1,1 @@
+ALTER TABLE "user_settings" ADD COLUMN "time_zone" text DEFAULT 'Asia/Kolkata' NOT NULL;

@@ -10,6 +10,8 @@ import {
 import { InboxSettingsRows } from "@/components/inbox-settings-rows"
 import { ReportingCurrencyRow } from "@/components/reporting-currency-row"
 import { SignOutRow } from "@/components/sign-out-row"
+import { TimeZoneRow } from "@/components/time-zone-row"
+import { formatInUserTimeZone } from "@/lib/date-format"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { requireSession } from "@/lib/session"
 
@@ -41,29 +43,41 @@ function getStatusMessage(value: string | undefined) {
       return "The selected reporting currency is not supported yet."
     case "save-failed":
       return "Irene could not save the new reporting currency."
+    case "updated-time-zone":
+      return "Time zone updated. Irene will render dates using your chosen zone."
+    case "invalid-time-zone":
+      return "The selected time zone is not supported."
+    case "time-zone-save-failed":
+      return "Irene could not save the new time zone."
     default:
       return null
   }
 }
 
-function formatDateTime(value: Date | null | undefined) {
+function formatDateTime(
+  value: Date | null | undefined,
+  timeZone: string,
+) {
   if (!value) return "not yet"
 
-  return new Intl.DateTimeFormat("en-IN", {
+  return formatInUserTimeZone(value, timeZone, {
     day: "numeric",
     month: "short",
     hour: "numeric",
     minute: "2-digit",
-  }).format(value)
+  })
 }
 
-function formatMemberSince(value: Date | null | undefined) {
+function formatMemberSince(
+  value: Date | null | undefined,
+  timeZone: string,
+) {
   if (!value) return "recently"
 
-  return new Intl.DateTimeFormat("en-IN", {
+  return formatInUserTimeZone(value, timeZone, {
     month: "short",
     year: "numeric",
-  }).format(value)
+  })
 }
 
 function getInitials(name: string) {
@@ -90,7 +104,15 @@ export default async function SettingsPage({
 
   const statusMessage =
     getStatusMessage(asSingleValue(params.gmail)) ??
-    getStatusMessage(asSingleValue(params.fx))
+    getStatusMessage(asSingleValue(params.fx)) ??
+    (() => {
+      const timeZoneStatus = asSingleValue(params.tz)
+
+      if (timeZoneStatus === "updated") return getStatusMessage("updated-time-zone")
+      if (timeZoneStatus === "invalid-time-zone") return getStatusMessage("invalid-time-zone")
+      if (timeZoneStatus === "save-failed") return getStatusMessage("time-zone-save-failed")
+      return null
+    })()
   const backfillState = gmailState.cursor?.backfillCompletedAt
     ? "ready"
     : gmailState.cursor?.backfillStartedAt
@@ -98,7 +120,7 @@ export default async function SettingsPage({
       : "not started"
   const displayName = session.user.name
   const displayImage = session.user.image
-  const memberSince = formatMemberSince(authUser?.createdAt ?? null)
+  const memberSince = formatMemberSince(authUser?.createdAt ?? null, settings.timeZone)
 
   return (
     <section className="mx-auto max-w-lg">
@@ -149,9 +171,14 @@ export default async function SettingsPage({
           value={settings.reportingCurrency}
         />
         <InfoRow
+          label="time zone"
+          value={settings.timeZone}
+        />
+        <InfoRow
           label="last sync"
           value={formatDateTime(
             gmailState.connection?.lastSuccessfulSyncAt,
+            settings.timeZone,
           )}
         />
         <InfoRow label="backfill" value={backfillState} />
@@ -167,6 +194,7 @@ export default async function SettingsPage({
         <ReportingCurrencyRow
           currentCurrency={settings.reportingCurrency}
         />
+        <TimeZoneRow currentTimeZone={settings.timeZone} />
       </div>
 
       {/* Diagnostics */}

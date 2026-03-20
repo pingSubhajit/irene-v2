@@ -6,6 +6,7 @@ import {
 } from "@remixicon/react"
 import {
   type DiagnosticFilter,
+  getUserSettings,
   listDiagnosticTimelineForUser,
 } from "@workspace/db"
 import { Badge } from "@workspace/ui/components/badge"
@@ -13,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/componen
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { cn } from "@workspace/ui/lib/utils"
 
+import { formatInUserTimeZone } from "@/lib/date-format"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
@@ -41,11 +43,11 @@ function asSingleValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value
 }
 
-function formatDateTime(value: Date) {
-  return new Intl.DateTimeFormat("en-IN", {
+function formatDateTime(value: Date, timeZone: string) {
+  return formatInUserTimeZone(value, timeZone, {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(value)
+  })
 }
 
 function getStatusBadge(status: string) {
@@ -67,11 +69,14 @@ export default async function SettingsLogsPage({ searchParams }: LogsPageProps) 
   const filter = FILTERS.some((entry) => entry.value === requestedFilter)
     ? (requestedFilter as DiagnosticFilter)
     : "all"
-  const timeline = await listDiagnosticTimelineForUser({
-    userId: session.user.id,
-    filter,
-    limit: 80,
-  })
+  const [settings, timeline] = await Promise.all([
+    getUserSettings(session.user.id),
+    listDiagnosticTimelineForUser({
+      userId: session.user.id,
+      filter,
+      limit: 80,
+    }),
+  ])
 
   return (
     <section className="grid gap-6">
@@ -153,7 +158,7 @@ export default async function SettingsLogsPage({ searchParams }: LogsPageProps) 
                     <div className="text-left md:text-right">
                       <p className="neo-kicker">Recorded</p>
                       <p className="mt-2 text-sm text-white/68">
-                        {formatDateTime(entry.occurredAt)}
+                        {formatDateTime(entry.occurredAt, settings.timeZone)}
                       </p>
                     </div>
                   </div>

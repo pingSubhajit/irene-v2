@@ -2,6 +2,7 @@ import {
   countIncomeStreams,
   countOpenReviewQueueItemsForUser,
   countRecurringObligationsByType,
+  getUserSettings,
   listDashboardLedgerEventsForUser,
   listFinancialEventSourcesForEventIds,
   listIncomeStreamsForUser,
@@ -14,6 +15,10 @@ import { HeroBalanceCard } from "@/components/hero-balance-card"
 import { RecurringModelCard } from "@/components/recurring-model-card"
 import { SnapshotStatStrip } from "@/components/snapshot-stat-strip"
 import { TransactionCard } from "@/components/transaction-card"
+import {
+  formatInUserTimeZone,
+  getUserTimeZoneDayOfMonth,
+} from "@/lib/date-format"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { requireSession } from "@/lib/session"
@@ -39,27 +44,28 @@ function formatCurrency(amountMinor: number, currency = "INR") {
   }
 }
 
-function formatEventDate(date: Date) {
-  return new Intl.DateTimeFormat("en-IN", {
+function formatEventDate(date: Date, timeZone: string) {
+  return formatInUserTimeZone(date, timeZone, {
     day: "numeric",
     month: "short",
     weekday: "short",
-  }).format(date)
+  })
 }
 
-function formatShortDate(date: Date | null) {
+function formatShortDate(date: Date | null, timeZone: string) {
   if (!date) {
     return "date still unclear"
   }
 
-  return new Intl.DateTimeFormat("en-IN", {
+  return formatInUserTimeZone(date, timeZone, {
     day: "numeric",
     month: "short",
-  }).format(date)
+  })
 }
 
 export default async function DashboardPage() {
   const session = await requireSession()
+  const settings = await getUserSettings(session.user.id)
   const monthStart = startOfCurrentMonth()
   const valuationCoverage = await ensureUserFinancialEventValuationCoverage(session.user.id, {
     dateFrom: monthStart,
@@ -130,7 +136,10 @@ export default async function DashboardPage() {
 
     if (event.direction === "outflow" && !event.isTransfer) {
       monthSpendMinor += reportingAmountMinor
-      const day = event.eventOccurredAt.getUTCDate()
+      const day = getUserTimeZoneDayOfMonth(
+        event.eventOccurredAt,
+        settings.timeZone,
+      )
       const dailySpend = dailySpendMap.get(day) ?? {
         amountMinor: 0,
         originalCurrencies: new Set<string>(),
@@ -154,7 +163,7 @@ export default async function DashboardPage() {
     }
   }
 
-  const todayDate = new Date().getUTCDate()
+  const todayDate = getUserTimeZoneDayOfMonth(new Date(), settings.timeZone)
   const dailySpend = Array.from({ length: todayDate }, (_, i) => ({
     day: i + 1,
     amount: (dailySpendMap.get(i + 1)?.amountMinor ?? 0) / 100,
@@ -346,13 +355,14 @@ export default async function DashboardPage() {
                   eventId={event.id}
                   merchant={merchant?.displayName ?? event.description ?? "Unmapped event"}
                   amount={formatCurrency(event.amountMinor, event.currency)}
-                  dateLabel={formatEventDate(event.eventOccurredAt)}
+                  dateLabel={formatEventDate(event.eventOccurredAt, settings.timeZone)}
                   category={category?.name ?? "Uncategorized"}
                   direction={event.direction}
                   eventType={event.eventType}
                   needsReview={event.needsReview}
                   paymentInstrument={paymentInstrument?.displayName ?? null}
                   traceCount={(sourcesByEventId.get(event.id) ?? []).length}
+                  timeZone={settings.timeZone}
                 />
               ))
             ) : (
@@ -386,7 +396,7 @@ export default async function DashboardPage() {
                   cadence={obligation.cadence}
                   scheduleLabel={
                     obligation.nextDueAt
-                      ? `next ${formatShortDate(obligation.nextDueAt)}`
+                      ? `next ${formatShortDate(obligation.nextDueAt, settings.timeZone)}`
                       : "still estimating"
                   }
                   confidenceLabel={`${Math.round(Number(obligation.detectionConfidence) * 100)}%`}
@@ -429,7 +439,7 @@ export default async function DashboardPage() {
                   }
                   scheduleLabel={
                     incomeStream.nextExpectedAt
-                      ? `next ${formatShortDate(incomeStream.nextExpectedAt)}`
+                      ? `next ${formatShortDate(incomeStream.nextExpectedAt, settings.timeZone)}`
                       : "still estimating"
                   }
                   confidenceLabel={`${Math.round(Number(incomeStream.confidence) * 100)}%`}

@@ -1,0 +1,201 @@
+"use client"
+
+import { useState } from "react"
+
+import {
+  RiCheckLine,
+  RiCloseLine,
+  RiFileCopyLine,
+  RiLoader4Line,
+  RiTimeLine,
+} from "@remixicon/react"
+import { Button } from "@workspace/ui/components/button"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@workspace/ui/components/sheet"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip"
+
+type ModelRunRow = {
+  id: string
+  taskType: string
+  provider: string
+  modelName: string
+  status: string
+  errorMessage: string | null
+  requestId: string | null
+  createdAt: Date
+}
+
+type ModelRunListProps = {
+  modelRuns: ModelRunRow[]
+}
+
+export function ModelRunList({ modelRuns }: ModelRunListProps) {
+  const [selectedRun, setSelectedRun] = useState<ModelRunRow | null>(null)
+  const [copyLabel, setCopyLabel] = useState("Copy error")
+
+  return (
+    <>
+      <TooltipProvider>
+        <div className="divide-y divide-white/[0.06]">
+          {modelRuns.map((modelRun) => {
+            const isFailed = modelRun.status === "failed"
+
+            if (isFailed) {
+              return (
+                <button
+                  key={modelRun.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedRun(modelRun)
+                    setCopyLabel("Copy error")
+                  }}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3 text-left transition hover:bg-white/[0.02]"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-white">
+                      {modelRun.taskType}
+                    </p>
+                    <p className="mt-0.5 truncate text-sm text-white/28">
+                      {modelRun.provider} · {modelRun.modelName}
+                    </p>
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        aria-label={modelRun.status}
+                        className="flex size-7 shrink-0 items-center justify-center text-white/68"
+                      >
+                        <ModelRunStatusIcon status={modelRun.status} />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      Failed. Tap to inspect error.
+                    </TooltipContent>
+                  </Tooltip>
+                </button>
+              )
+            }
+
+            return (
+              <div
+                key={modelRun.id}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-white">
+                    {modelRun.taskType}
+                  </p>
+                  <p className="mt-0.5 truncate text-sm text-white/28">
+                    {modelRun.provider} · {modelRun.modelName}
+                  </p>
+                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      aria-label={modelRun.status}
+                      className="flex size-7 shrink-0 items-center justify-center text-white/68"
+                    >
+                      <ModelRunStatusIcon status={modelRun.status} />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">
+                    {modelRun.status}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )
+          })}
+        </div>
+      </TooltipProvider>
+
+      <Sheet
+        open={Boolean(selectedRun)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedRun(null)
+            setCopyLabel("Copy error")
+          }
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          className="border-t border-white/8 bg-[rgba(12,12,14,0.98)] pb-6"
+          showCloseButton
+        >
+          <SheetHeader className="px-5 pt-0 sm:px-6">
+            <SheetTitle>Model run failure</SheetTitle>
+            <SheetDescription>
+              {selectedRun?.taskType ?? "Unknown task"}
+            </SheetDescription>
+            <p className="text-sm text-white/34">
+              {selectedRun?.provider ?? "unknown"} · {selectedRun?.modelName ?? "unknown"}
+            </p>
+          </SheetHeader>
+
+          <div className="px-5 pt-5 sm:px-6">
+            <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-4">
+              <div className="min-w-0">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-white/28">
+                  Error
+                </p>
+                {selectedRun?.requestId ? (
+                  <p className="mt-1 truncate text-sm text-white/34">
+                    request {selectedRun.requestId}
+                  </p>
+                ) : null}
+              </div>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={async () => {
+                  const errorText =
+                    selectedRun?.errorMessage ?? "No error message recorded."
+
+                  try {
+                    await navigator.clipboard.writeText(errorText)
+                    setCopyLabel("Copied")
+                  } catch {
+                    setCopyLabel("Copy failed")
+                  }
+                }}
+              >
+                <RiFileCopyLine className="size-3.5" />
+                {copyLabel}
+              </Button>
+            </div>
+
+            <pre className="mt-4 max-h-[42svh] overflow-x-auto overflow-y-auto border border-white/8 bg-[rgba(255,255,255,0.03)] p-4 text-sm leading-6 whitespace-pre-wrap text-white/72 [overflow-wrap:anywhere]">
+              {selectedRun?.errorMessage ?? "No error message recorded."}
+            </pre>
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
+  )
+}
+
+function ModelRunStatusIcon({ status }: { status: string }) {
+  if (status === "succeeded") {
+    return <RiCheckLine className="size-[1.125rem] text-emerald-400" />
+  }
+
+  if (status === "failed") {
+    return <RiCloseLine className="size-[1.125rem] text-red-400" />
+  }
+
+  if (status === "running") {
+    return <RiLoader4Line className="size-[1.125rem] animate-spin text-white/38" />
+  }
+
+  return <RiTimeLine className="size-[1.125rem] text-white/32" />
+}

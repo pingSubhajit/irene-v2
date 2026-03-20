@@ -116,6 +116,17 @@ export async function getRawDocumentById(rawDocumentId: string) {
   return rawDocument ?? null
 }
 
+export async function listRawDocumentsByIds(rawDocumentIds: string[]) {
+  if (rawDocumentIds.length === 0) {
+    return []
+  }
+
+  return db
+    .select()
+    .from(rawDocuments)
+    .where(inArray(rawDocuments.id, rawDocumentIds))
+}
+
 export async function updateRawDocumentBodyText(rawDocumentId: string, bodyText: string) {
   const [rawDocument] = await db
     .update(rawDocuments)

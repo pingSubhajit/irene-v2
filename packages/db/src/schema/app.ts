@@ -21,6 +21,7 @@ export const userSettings = pgTable(
       .primaryKey()
       .references(() => users.id, { onDelete: "cascade" }),
     reportingCurrency: text("reporting_currency").notNull().default("INR"),
+    timeZone: text("time_zone").notNull().default("Asia/Kolkata"),
     forecastHorizonDays: integer("forecast_horizon_days").notNull().default(30),
     salaryDayHint: integer("salary_day_hint"),
     lowBalanceThreshold: bigint("low_balance_threshold", { mode: "number" })

@@ -78,6 +78,10 @@ export type MerchantObservationSummary = {
   channelHint: string | null
   confidence: number
   evidenceSummary: string[]
+  sender: string | null
+  subject: string | null
+  snippet: string | null
+  bodyTextExcerpt: string | null
 }
 
 export type CandidateMerchantSummary = {
@@ -147,8 +151,10 @@ export async function resolveMerchantAndProcessorWithAi(input: MerchantResolutio
     "You resolve canonical merchant and payment processor identity from structured transaction evidence.",
     "Separate issuer institution, payment processor, and merchant.",
     "Issuer sender/domain evidence is not merchant evidence.",
-    "Processor prefixes like PAYPAL *, RAZORPAY*, GOOGLE *, APPLE.COM/BILL, and AMAZON PAY are intermediary evidence, not final merchant truth.",
+    "Processor prefixes like PAYPAL *, PAYU *, PYU *, RAZORPAY*, GOOGLE *, APPLE.COM/BILL, and AMAZON PAY are intermediary evidence, not final merchant truth.",
     "If the descriptor suggests both a processor and a merchant, prefer separate processor + merchant outputs.",
+    "Use sender, subject, snippet, and normalized email body context to recover merchant meaning when parser hints are noisy.",
+    "Ignore bank boilerplate, available balance text, available credit limit text, support instructions, footer links, promo text, and generic help CTAs when deciding the merchant.",
     "If evidence is insufficient, prefer needs_review or ignore over a wrong merchant.",
     "Also choose the best category slug for the user-visible event after merchant resolution.",
     "",

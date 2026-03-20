@@ -1,4 +1,5 @@
 import {
+  getUserSettings,
   listIncomeStreamsForUser,
   listFinancialEventSourcesForEventIds,
   listLedgerEventsForUser,
@@ -8,6 +9,10 @@ import { Input } from "@workspace/ui/components/input"
 
 import { RecurringModelCard } from "@/components/recurring-model-card"
 import { TransactionCard } from "@/components/transaction-card"
+import {
+  formatInUserTimeZone,
+  getUserTimeZoneMonthKey,
+} from "@/lib/date-format"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
@@ -53,13 +58,13 @@ function formatMonthGroup(dateKey: string) {
   return `${month} '${year}`
 }
 
-function formatScheduleDate(date: Date | null) {
+function formatScheduleDate(date: Date | null, timeZone: string) {
   if (!date) return "still estimating"
 
-  return new Intl.DateTimeFormat("en-IN", {
+  return formatInUserTimeZone(date, timeZone, {
     day: "numeric",
     month: "short",
-  }).format(date)
+  })
 }
 
 export default async function ActivityPage({
@@ -70,7 +75,8 @@ export default async function ActivityPage({
   const query = asSingleValue(params.query)?.trim() || undefined
   const view = asSingleValue(params.view) || "all"
 
-  const [events, subscriptions, emis, incomeStreams] = await Promise.all([
+  const [settings, events, subscriptions, emis, incomeStreams] = await Promise.all([
+    getUserSettings(session.user.id),
     listLedgerEventsForUser({
       userId: session.user.id,
       query,
@@ -157,7 +163,10 @@ export default async function ActivityPage({
 
   const grouped = new Map<string, typeof filteredEvents>()
   for (const row of filteredEvents) {
-    const key = row.event.eventOccurredAt.toISOString().slice(0, 7)
+    const key = getUserTimeZoneMonthKey(
+      row.event.eventOccurredAt,
+      settings.timeZone,
+    )
     const existing = grouped.get(key) ?? []
     existing.push(row)
     grouped.set(key, existing)
@@ -241,7 +250,7 @@ export default async function ActivityPage({
                   }
                   scheduleLabel={
                     incomeStream.nextExpectedAt
-                      ? `next ${formatScheduleDate(incomeStream.nextExpectedAt)}`
+                      ? `next ${formatScheduleDate(incomeStream.nextExpectedAt, settings.timeZone)}`
                       : "still estimating"
                   }
                   confidenceLabel={`${Math.round(Number(incomeStream.confidence) * 100)}%`}
@@ -268,7 +277,7 @@ export default async function ActivityPage({
                   cadence={obligation.cadence}
                   scheduleLabel={
                     obligation.nextDueAt
-                      ? `next ${formatScheduleDate(obligation.nextDueAt)}`
+                      ? `next ${formatScheduleDate(obligation.nextDueAt, settings.timeZone)}`
                       : "still estimating"
                   }
                   confidenceLabel={`${Math.round(Number(obligation.detectionConfidence) * 100)}%`}
@@ -318,6 +327,7 @@ export default async function ActivityPage({
                       traceCount={
                         (sourcesByEventId.get(event.id) ?? []).length
                       }
+                      timeZone={settings.timeZone}
                     />
                   ),
                 )}

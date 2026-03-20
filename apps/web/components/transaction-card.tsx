@@ -7,6 +7,8 @@ import {
   RiSwapLine,
 } from "@remixicon/react"
 
+import { formatInUserTimeZone } from "@/lib/date-format"
+
 type TransactionCardProps = {
   eventId: string
   merchant: string
@@ -19,6 +21,7 @@ type TransactionCardProps = {
   needsReview: boolean
   paymentInstrument: string | null
   traceCount?: number
+  timeZone?: string
 }
 
 function getInitials(name: string) {
@@ -55,15 +58,15 @@ function DirectionIcon({
   return <RiArrowRightUpLine className="size-3.5 text-[var(--neo-coral)]" />
 }
 
-function formatRowTime(isoString: string) {
+function formatRowTime(isoString: string, timeZone: string | undefined) {
   try {
     const date = new Date(isoString)
-    return new Intl.DateTimeFormat("en-IN", {
+    return formatInUserTimeZone(date, timeZone, {
       day: "numeric",
       month: "short",
       hour: "numeric",
       minute: "2-digit",
-    }).format(date)
+    })
   } catch {
     return isoString
   }
@@ -78,6 +81,7 @@ export function TransactionCard({
   direction,
   needsReview,
   traceCount = 0,
+  timeZone,
 }: TransactionCardProps) {
   const content = (
     <div className="flex items-center gap-3.5 py-4">
@@ -92,7 +96,7 @@ export function TransactionCard({
           <DirectionIcon direction={direction} needsReview={needsReview} />
           <p className="truncate text-sm text-white/32">
             {processor ? `via ${processor} · ` : ""}
-            {formatRowTime(dateLabel)}
+            {formatRowTime(dateLabel, timeZone)}
           </p>
         </div>
       </div>

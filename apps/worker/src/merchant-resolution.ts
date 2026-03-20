@@ -12,11 +12,13 @@ import {
   getMerchantById,
   getPaymentProcessorById,
   listAliasesForMerchantIds,
+  listMerchantAliasCandidatesForUser,
   listCandidateMerchants,
   listCandidatePaymentProcessors,
   listFinancialEventIdsForMerchantRepair,
   listMerchantObservationsByClusterKey,
   listMerchantObservationsForEvent,
+  listRawDocumentsByIds,
   listUserIdsForMerchantRepair,
   mergeMerchants,
   mergePaymentProcessors,
@@ -33,6 +35,12 @@ import {
   resolveCategoryWithAi,
   resolveMerchantAndProcessorWithAi,
 } from "@workspace/ai"
+
+import {
+  resolveExistingMerchantFastPath,
+  type MerchantAliasCandidate,
+} from "./merchant-fast-path"
+import { deriveMerchantDisplayName } from "./merchant-name"
 
 type ObservationExtractionOutcome = {
   action: "skipped" | "observed"
@@ -62,6 +70,12 @@ function normalizeWhitespace(input: string | null | undefined) {
   if (!input) return null
   const normalized = input.replace(/\s+/g, " ").trim()
   return normalized.length > 0 ? normalized : null
+}
+
+function truncateText(input: string | null | undefined, max = 1200) {
+  const normalized = normalizeWhitespace(input)
+  if (!normalized) return null
+  return normalized.length > max ? `${normalized.slice(0, max)}…` : normalized
 }
 
 function extractSenderEmail(input: string | null | undefined) {
@@ -159,17 +173,93 @@ function summarizeEvidence(observation: MerchantObservationSelect) {
   return snippets.slice(0, 3)
 }
 
+function buildMerchantHintCandidates(input: {
+  merchantNameHint?: string | null
+  merchantDescriptorRaw?: string | null
+  merchantRaw?: string | null
+  merchantHint?: string | null
+}) {
+  return [
+    getSanitizedMerchantHint({
+      merchantNameHint: normalizeWhitespace(input.merchantNameHint) ?? null,
+      merchantDescriptorRaw: normalizeWhitespace(input.merchantDescriptorRaw) ?? null,
+    }),
+    deriveMerchantDisplayName(input.merchantRaw),
+    deriveMerchantDisplayName(input.merchantHint),
+    normalizeWhitespace(input.merchantNameHint),
+    normalizeWhitespace(input.merchantHint),
+    normalizeWhitespace(input.merchantRaw),
+    normalizeWhitespace(input.merchantDescriptorRaw),
+  ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+}
+
+function getSanitizedMerchantHint(input: {
+  merchantNameHint: string | null
+  merchantDescriptorRaw: string | null
+}) {
+  return (
+    deriveMerchantDisplayName(input.merchantNameHint) ??
+    deriveMerchantDisplayName(input.merchantDescriptorRaw)
+  )
+}
+
 function getClusterKey(input: {
   merchantDescriptorRaw: string | null
   merchantNameHint: string | null
   processorNameHint: string | null
 }) {
   return (
-    normalizeMerchantResolutionName(input.merchantDescriptorRaw) ??
     normalizeMerchantResolutionName(input.merchantNameHint) ??
+    normalizeMerchantResolutionName(input.merchantDescriptorRaw) ??
     normalizeMerchantResolutionName(input.processorNameHint) ??
     "unknown"
   )
+}
+
+function selectParserFallbackDecision(input: {
+  observations: MerchantObservationSelect[]
+  aliasCandidates: MerchantAliasCandidate[]
+}) {
+  const merchantHints = input.observations.flatMap((observation) =>
+    buildMerchantHintCandidates({
+      merchantNameHint: observation.merchantNameHint,
+      merchantDescriptorRaw: observation.merchantDescriptorRaw,
+    }),
+  )
+
+  const matchedExistingMerchant = resolveExistingMerchantFastPath({
+    merchantHints,
+    aliasCandidates: input.aliasCandidates,
+  })
+
+  if (matchedExistingMerchant.status === "matched_existing_merchant") {
+    return {
+      decision: "link_to_existing_merchant" as const,
+      canonicalMerchantName: matchedExistingMerchant.merchantDisplayName,
+      targetMerchantId: matchedExistingMerchant.merchantId,
+      reason: "linked_existing_merchant_after_llm_failure",
+      supportingObservationIds: input.observations.map((observation) => observation.id),
+    }
+  }
+
+  const fallbackMerchantName =
+    merchantHints[0] ??
+    input.observations
+      .map((observation) => normalizeWhitespace(observation.merchantDescriptorRaw))
+      .find((value): value is string => Boolean(value)) ??
+    null
+
+  if (!fallbackMerchantName) {
+    return null
+  }
+
+  return {
+    decision: "create_new_merchant" as const,
+    canonicalMerchantName: fallbackMerchantName,
+    targetMerchantId: null,
+    reason: "parser_fallback_after_llm_failure",
+    supportingObservationIds: input.observations.map((observation) => observation.id),
+  }
 }
 
 export async function extractMerchantObservationsFromEvent(
@@ -201,8 +291,13 @@ export async function extractMerchantObservationsFromEvent(
         normalizeWhitespace(signal?.merchantRaw) ??
         null
       const merchantNameHint =
-        normalizeWhitespace(signal?.merchantNameCandidate) ??
-        normalizeWhitespace(signal?.merchantHint) ??
+        getSanitizedMerchantHint({
+          merchantNameHint:
+            normalizeWhitespace(signal?.merchantNameCandidate) ??
+            normalizeWhitespace(signal?.merchantHint) ??
+            null,
+          merchantDescriptorRaw,
+        }) ??
         context.merchant?.displayName ??
         null
       const processorNameHint = normalizeWhitespace(signal?.processorNameCandidate)
@@ -429,10 +524,57 @@ export async function resolveMerchantCluster(input: {
     return { action: "skipped", reason: "no_pending_observations" }
   }
 
+  const rawDocumentIds = relevantObservations
+    .map((observation) => observation.rawDocumentId)
+    .filter((value): value is string => Boolean(value))
+  const [aliasCandidates, relatedRawDocuments] = await Promise.all([
+    listMerchantAliasCandidatesForUser(input.userId),
+    listRawDocumentsByIds(rawDocumentIds),
+  ])
+  const rawDocumentById = new Map(
+    relatedRawDocuments.map((rawDocument) => [rawDocument.id, rawDocument] as const),
+  )
+  const fastPathHints = relevantObservations.flatMap((observation) =>
+    buildMerchantHintCandidates({
+      merchantNameHint: observation.merchantNameHint,
+      merchantDescriptorRaw: observation.merchantDescriptorRaw,
+    }),
+  )
+  const existingMerchantMatch = resolveExistingMerchantFastPath({
+    merchantHints: fastPathHints,
+    aliasCandidates,
+  })
+
+  if (existingMerchantMatch.status === "matched_existing_merchant") {
+    const applied = await applyMerchantDecision({
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      observations: relevantObservations,
+      canonicalMerchantName: existingMerchantMatch.merchantDisplayName,
+      canonicalProcessorName: null,
+      categorySlug: null,
+      targetMerchantId: existingMerchantMatch.merchantId,
+      decision: "link_to_existing_merchant",
+    })
+
+    return {
+      action: "linked",
+      reason: existingMerchantMatch.reasonCode,
+      merchantId: applied.merchant?.id ?? null,
+      paymentProcessorId: applied.processor?.id ?? null,
+      categoryId: applied.category?.id ?? null,
+      observationIds: relevantObservations.map((observation) => observation.id),
+    }
+  }
+
   const candidateMerchantRows = await listCandidateMerchants({
     userId: input.userId,
     aliasHints: relevantObservations.flatMap((observation) => [
       observation.merchantNameHint ?? "",
+      getSanitizedMerchantHint({
+        merchantNameHint: observation.merchantNameHint,
+        merchantDescriptorRaw: observation.merchantDescriptorRaw,
+      }) ?? "",
       observation.merchantDescriptorRaw ?? "",
     ]),
   })
@@ -469,12 +611,25 @@ export async function resolveMerchantCluster(input: {
         observationSourceKind: observation.observationSourceKind,
         issuerHint: observation.issuerHint,
         merchantDescriptorRaw: observation.merchantDescriptorRaw,
-        merchantNameHint: observation.merchantNameHint,
+        merchantNameHint:
+          getSanitizedMerchantHint({
+            merchantNameHint: observation.merchantNameHint,
+            merchantDescriptorRaw: observation.merchantDescriptorRaw,
+          }) ?? observation.merchantNameHint,
         processorNameHint: observation.processorNameHint,
         senderAliasHint: observation.senderAliasHint,
         channelHint: observation.channelHint,
         confidence: Number(observation.confidence),
         evidenceSummary: summarizeEvidence(observation),
+        sender:
+          rawDocumentById.get(observation.rawDocumentId ?? "")?.fromAddress ?? null,
+        subject:
+          rawDocumentById.get(observation.rawDocumentId ?? "")?.subject ?? null,
+        snippet:
+          rawDocumentById.get(observation.rawDocumentId ?? "")?.snippet ?? null,
+        bodyTextExcerpt: truncateText(
+          rawDocumentById.get(observation.rawDocumentId ?? "")?.bodyText,
+        ),
       })),
       candidateMerchants: candidateMerchantRows.map((row) => ({
         id: row.merchant.id,
@@ -611,7 +766,37 @@ export async function resolveMerchantCluster(input: {
       status: "failed",
       errorMessage: error instanceof Error ? error.message : "Unknown merchant resolution failure",
     })
-    throw error
+
+    const fallback = selectParserFallbackDecision({
+      observations: relevantObservations,
+      aliasCandidates,
+    })
+
+    if (!fallback) {
+      throw error
+    }
+
+    const applied = await applyMerchantDecision({
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      observations: relevantObservations.filter((observation) =>
+        fallback.supportingObservationIds.includes(observation.id),
+      ),
+      canonicalMerchantName: fallback.canonicalMerchantName,
+      canonicalProcessorName: null,
+      categorySlug: null,
+      targetMerchantId: fallback.targetMerchantId,
+      decision: fallback.decision,
+    })
+
+    return {
+      action: "linked",
+      reason: fallback.reason,
+      merchantId: applied.merchant?.id ?? null,
+      paymentProcessorId: applied.processor?.id ?? null,
+      categoryId: applied.category?.id ?? null,
+      observationIds: fallback.supportingObservationIds,
+    }
   }
 }
 

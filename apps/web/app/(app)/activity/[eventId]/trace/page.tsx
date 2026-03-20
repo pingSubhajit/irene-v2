@@ -12,8 +12,13 @@ import {
 } from "@workspace/ui/components/accordion"
 import { Badge } from "@workspace/ui/components/badge"
 import { downloadPrivateObject } from "@workspace/integrations"
-import { getFinancialEventTraceForUser } from "@workspace/db"
+import {
+  getFinancialEventTraceForUser,
+  getUserSettings,
+} from "@workspace/db"
 
+import { ModelRunList } from "@/components/model-run-list"
+import { formatInUserTimeZone } from "@/lib/date-format"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
@@ -38,23 +43,29 @@ function formatCurrency(amountMinor: number, currency: string) {
   }
 }
 
-function formatDateTime(value: Date | null | undefined) {
+function formatDateTime(
+  value: Date | null | undefined,
+  timeZone: string,
+) {
   if (!value) return "not available"
 
-  return new Intl.DateTimeFormat("en-IN", {
+  return formatInUserTimeZone(value, timeZone, {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(value)
+  })
 }
 
-function formatShortDate(value: Date | null | undefined) {
+function formatShortDate(
+  value: Date | null | undefined,
+  timeZone: string,
+) {
   if (!value) return ""
 
-  return new Intl.DateTimeFormat("en-IN", {
+  return formatInUserTimeZone(value, timeZone, {
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(value)
+  })
 }
 
 function asSnippetList(value: unknown) {
@@ -80,10 +91,13 @@ export default async function EventTracePage({
 }: EventTracePageProps) {
   const session = await requireSession()
   const { eventId } = await params
-  const trace = await getFinancialEventTraceForUser({
-    userId: session.user.id,
-    eventId,
-  })
+  const [settings, trace] = await Promise.all([
+    getUserSettings(session.user.id),
+    getFinancialEventTraceForUser({
+      userId: session.user.id,
+      eventId,
+    }),
+  ])
 
   if (!trace) {
     notFound()
@@ -137,7 +151,7 @@ export default async function EventTracePage({
       ) : null}
       <p className="mt-1 text-sm text-white/36">
         {formatCurrency(trace.event.amountMinor, trace.event.currency)} ·{" "}
-        {formatShortDate(trace.event.eventOccurredAt)} ·{" "}
+        {formatShortDate(trace.event.eventOccurredAt, settings.timeZone)} ·{" "}
         {trace.event.eventType}
       </p>
 
@@ -145,7 +159,7 @@ export default async function EventTracePage({
       <div className="mt-8 divide-y divide-white/[0.06]">
         <InfoRow label="amount" value={formatCurrency(trace.event.amountMinor, trace.event.currency)} />
         <InfoRow label="direction" value={trace.event.direction} />
-        <InfoRow label="date" value={formatDateTime(trace.event.eventOccurredAt)} />
+        <InfoRow label="date" value={formatDateTime(trace.event.eventOccurredAt, settings.timeZone)} />
         <InfoRow label="type" value={trace.event.eventType} />
         <InfoRow label="processor" value={trace.paymentProcessor?.displayName ?? "unlinked"} />
         <InfoRow label="instrument" value={trace.paymentInstrument?.displayName ?? "unlinked"} />
@@ -210,6 +224,7 @@ export default async function EventTracePage({
                         ·{" "}
                         {formatDateTime(
                           entry.rawDocument?.messageTimestamp,
+                          settings.timeZone,
                         )}
                       </p>
                     </div>
@@ -244,6 +259,7 @@ export default async function EventTracePage({
                           label="time"
                           value={formatDateTime(
                             entry.rawDocument?.messageTimestamp,
+                            settings.timeZone,
                           )}
                         />
                         <InfoRow
@@ -333,15 +349,15 @@ export default async function EventTracePage({
                       )}
 
                       {snippets.length > 0 && (
-                        <div className="mt-4">
+                        <div className="mt-4 min-w-0">
                           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/28">
                             evidence snippets
                           </p>
-                          <div className="grid gap-1.5">
+                          <div className="grid min-w-0 gap-1.5">
                             {snippets.map((snippet) => (
                               <p
                                 key={snippet}
-                                className="border-l-2 border-white/8 py-1 pl-3 text-sm leading-relaxed text-white/44"
+                                className="min-w-0 overflow-hidden border-l-2 border-white/8 py-1 pl-3 text-sm leading-relaxed text-white/44 [overflow-wrap:anywhere]"
                               >
                                 {snippet}
                               </p>
@@ -355,35 +371,7 @@ export default async function EventTracePage({
                     {entry.modelRuns.length > 0 && (
                       <div>
                         <SectionLabel>Model runs</SectionLabel>
-                        <div className="divide-y divide-white/[0.06]">
-                          {entry.modelRuns.map((modelRun) => (
-                            <div
-                              key={modelRun.id}
-                              className="flex items-center justify-between gap-4 py-3"
-                            >
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-white">
-                                  {modelRun.taskType}
-                                </p>
-                                <p className="mt-0.5 text-sm text-white/28">
-                                  {modelRun.provider} ·{" "}
-                                  {modelRun.modelName}
-                                </p>
-                              </div>
-                              <Badge
-                                variant={
-                                  modelRun.status === "succeeded"
-                                    ? "success"
-                                    : modelRun.status === "failed"
-                                      ? "danger"
-                                      : "default"
-                                }
-                              >
-                                {modelRun.status}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
+                        <ModelRunList modelRuns={entry.modelRuns} />
                       </div>
                     )}
 

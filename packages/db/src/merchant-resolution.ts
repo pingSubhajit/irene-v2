@@ -220,6 +220,20 @@ export async function listAliasesForMerchantIds(merchantIds: string[]) {
     .orderBy(asc(merchantAliases.createdAt))
 }
 
+export async function listMerchantAliasCandidatesForUser(userId: string) {
+  return db
+    .select({
+      merchantId: merchants.id,
+      merchantDisplayName: merchants.displayName,
+      merchantNormalizedName: merchants.normalizedName,
+      aliasText: merchantAliases.aliasText,
+    })
+    .from(merchantAliases)
+    .innerJoin(merchants, eq(merchantAliases.merchantId, merchants.id))
+    .where(eq(merchants.userId, userId))
+    .orderBy(asc(merchants.displayName), asc(merchantAliases.createdAt))
+}
+
 export async function listCandidatePaymentProcessors(input: {
   userId: string
   aliasHints: string[]
