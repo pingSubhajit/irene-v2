@@ -12,12 +12,14 @@ import {
   financialInstitutions,
   incomeStreams,
   jobRuns,
+  merchantObservations,
   merchants,
   modelRuns,
   oauthConnections,
+  paymentProcessorAliases,
+  paymentProcessors,
   paymentInstrumentObservations,
   paymentInstruments,
-  paymentProcessors,
   rawDocuments,
   recurringObligations,
   reviewQueueItems,
@@ -124,6 +126,8 @@ export async function resetUserDatabaseState(input: {
       signalRows,
       modelRunRows,
       merchantRows,
+      merchantObservationRows,
+      paymentProcessorRows,
       institutionRows,
       observationRows,
       paymentInstrumentRows,
@@ -161,6 +165,14 @@ export async function resetUserDatabaseState(input: {
         .from(merchants)
         .where(eq(merchants.userId, input.userId)),
       tx
+        .select({ id: merchantObservations.id })
+        .from(merchantObservations)
+        .where(eq(merchantObservations.userId, input.userId)),
+      tx
+        .select({ id: paymentProcessors.id })
+        .from(paymentProcessors)
+        .where(eq(paymentProcessors.userId, input.userId)),
+      tx
         .select({ id: financialInstitutions.id })
         .from(financialInstitutions)
         .where(eq(financialInstitutions.userId, input.userId)),
@@ -196,6 +208,7 @@ export async function resetUserDatabaseState(input: {
 
     const recurringIds = recurringRows.map((row) => row.id)
     const eventIds = eventRows.map((row) => row.id)
+    const paymentProcessorIds = paymentProcessorRows.map((row) => row.id)
     const institutionIds = institutionRows.map((row) => row.id)
     const oauthIds = oauthRows.map((row) => row.id)
 
@@ -227,6 +240,9 @@ export async function resetUserDatabaseState(input: {
     }
 
     await tx
+      .delete(merchantObservations)
+      .where(eq(merchantObservations.userId, input.userId))
+    await tx
       .delete(paymentInstrumentObservations)
       .where(eq(paymentInstrumentObservations.userId, input.userId))
     await tx.delete(financialEvents).where(eq(financialEvents.userId, input.userId))
@@ -234,6 +250,16 @@ export async function resetUserDatabaseState(input: {
     await tx.delete(modelRuns).where(eq(modelRuns.userId, input.userId))
     await tx.delete(rawDocuments).where(eq(rawDocuments.userId, input.userId))
     await tx.delete(paymentInstruments).where(eq(paymentInstruments.userId, input.userId))
+
+    if (paymentProcessorIds.length > 0) {
+      await tx
+        .delete(paymentProcessorAliases)
+        .where(inArray(paymentProcessorAliases.paymentProcessorId, paymentProcessorIds))
+    }
+
+    await tx
+      .delete(paymentProcessors)
+      .where(eq(paymentProcessors.userId, input.userId))
 
     if (institutionIds.length > 0) {
       await tx
@@ -289,6 +315,8 @@ export async function resetUserDatabaseState(input: {
       deletedExtractedSignals: signalRows.length,
       deletedModelRuns: modelRunRows.length,
       deletedMerchants: merchantRows.length,
+      deletedMerchantObservations: merchantObservationRows.length,
+      deletedPaymentProcessors: paymentProcessorRows.length,
       deletedFinancialInstitutions: institutionRows.length,
       deletedPaymentInstrumentObservations: observationRows.length,
       deletedPaymentInstruments: paymentInstrumentRows.length,

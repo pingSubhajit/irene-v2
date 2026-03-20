@@ -187,3 +187,15 @@ export async function classifyFinanceRelevance(
     metadata,
   }
 }
+
+export async function checkAiGatewayHealth() {
+  const gateway = getGatewayProvider()
+  const metadata = await gateway.getAvailableModels()
+  const availableIds = new Set(metadata.models.map((entry) => entry.id))
+  const requiredModels = Object.values(aiModels)
+
+  return {
+    ok: requiredModels.every((model) => availableIds.has(model)),
+    models: requiredModels,
+  }
+}

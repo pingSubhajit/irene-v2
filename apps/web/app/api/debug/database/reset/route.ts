@@ -34,10 +34,10 @@ export async function POST(request: Request) {
   }
 
   const artifacts = await getPrivateStorageArtifactsForUser(session.user.id)
-  await deletePrivateObjects(artifacts.storageKeys)
   const resetResult = await resetUserDatabaseState({
     userId: session.user.id,
   })
+  await deletePrivateObjects(artifacts.storageKeys)
 
   logger.warn("Reset Irene database state without re-enqueueing sync", {
     userId: session.user.id,
