@@ -15,6 +15,7 @@ import {
 type CreateModelRunInput = {
   userId: string
   rawDocumentId?: string | null
+  financialEventId?: string | null
   taskType: ModelRunTaskType
   provider: string
   modelName: string
@@ -25,6 +26,7 @@ type CreateModelRunInput = {
   latencyMs?: number | null
   requestId?: string | null
   errorMessage?: string | null
+  resultJson?: Record<string, unknown> | null
 }
 
 export async function createModelRun(input: CreateModelRunInput) {
@@ -33,6 +35,7 @@ export async function createModelRun(input: CreateModelRunInput) {
     .values({
       userId: input.userId,
       rawDocumentId: input.rawDocumentId ?? null,
+      financialEventId: input.financialEventId ?? null,
       taskType: input.taskType,
       provider: input.provider,
       modelName: input.modelName,
@@ -43,6 +46,7 @@ export async function createModelRun(input: CreateModelRunInput) {
       latencyMs: input.latencyMs ?? null,
       requestId: input.requestId ?? null,
       errorMessage: input.errorMessage ?? null,
+      resultJson: input.resultJson ?? null,
     })
     .returning()
 
@@ -64,6 +68,8 @@ type UpdateModelRunInput = {
   requestId?: string | null
   errorMessage?: string | null
   rawDocumentId?: string | null
+  financialEventId?: string | null
+  resultJson?: Record<string, unknown> | null
 }
 
 export async function updateModelRun(modelRunId: string, input: UpdateModelRunInput) {
@@ -81,6 +87,10 @@ export async function updateModelRun(modelRunId: string, input: UpdateModelRunIn
       errorMessage: input.errorMessage ?? undefined,
       rawDocumentId:
         input.rawDocumentId === null ? null : (input.rawDocumentId ?? undefined),
+      financialEventId:
+        input.financialEventId === null ? null : (input.financialEventId ?? undefined),
+      resultJson:
+        input.resultJson === null ? null : (input.resultJson ?? undefined),
     })
     .where(eq(modelRuns.id, modelRunId))
     .returning()

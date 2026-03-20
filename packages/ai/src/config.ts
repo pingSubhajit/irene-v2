@@ -7,6 +7,7 @@ const modelCatalog = {
   financeInstrumentResolver: "gemini-3-flash",
   financeMerchantResolver: "gemini-3-flash",
   financeCategoryResolver: "gemini-3-flash",
+  financeReconciliationResolver: "gemini-3-flash",
 } as const
 
 function normalizeGatewayModelId(modelId: string) {
@@ -22,6 +23,9 @@ export const aiModels = {
   financeInstrumentResolver: normalizeGatewayModelId(modelCatalog.financeInstrumentResolver),
   financeMerchantResolver: normalizeGatewayModelId(modelCatalog.financeMerchantResolver),
   financeCategoryResolver: normalizeGatewayModelId(modelCatalog.financeCategoryResolver),
+  financeReconciliationResolver: normalizeGatewayModelId(
+    modelCatalog.financeReconciliationResolver,
+  ),
 } as const
 
 export type AiModelPurpose = keyof typeof aiModels
@@ -33,4 +37,5 @@ export const aiPromptVersions = {
   financeInstrumentResolver: "finance-instrument-resolver-v1",
   financeMerchantResolver: "finance-merchant-resolver-v1",
   financeCategoryResolver: "finance-category-resolver-v1",
+  financeReconciliationResolver: "finance-reconciliation-resolver-v1",
 } as const

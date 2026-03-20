@@ -173,6 +173,13 @@ export default async function EventTracePage({
         />
       </div>
 
+      {trace.eventModelRuns.length > 0 && (
+        <div className="mt-10">
+          <SectionLabel>Event model runs</SectionLabel>
+          <ModelRunList modelRuns={trace.eventModelRuns} />
+        </div>
+      )}
+
       {/* Trace paths */}
       {trace.traces.length > 0 ? (
         <div className="mt-10">

@@ -15,6 +15,7 @@ import {
 
 import { users } from "./auth"
 import { rawDocuments } from "./ingestion"
+import { financialEvents } from "./ledger"
 
 export type ModelRunTaskType =
   | "finance_relevance_classification"
@@ -23,6 +24,7 @@ export type ModelRunTaskType =
   | "entity_resolution"
   | "merchant_resolution"
   | "category_resolution"
+  | "reconciliation_resolution"
   | "advice_generation"
   | "review_summary"
 
@@ -64,6 +66,9 @@ export const modelRuns = pgTable(
     rawDocumentId: uuid("raw_document_id").references(() => rawDocuments.id, {
       onDelete: "set null",
     }),
+    financialEventId: uuid("financial_event_id").references(() => financialEvents.id, {
+      onDelete: "set null",
+    }),
     taskType: text("task_type").$type<ModelRunTaskType>().notNull(),
     provider: text("provider").notNull(),
     modelName: text("model_name").notNull(),
@@ -74,6 +79,7 @@ export const modelRuns = pgTable(
     latencyMs: numeric("latency_ms", { mode: "number" }),
     requestId: text("request_id"),
     errorMessage: text("error_message"),
+    resultJson: jsonb("result_json").$type<Record<string, unknown> | null>(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),
@@ -84,6 +90,10 @@ export const modelRuns = pgTable(
       table.rawDocumentId,
       table.createdAt,
     ),
+    index("model_run_financial_event_created_at_idx").on(
+      table.financialEventId,
+      table.createdAt,
+    ),
     index("model_run_task_status_created_at_idx").on(
       table.taskType,
       table.status,
@@ -91,7 +101,7 @@ export const modelRuns = pgTable(
     ),
     check(
       "model_run_task_type_check",
-      sql`${table.taskType} in ('finance_relevance_classification', 'document_extraction', 'classification_support', 'entity_resolution', 'merchant_resolution', 'category_resolution', 'advice_generation', 'review_summary')`,
+      sql`${table.taskType} in ('finance_relevance_classification', 'document_extraction', 'classification_support', 'entity_resolution', 'merchant_resolution', 'category_resolution', 'reconciliation_resolution', 'advice_generation', 'review_summary')`,
     ),
     check(
       "model_run_status_check",

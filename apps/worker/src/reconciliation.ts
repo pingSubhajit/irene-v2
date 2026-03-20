@@ -1,4 +1,5 @@
 import {
+  createModelRun,
   createFinancialEvent,
   createFinancialEventSource,
   createReviewQueueItem,
@@ -9,10 +10,16 @@ import {
   getFinancialEventSourceByRawDocument,
   getOrCreateMerchantForAlias,
   getRawDocumentById,
+  getLatestFxRateDailyOnOrBefore,
   listMerchantAliasCandidatesForUser,
   listCandidateFinancialEvents,
+  listCandidateFinancialEventsByWindow,
+  listFinancialEventReconciliationContexts,
+  normalizeMerchantName,
   refreshFinancialEventSourceCount,
   resolveCategoryForSignal,
+  updateModelRun,
+  upsertFxRateDaily,
   updateExtractedSignalStatus,
   updateFinancialEvent,
   type ExtractedSignalSelect,
@@ -21,9 +28,58 @@ import {
   type FinancialEventType,
   type RawDocumentSelect,
 } from "@workspace/db"
+import { aiModels, aiPromptVersions, resolveReconciliationWithAi } from "@workspace/ai"
+import { fetchCurrencyApiHistoricalRate } from "@workspace/integrations"
 
 import { deriveMerchantDisplayName } from "./merchant-name"
 import { resolveExistingMerchantFastPath } from "./merchant-fast-path"
+
+const FX_PROVIDER = "currencyapi" as const
+const FX_DUPLICATE_RATE_LOOKBACK_DAYS = 7
+const FX_DUPLICATE_TOLERANCE_RATIO = 0.02
+const FX_DUPLICATE_TOLERANCE_MINOR = 100
+const AI_RECONCILIATION_CONFIDENCE_THRESHOLD = 0.9
+const AI_RECONCILIATION_SHORTLIST_LIMIT = 5
+
+type CandidateMatchSet = {
+  plausible: FinancialEventSelect[]
+  exact: FinancialEventSelect[]
+}
+
+type ReconciliationCandidateContext = Awaited<
+  ReturnType<typeof listFinancialEventReconciliationContexts>
+>[number]
+
+type ReconciliationCandidateEventSummary = {
+  event: FinancialEventSelect
+  merchantName: string | null
+  paymentProcessorName: string | null
+  paymentInstrumentName: string | null
+  sources: ReconciliationCandidateContext[]
+  isBankSettlementSource: boolean
+}
+
+type ReconciliationAiDecisionOutcome =
+  | { action: "unavailable" }
+  | {
+      action: "merge"
+      confidence: number
+      financialEventId: string
+      canonicalEventType: FinancialEventType | null
+      resultJson: Record<string, unknown>
+    }
+  | {
+      action: "create"
+      confidence: number
+      canonicalEventType: FinancialEventType | null
+      resultJson: Record<string, unknown>
+    }
+  | {
+      action: "review"
+      confidence: number
+      resultJson: Record<string, unknown>
+      explanation: string
+    }
 
 type ReconciliationOutcome =
   | {
@@ -248,6 +304,176 @@ function getEventWindowHours(eventType: FinancialEventType) {
   }
 }
 
+function formatDateKey(value: Date) {
+  return value.toISOString().slice(0, 10)
+}
+
+function shiftDate(dateKey: string, offsetDays: number) {
+  const value = new Date(`${dateKey}T00:00:00.000Z`)
+  value.setUTCDate(value.getUTCDate() + offsetDays)
+  return formatDateKey(value)
+}
+
+function getCompatibleDuplicateEventTypes(eventType: FinancialEventType) {
+  switch (eventType) {
+    case "purchase":
+    case "subscription_charge":
+    case "emi_payment":
+    case "bill_payment":
+      return [
+        "purchase",
+        "subscription_charge",
+        "emi_payment",
+        "bill_payment",
+      ] as FinancialEventType[]
+    default:
+      return [eventType] as FinancialEventType[]
+  }
+}
+
+function canUseCrossTypeReconciliation(eventType: FinancialEventType) {
+  return getCompatibleDuplicateEventTypes(eventType).length > 1
+}
+
+function normalizeEvidenceSnippets(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return []
+  }
+
+  const snippets = (value as Record<string, unknown>).snippets
+  if (!Array.isArray(snippets)) {
+    return []
+  }
+
+  return snippets.filter((snippet): snippet is string => typeof snippet === "string").slice(0, 4)
+}
+
+function isLikelyBankSettlementEvidence(input: {
+  sender: string | null | undefined
+  issuerHint: string | null | undefined
+  subject: string | null | undefined
+  snippet: string | null | undefined
+}) {
+  const combined = [
+    input.sender,
+    input.issuerHint,
+    input.subject,
+    input.snippet,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+
+  return /\b(bank|credit[_ ]?cards?|debit[_ ]?cards?|instaalert|statement|alerts?|transaction alert|card xx|available credit limit|available balance)\b/.test(
+    combined,
+  )
+}
+
+function inferIncomingBankSettlementSource(
+  signal: ExtractedSignalSelect,
+  rawDocument: RawDocumentSelect,
+) {
+  return isLikelyBankSettlementEvidence({
+    sender: rawDocument.fromAddress,
+    issuerHint: signal.issuerNameHint,
+    subject: rawDocument.subject,
+    snippet: rawDocument.snippet,
+  })
+}
+
+function buildModelRunResultJson(input: {
+  decision: string
+  confidence: number
+  targetFinancialEventId?: string | null
+  canonicalEventType?: string | null
+  reason: string
+  supportingCandidateIds?: string[]
+  contradictions?: string[]
+  warnings?: string[]
+}) {
+  return {
+    decision: input.decision,
+    confidence: input.confidence,
+    targetFinancialEventId: input.targetFinancialEventId ?? null,
+    canonicalEventType: input.canonicalEventType ?? null,
+    reason: input.reason,
+    supportingCandidateIds: input.supportingCandidateIds ?? [],
+    contradictions: input.contradictions ?? [],
+    warnings: input.warnings ?? [],
+  }
+}
+
+async function resolveHistoricalDuplicateFxRate(input: {
+  baseCurrency: string
+  quoteCurrency: string
+  eventDate: string
+}) {
+  const cached = await getLatestFxRateDailyOnOrBefore({
+    provider: FX_PROVIDER,
+    baseCurrency: input.baseCurrency,
+    quoteCurrency: input.quoteCurrency,
+    rateDate: input.eventDate,
+  })
+
+  if (cached) {
+    return cached
+  }
+
+  for (let offset = 0; offset < FX_DUPLICATE_RATE_LOOKBACK_DAYS; offset += 1) {
+    const rateDate = shiftDate(input.eventDate, -offset)
+    const remote = await fetchCurrencyApiHistoricalRate({
+      baseCurrency: input.baseCurrency,
+      quoteCurrency: input.quoteCurrency,
+      date: rateDate,
+    })
+
+    if (!remote) {
+      continue
+    }
+
+    return upsertFxRateDaily({
+      provider: remote.provider,
+      baseCurrency: remote.baseCurrency,
+      quoteCurrency: remote.quoteCurrency,
+      rateDate: remote.rateDate,
+      rate: remote.rate,
+      fetchedAt: new Date(),
+    })
+  }
+
+  return null
+}
+
+async function amountsLikelyRepresentSameTransaction(input: {
+  signalAmountMinor: number
+  signalCurrency: string
+  signalOccurredAt: Date
+  candidateAmountMinor: number
+  candidateCurrency: string
+}) {
+  if (input.signalCurrency === input.candidateCurrency) {
+    return input.signalAmountMinor === input.candidateAmountMinor
+  }
+
+  const rate = await resolveHistoricalDuplicateFxRate({
+    baseCurrency: input.signalCurrency,
+    quoteCurrency: input.candidateCurrency,
+    eventDate: formatDateKey(input.signalOccurredAt),
+  })
+
+  if (!rate) {
+    return false
+  }
+
+  const convertedAmountMinor = Math.round(input.signalAmountMinor * rate.rate)
+  const toleranceMinor = Math.max(
+    FX_DUPLICATE_TOLERANCE_MINOR,
+    Math.round(convertedAmountMinor * FX_DUPLICATE_TOLERANCE_RATIO),
+  )
+
+  return Math.abs(input.candidateAmountMinor - convertedAmountMinor) <= toleranceMinor
+}
+
 function buildOccurredAt(signal: ExtractedSignalSelect, rawDocument: RawDocumentSelect) {
   if (signal.eventDate) {
     const parts = signal.eventDate.split("-").map(Number)
@@ -315,6 +541,121 @@ function serializeEventDraft(eventDraft: EventDraft) {
   }
 }
 
+function groupCandidateEventSummaries(rows: ReconciliationCandidateContext[]) {
+  const grouped = new Map<string, ReconciliationCandidateEventSummary>()
+
+  for (const row of rows) {
+    const existing = grouped.get(row.event.id)
+
+    if (existing) {
+      existing.sources.push(row)
+      if (!existing.isBankSettlementSource) {
+        existing.isBankSettlementSource = isLikelyBankSettlementEvidence({
+          sender: row.rawDocument?.fromAddress,
+          issuerHint: row.extractedSignal?.issuerNameHint,
+          subject: row.rawDocument?.subject,
+          snippet: row.rawDocument?.snippet,
+        })
+      }
+      continue
+    }
+
+    grouped.set(row.event.id, {
+      event: row.event,
+      merchantName: row.merchant?.displayName ?? null,
+      paymentProcessorName: row.paymentProcessor?.displayName ?? null,
+      paymentInstrumentName: row.paymentInstrument?.displayName ?? null,
+      sources: [row],
+      isBankSettlementSource: isLikelyBankSettlementEvidence({
+        sender: row.rawDocument?.fromAddress,
+        issuerHint: row.extractedSignal?.issuerNameHint,
+        subject: row.rawDocument?.subject,
+        snippet: row.rawDocument?.snippet,
+      }),
+    })
+  }
+
+  return grouped
+}
+
+function summarizeCandidateForAi(candidate: ReconciliationCandidateEventSummary) {
+  return {
+    financialEventId: candidate.event.id,
+    eventType: candidate.event.eventType,
+    direction: candidate.event.direction,
+    amountMinor: candidate.event.amountMinor,
+    currency: candidate.event.currency,
+    eventOccurredAtIso: candidate.event.eventOccurredAt.toISOString(),
+    createdAtIso: candidate.event.createdAt.toISOString(),
+    merchantName: candidate.merchantName,
+    processorName: candidate.paymentProcessorName,
+    paymentInstrumentName: candidate.paymentInstrumentName,
+    description: candidate.event.description ?? null,
+    sourceCount: candidate.sources.length,
+    isBankSettlementSource: candidate.isBankSettlementSource,
+    sources: candidate.sources.slice(0, 3).map((row) => ({
+      rawDocumentId: row.rawDocument?.id ?? null,
+      subject: row.rawDocument?.subject ?? null,
+      sender: row.rawDocument?.fromAddress ?? null,
+      timestampIso: row.rawDocument?.messageTimestamp?.toISOString() ?? null,
+      signalType: row.extractedSignal?.signalType ?? null,
+      candidateEventType: row.extractedSignal?.candidateEventType ?? null,
+      descriptor: row.extractedSignal?.merchantDescriptorRaw ?? null,
+      merchantHint:
+        row.extractedSignal?.merchantNameCandidate ??
+        row.extractedSignal?.merchantHint ??
+        row.extractedSignal?.merchantRaw ??
+        null,
+      processorHint: row.extractedSignal?.processorNameCandidate ?? null,
+      evidenceSnippets: normalizeEvidenceSnippets(row.extractedSignal?.evidenceJson),
+      linkReason: row.source?.linkReason ?? "linked_source",
+    })),
+  }
+}
+
+function summarizeIncomingForAi(input: {
+  signal: ExtractedSignalSelect
+  rawDocument: RawDocumentSelect
+  eventDraft: EventDraft
+}) {
+  return {
+    rawDocumentId: input.rawDocument.id,
+    signalId: input.signal.id,
+    signalType: input.signal.signalType,
+    candidateEventType: input.signal.candidateEventType ?? null,
+    amountMinor: input.signal.amountMinor!,
+    currency: input.signal.currency!,
+    occurredAtIso: input.eventDraft.eventOccurredAt.toISOString(),
+    confidence: Number(input.signal.confidence),
+    merchantName:
+      input.signal.merchantNameCandidate ??
+      input.signal.merchantHint ??
+      input.signal.merchantRaw ??
+      input.eventDraft.description ??
+      null,
+    processorName: input.signal.processorNameCandidate ?? null,
+    issuerName: input.signal.issuerNameHint ?? null,
+    descriptor: input.signal.merchantDescriptorRaw ?? null,
+    sender: input.rawDocument.fromAddress,
+    subject: input.rawDocument.subject,
+    snippet: input.rawDocument.snippet,
+    bodyTextExcerpt: normalizeWhitespace(input.rawDocument.bodyText)?.slice(0, 1200) ?? null,
+    evidenceSnippets: normalizeEvidenceSnippets(input.signal.evidenceJson),
+    isBankSettlementSource: inferIncomingBankSettlementSource(input.signal, input.rawDocument),
+  }
+}
+
+function buildAiReviewExplanation(reason: string, confidence: number) {
+  return `AI reconciliation could not safely auto-apply this decision. ${reason} (confidence ${Math.round(confidence * 100)}%).`
+}
+
+function getShortlistCandidateIds(matchSet: CandidateMatchSet) {
+  return [...new Set(matchSet.plausible.map((candidate) => candidate.id))].slice(
+    0,
+    AI_RECONCILIATION_SHORTLIST_LIMIT,
+  )
+}
+
 async function buildEventDraft(input: {
   userId: string
   signal: ExtractedSignalSelect
@@ -370,6 +711,147 @@ async function buildEventDraft(input: {
   } satisfies EventDraft
 }
 
+async function resolveAiReconciliationDecision(input: {
+  userId: string
+  signal: ExtractedSignalSelect
+  rawDocument: RawDocumentSelect
+  eventDraft: EventDraft
+  shortlistCandidates: FinancialEventSelect[]
+}) : Promise<{
+  outcome: ReconciliationAiDecisionOutcome
+  modelRunId: string | null
+}> {
+  const modelRun = await createModelRun({
+    userId: input.userId,
+    rawDocumentId: input.rawDocument.id,
+    taskType: "reconciliation_resolution",
+    provider: "ai-gateway",
+    modelName: aiModels.financeReconciliationResolver,
+    promptVersion: aiPromptVersions.financeReconciliationResolver,
+    status: "running",
+  })
+
+  try {
+    const candidateIds = input.shortlistCandidates.map((candidate) => candidate.id)
+    const candidateContexts = groupCandidateEventSummaries(
+      await listFinancialEventReconciliationContexts(candidateIds),
+    )
+    const candidates = candidateIds
+      .map((candidateId) => candidateContexts.get(candidateId))
+      .filter((candidate): candidate is ReconciliationCandidateEventSummary => Boolean(candidate))
+      .slice(0, AI_RECONCILIATION_SHORTLIST_LIMIT)
+
+    const resolved = await resolveReconciliationWithAi({
+      incoming: summarizeIncomingForAi(input),
+      candidates: candidates.map(summarizeCandidateForAi),
+    })
+
+    const decision = resolved.decision
+    const resultJson = buildModelRunResultJson({
+      decision: decision.decision,
+      confidence: decision.confidence,
+      targetFinancialEventId: decision.targetFinancialEventId ?? null,
+      canonicalEventType: decision.canonicalEventType ?? null,
+      reason: decision.reason,
+      supportingCandidateIds: decision.supportingCandidateIds,
+      contradictions: decision.contradictions,
+      warnings: decision.warnings,
+    })
+
+    await updateModelRun(modelRun.id, {
+      status: "succeeded",
+      provider: resolved.metadata.provider,
+      modelName: resolved.metadata.modelName,
+      promptVersion: resolved.metadata.promptVersion,
+      inputTokens: resolved.metadata.inputTokens,
+      outputTokens: resolved.metadata.outputTokens,
+      latencyMs: resolved.metadata.latencyMs,
+      requestId: resolved.metadata.requestId,
+      resultJson,
+    })
+
+    if (decision.confidence < AI_RECONCILIATION_CONFIDENCE_THRESHOLD) {
+      return {
+        outcome: {
+          action: "review",
+          confidence: decision.confidence,
+          resultJson,
+          explanation: buildAiReviewExplanation(decision.reason, decision.confidence),
+        },
+        modelRunId: modelRun.id,
+      }
+    }
+
+    if (decision.decision === "merge_with_existing_event") {
+      const targetFinancialEventId = decision.targetFinancialEventId ?? null
+      if (!targetFinancialEventId || !candidateIds.includes(targetFinancialEventId)) {
+        return {
+          outcome: {
+            action: "review",
+            confidence: decision.confidence,
+            resultJson,
+            explanation: "AI selected an invalid reconciliation target.",
+          },
+          modelRunId: modelRun.id,
+        }
+      }
+
+      const canonicalEventType =
+        decision.canonicalEventType && canUseCrossTypeReconciliation(input.eventDraft.eventType)
+          ? (decision.canonicalEventType as FinancialEventType)
+          : null
+
+      return {
+        outcome: {
+          action: "merge",
+          confidence: decision.confidence,
+          financialEventId: targetFinancialEventId,
+          canonicalEventType,
+          resultJson,
+        },
+        modelRunId: modelRun.id,
+      }
+    }
+
+    if (decision.decision === "create_new_event") {
+      const canonicalEventType =
+        decision.canonicalEventType && canUseCrossTypeReconciliation(input.eventDraft.eventType)
+          ? (decision.canonicalEventType as FinancialEventType)
+          : null
+
+      return {
+        outcome: {
+          action: "create",
+          confidence: decision.confidence,
+          canonicalEventType,
+          resultJson,
+        },
+        modelRunId: modelRun.id,
+      }
+    }
+
+    return {
+      outcome: {
+        action: "review",
+        confidence: decision.confidence,
+        resultJson,
+        explanation: decision.reason,
+      },
+      modelRunId: modelRun.id,
+    }
+  } catch (error) {
+    await updateModelRun(modelRun.id, {
+      status: "failed",
+      errorMessage: error instanceof Error ? error.message : "Unknown reconciliation resolution failure",
+    })
+
+    return {
+      outcome: { action: "unavailable" },
+      modelRunId: modelRun.id,
+    }
+  }
+}
+
 function pickCandidateMatches(
   candidates: FinancialEventSelect[],
   eventDraft: EventDraft,
@@ -421,12 +903,65 @@ function pickCandidateMatches(
   }
 }
 
+function getCompatibleAutoUpgradeEventType(input: {
+  currentEventType: FinancialEventType
+  requestedEventType: FinancialEventType | null
+}) {
+  if (!input.requestedEventType) {
+    return null
+  }
+
+  if (input.currentEventType === input.requestedEventType) {
+    return null
+  }
+
+  const compatibleTypes = getCompatibleDuplicateEventTypes(input.currentEventType)
+  return compatibleTypes.includes(input.requestedEventType) ? input.requestedEventType : null
+}
+
+function buildCanonicalMergePatch(input: {
+  existingEvent: FinancialEventSelect
+  eventDraft: EventDraft
+  incomingIsBankSettlement: boolean
+  existingHasBankSettlement: boolean
+  canonicalEventType: FinancialEventType | null
+}) {
+  const patch: Partial<EventDraft> = {}
+
+  const upgradedEventType = getCompatibleAutoUpgradeEventType({
+    currentEventType: input.existingEvent.eventType,
+    requestedEventType: input.canonicalEventType,
+  })
+
+  if (upgradedEventType) {
+    patch.eventType = upgradedEventType
+    patch.direction = getDirectionForEventType(upgradedEventType)
+    patch.isTransfer = upgradedEventType === "transfer"
+  }
+
+  if (
+    input.eventDraft.currency !== input.existingEvent.currency &&
+    input.incomingIsBankSettlement &&
+    !input.existingHasBankSettlement
+  ) {
+    patch.amountMinor = input.eventDraft.amountMinor
+    patch.currency = input.eventDraft.currency
+  }
+
+  return patch
+}
+
 async function mergeIntoFinancialEvent(input: {
   signal: ExtractedSignalSelect
   rawDocument: RawDocumentSelect
   financialEventId: string
   eventDraft: EventDraft
   reasonCode: string
+  canonicalEventType?: FinancialEventType | null
+  incomingIsBankSettlement?: boolean
+  existingHasBankSettlement?: boolean
+  modelRunId?: string | null
+  resultJson?: Record<string, unknown> | null
 }) {
   const event = await getFinancialEventById(input.financialEventId)
 
@@ -460,6 +995,17 @@ async function mergeIntoFinancialEvent(input: {
     patch.confidence = input.eventDraft.confidence
   }
 
+  Object.assign(
+    patch,
+    buildCanonicalMergePatch({
+      existingEvent: event,
+      eventDraft: input.eventDraft,
+      incomingIsBankSettlement: input.incomingIsBankSettlement ?? false,
+      existingHasBankSettlement: input.existingHasBankSettlement ?? false,
+      canonicalEventType: input.canonicalEventType ?? null,
+    }),
+  )
+
   if (Object.keys(patch).length > 0) {
     await updateFinancialEvent(event.id, patch)
   }
@@ -472,6 +1018,13 @@ async function mergeIntoFinancialEvent(input: {
   })
   await refreshFinancialEventSourceCount(event.id)
   await updateExtractedSignalStatus(input.signal.id, "reconciled")
+
+  if (input.modelRunId) {
+    await updateModelRun(input.modelRunId, {
+      financialEventId: event.id,
+      resultJson: input.resultJson ?? undefined,
+    })
+  }
 
   return event.id
 }
@@ -589,9 +1142,204 @@ export async function reconcileExtractedSignal(input: {
     from,
     to,
   })
-  const matches = pickCandidateMatches(candidates, eventDraft)
+  const exactMatches = pickCandidateMatches(candidates, eventDraft)
+  const duplicateMerchantKey =
+    normalizeMerchantName(eventDraft.description) ??
+    normalizeMerchantName(signal.merchantHint) ??
+    normalizeMerchantName(signal.merchantRaw) ??
+    normalizeMerchantName(signal.merchantDescriptorRaw)
 
-  if (matches.plausible.length > 1) {
+  const obligationEventTypes = ["subscription_charge", "emi_payment", "bill_payment"] as const
+  const needsObligationReview =
+    obligationEventTypes.includes(
+      eventType as (typeof obligationEventTypes)[number],
+    ) && signal.confidence < 0.88
+  const requiresWeakSignalReview =
+    hasWeakMerchantIdentity(signal, rawDocument, signal.amountMinor) ||
+    (eventType === "transfer" && !eventDraft.paymentInstrumentId && !eventDraft.merchantId) ||
+    needsObligationReview ||
+    signal.confidence < 0.8
+
+  if (exactMatches.plausible.length === 1) {
+    const firstMatch = exactMatches.plausible[0]
+
+    if (!firstMatch) {
+      throw new Error("Expected a reconciliation match but none was present")
+    }
+
+    const financialEventId = await mergeIntoFinancialEvent({
+      signal,
+      rawDocument,
+      financialEventId: firstMatch.id,
+      eventDraft,
+      reasonCode: exactMatches.exact.length === 1 ? "exact_duplicate_match" : "candidate_duplicate_match",
+    })
+
+    return {
+      action: "merged",
+      reasonCode:
+        exactMatches.exact.length === 1 ? "exact_duplicate_match" : "candidate_duplicate_match",
+      financialEventId,
+    }
+  }
+
+  let aiShortlist = exactMatches.plausible.slice(0, AI_RECONCILIATION_SHORTLIST_LIMIT)
+
+  if (
+    aiShortlist.length === 0 &&
+    (eventDraft.merchantId || duplicateMerchantKey) &&
+    canUseCrossTypeReconciliation(eventType)
+  ) {
+    const broadCandidates = await listCandidateFinancialEventsByWindow({
+      userId: input.userId,
+      eventTypes: getCompatibleDuplicateEventTypes(eventType),
+      from,
+      to,
+    })
+
+    const relaxedCandidates: FinancialEventSelect[] = []
+
+    for (const candidate of broadCandidates) {
+      if (candidate.id === existingRawDocumentSource?.financialEventId) {
+        continue
+      }
+
+      const candidateMerchantKey = normalizeMerchantName(candidate.description)
+      const sharesMerchantIdentity =
+        (eventDraft.merchantId && candidate.merchantId === eventDraft.merchantId) ||
+        (duplicateMerchantKey && candidateMerchantKey === duplicateMerchantKey)
+
+      if (!sharesMerchantIdentity) {
+        continue
+      }
+
+      if (
+        await amountsLikelyRepresentSameTransaction({
+          signalAmountMinor: signal.amountMinor,
+          signalCurrency: signal.currency,
+          signalOccurredAt: eventDraft.eventOccurredAt,
+          candidateAmountMinor: candidate.amountMinor,
+          candidateCurrency: candidate.currency,
+        })
+      ) {
+        relaxedCandidates.push(candidate)
+      }
+    }
+
+    aiShortlist = relaxedCandidates.slice(0, AI_RECONCILIATION_SHORTLIST_LIMIT)
+  }
+
+  const shouldRunAiReconciliation =
+    aiShortlist.length > 0 || requiresWeakSignalReview
+
+  if (shouldRunAiReconciliation) {
+    const aiDecision = await resolveAiReconciliationDecision({
+      userId: input.userId,
+      signal,
+      rawDocument,
+      eventDraft,
+      shortlistCandidates: aiShortlist,
+    })
+
+    if (aiDecision.outcome.action === "merge") {
+      const candidateContextMap = groupCandidateEventSummaries(
+        await listFinancialEventReconciliationContexts([aiDecision.outcome.financialEventId]),
+      )
+      const candidateSummary = candidateContextMap.get(aiDecision.outcome.financialEventId)
+
+      const financialEventId = await mergeIntoFinancialEvent({
+        signal,
+        rawDocument,
+        financialEventId: aiDecision.outcome.financialEventId,
+        eventDraft: aiDecision.outcome.canonicalEventType
+          ? {
+              ...eventDraft,
+              eventType: aiDecision.outcome.canonicalEventType,
+              direction: getDirectionForEventType(aiDecision.outcome.canonicalEventType),
+              isTransfer: aiDecision.outcome.canonicalEventType === "transfer",
+            }
+          : eventDraft,
+        reasonCode: "ai_reconciliation_merge",
+        canonicalEventType: aiDecision.outcome.canonicalEventType,
+        incomingIsBankSettlement: inferIncomingBankSettlementSource(signal, rawDocument),
+        existingHasBankSettlement: candidateSummary?.isBankSettlementSource ?? false,
+        modelRunId: aiDecision.modelRunId,
+        resultJson: aiDecision.outcome.resultJson,
+      })
+
+      return {
+        action: "merged",
+        reasonCode: "ai_reconciliation_merge",
+        financialEventId,
+      }
+    }
+
+    if (aiDecision.outcome.action === "create") {
+      const createDraft =
+        aiDecision.outcome.canonicalEventType &&
+        aiDecision.outcome.canonicalEventType !== eventDraft.eventType
+          ? {
+              ...eventDraft,
+              eventType: aiDecision.outcome.canonicalEventType,
+              direction: getDirectionForEventType(aiDecision.outcome.canonicalEventType),
+              isTransfer: aiDecision.outcome.canonicalEventType === "transfer",
+            }
+          : eventDraft
+
+      const financialEvent = await createFinancialEvent(createDraft)
+      await createFinancialEventSource({
+        financialEventId: financialEvent.id,
+        rawDocumentId: rawDocument.id,
+        extractedSignalId: signal.id,
+        linkReason: "ai_reconciliation_create",
+      })
+      await refreshFinancialEventSourceCount(financialEvent.id)
+      await updateExtractedSignalStatus(signal.id, "reconciled")
+
+      if (aiDecision.modelRunId) {
+        await updateModelRun(aiDecision.modelRunId, {
+          financialEventId: financialEvent.id,
+          resultJson: aiDecision.outcome.resultJson,
+        })
+      }
+
+      return {
+        action: "created",
+        reasonCode: "ai_reconciliation_create",
+        financialEventId: financialEvent.id,
+      }
+    }
+
+    if (aiDecision.outcome.action === "review") {
+      const reviewQueueItemId = await createReviewForSignal({
+        userId: input.userId,
+        signal,
+        rawDocument,
+        itemType: aiShortlist.length > 0 ? "duplicate_match" : "signal_reconciliation",
+        title:
+          aiShortlist.length > 0
+            ? "AI reconciliation requires review"
+            : "AI reconciliation could not confirm creation",
+        explanation: aiDecision.outcome.explanation,
+        reasonCode: "ai_reconciliation_review",
+        proposedResolutionJson: {
+          action: aiShortlist.length > 0 ? "merge_or_create" : "create",
+          matchedEventIds: aiShortlist.map((event) => event.id),
+          eventDraft: serializeEventDraft(eventDraft),
+          aiDecision: aiDecision.outcome.resultJson,
+          modelRunId: aiDecision.modelRunId,
+        },
+      })
+
+      return {
+        action: "review",
+        reasonCode: "ai_reconciliation_review",
+        reviewQueueItemId,
+      }
+    }
+  }
+
+  if (exactMatches.plausible.length > 1) {
     const reviewQueueItemId = await createReviewForSignal({
       userId: input.userId,
       signal,
@@ -603,7 +1351,7 @@ export async function reconcileExtractedSignal(input: {
       reasonCode: "multiple_candidate_matches",
       proposedResolutionJson: {
         action: "merge",
-        matchedEventIds: matches.plausible.map((event) => event.id),
+        matchedEventIds: getShortlistCandidateIds(exactMatches),
         eventDraft: serializeEventDraft(eventDraft),
       },
     })
@@ -615,41 +1363,7 @@ export async function reconcileExtractedSignal(input: {
     }
   }
 
-  if (matches.plausible.length === 1) {
-    const firstMatch = matches.plausible[0]
-
-    if (!firstMatch) {
-      throw new Error("Expected a reconciliation match but none was present")
-    }
-
-    const financialEventId = await mergeIntoFinancialEvent({
-      signal,
-      rawDocument,
-      financialEventId: firstMatch.id,
-      eventDraft,
-      reasonCode: matches.exact.length === 1 ? "exact_duplicate_match" : "candidate_duplicate_match",
-    })
-
-    return {
-      action: "merged",
-      reasonCode:
-        matches.exact.length === 1 ? "exact_duplicate_match" : "candidate_duplicate_match",
-      financialEventId,
-    }
-  }
-
-  const obligationEventTypes = ["subscription_charge", "emi_payment", "bill_payment"] as const
-  const needsObligationReview =
-    obligationEventTypes.includes(
-      eventType as (typeof obligationEventTypes)[number],
-    ) && signal.confidence < 0.88
-
-  if (
-    hasWeakMerchantIdentity(signal, rawDocument, signal.amountMinor) ||
-    (eventType === "transfer" && !eventDraft.paymentInstrumentId && !eventDraft.merchantId) ||
-    needsObligationReview ||
-    signal.confidence < 0.8
-  ) {
+  if (requiresWeakSignalReview) {
     const reviewQueueItemId = await createReviewForSignal({
       userId: input.userId,
       signal,

@@ -31,6 +31,7 @@ type ModelRunRow = {
   modelName: string
   status: string
   errorMessage: string | null
+  resultJson?: Record<string, unknown> | null
   requestId: string | null
   createdAt: Date
 }
@@ -41,7 +42,7 @@ type ModelRunListProps = {
 
 export function ModelRunList({ modelRuns }: ModelRunListProps) {
   const [selectedRun, setSelectedRun] = useState<ModelRunRow | null>(null)
-  const [copyLabel, setCopyLabel] = useState("Copy error")
+  const [copyLabel, setCopyLabel] = useState("Copy details")
 
   return (
     <>
@@ -49,15 +50,16 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
         <div className="divide-y divide-white/[0.06]">
           {modelRuns.map((modelRun) => {
             const isFailed = modelRun.status === "failed"
+            const hasDetails = isFailed || Boolean(modelRun.resultJson)
 
-            if (isFailed) {
+            if (hasDetails) {
               return (
                 <button
                   key={modelRun.id}
                   type="button"
                   onClick={() => {
                     setSelectedRun(modelRun)
-                    setCopyLabel("Copy error")
+                    setCopyLabel("Copy details")
                   }}
                   className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3 text-left transition hover:bg-white/[0.02]"
                 >
@@ -79,7 +81,7 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="left">
-                      Failed. Tap to inspect error.
+                      {isFailed ? "Failed. Tap to inspect error." : "Tap to inspect decision."}
                     </TooltipContent>
                   </Tooltip>
                 </button>
@@ -123,7 +125,7 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
         onOpenChange={(open) => {
           if (!open) {
             setSelectedRun(null)
-            setCopyLabel("Copy error")
+            setCopyLabel("Copy details")
           }
         }}
       >
@@ -133,7 +135,9 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
           showCloseButton
         >
           <SheetHeader className="px-5 pt-0 sm:px-6">
-            <SheetTitle>Model run failure</SheetTitle>
+            <SheetTitle>
+              {selectedRun?.status === "failed" ? "Model run failure" : "Model run details"}
+            </SheetTitle>
             <SheetDescription>
               {selectedRun?.taskType ?? "Unknown task"}
             </SheetDescription>
@@ -146,7 +150,7 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
             <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-4">
               <div className="min-w-0">
                 <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-white/28">
-                  Error
+                  {selectedRun?.status === "failed" ? "Error" : "Result"}
                 </p>
                 {selectedRun?.requestId ? (
                   <p className="mt-1 truncate text-sm text-white/34">
@@ -158,11 +162,10 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
                 variant="outline"
                 size="xs"
                 onClick={async () => {
-                  const errorText =
-                    selectedRun?.errorMessage ?? "No error message recorded."
+                  const detailsText = formatModelRunDetails(selectedRun)
 
                   try {
-                    await navigator.clipboard.writeText(errorText)
+                    await navigator.clipboard.writeText(detailsText)
                     setCopyLabel("Copied")
                   } catch {
                     setCopyLabel("Copy failed")
@@ -175,13 +178,29 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
             </div>
 
             <pre className="mt-4 max-h-[42svh] overflow-x-auto overflow-y-auto border border-white/8 bg-[rgba(255,255,255,0.03)] p-4 text-sm leading-6 whitespace-pre-wrap text-white/72 [overflow-wrap:anywhere]">
-              {selectedRun?.errorMessage ?? "No error message recorded."}
+              {formatModelRunDetails(selectedRun)}
             </pre>
           </div>
         </SheetContent>
       </Sheet>
     </>
   )
+}
+
+function formatModelRunDetails(modelRun: ModelRunRow | null) {
+  if (!modelRun) {
+    return "No model run selected."
+  }
+
+  if (modelRun.status === "failed") {
+    return modelRun.errorMessage ?? "No error message recorded."
+  }
+
+  if (modelRun.resultJson) {
+    return JSON.stringify(modelRun.resultJson, null, 2)
+  }
+
+  return "No additional result details recorded."
 }
 
 function ModelRunStatusIcon({ status }: { status: string }) {

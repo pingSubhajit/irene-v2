@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 
 import { db } from "./client"
 import {
@@ -534,18 +534,28 @@ export async function getFinancialEventTraceForUser(input: {
       .filter((value): value is string => Boolean(value)),
   )]
 
-  const relatedModelRuns =
-    rawDocumentIds.length > 0
-      ? await db
-          .select()
-          .from(modelRuns)
-          .where(inArray(modelRuns.rawDocumentId, rawDocumentIds))
-          .orderBy(asc(modelRuns.createdAt))
-      : []
+  const relatedModelRuns = await db
+    .select()
+    .from(modelRuns)
+    .where(
+      rawDocumentIds.length > 0
+        ? or(
+            inArray(modelRuns.rawDocumentId, rawDocumentIds),
+            eq(modelRuns.financialEventId, input.eventId),
+          )
+        : eq(modelRuns.financialEventId, input.eventId),
+    )
+    .orderBy(asc(modelRuns.createdAt))
 
   const modelRunsByDocumentId = new Map<string, typeof relatedModelRuns>()
+  const eventModelRuns: typeof relatedModelRuns = []
 
   for (const modelRun of relatedModelRuns) {
+    if (modelRun.financialEventId === input.eventId) {
+      eventModelRuns.push(modelRun)
+      continue
+    }
+
     if (!modelRun.rawDocumentId) {
       continue
     }
@@ -557,6 +567,7 @@ export async function getFinancialEventTraceForUser(input: {
 
   return {
     ...eventRow,
+    eventModelRuns,
     traces: traceRows.map((row) => {
       const rawDocumentId = row.rawDocument?.id ?? row.extractedSignal?.rawDocumentId ?? null
 

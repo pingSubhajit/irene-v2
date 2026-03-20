@@ -1,4 +1,4 @@
-import { generateObject } from "ai"
+import { NoObjectGeneratedError, generateObject } from "ai"
 import { createGateway } from "@ai-sdk/gateway"
 import { z } from "zod"
 
@@ -152,6 +152,352 @@ function getRequestId(result: unknown) {
   return response?.id ?? null
 }
 
+function getUsageFromNoObjectError(error: NoObjectGeneratedError) {
+  return {
+    inputTokens: error.usage?.inputTokens ?? null,
+    outputTokens: error.usage?.outputTokens ?? null,
+  }
+}
+
+function getRequestIdFromNoObjectError(error: NoObjectGeneratedError) {
+  return error.response?.id ?? null
+}
+
+function normalizeNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value.trim())
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+function clampProbability(value: unknown, fallback = 0.5) {
+  const normalized = normalizeNumber(value)
+
+  if (normalized === null) {
+    return fallback
+  }
+
+  return Math.min(Math.max(normalized, 0), 1)
+}
+
+function normalizeString(value: unknown, maxLength: number) {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const trimmed = value.replace(/\s+/g, " ").trim()
+  if (!trimmed) {
+    return null
+  }
+
+  return trimmed.slice(0, maxLength)
+}
+
+function normalizeBoolean(value: unknown) {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === "true") {
+      return true
+    }
+    if (normalized === "false") {
+      return false
+    }
+  }
+
+  return false
+}
+
+function normalizeCurrency(value: unknown) {
+  const normalized = normalizeString(value, 16)
+
+  if (!normalized) {
+    return null
+  }
+
+  if (/₹|^rs\.?$|^inr$/i.test(normalized)) {
+    return "INR"
+  }
+
+  if (/^\$|^usd$/i.test(normalized)) {
+    return "USD"
+  }
+
+  const alpha = normalized.toUpperCase().replace(/[^A-Z]/g, "")
+  return alpha.length >= 3 ? alpha.slice(0, 3) : null
+}
+
+function normalizeEventDate(value: unknown) {
+  const normalized = normalizeString(value, 64)
+
+  if (!normalized) {
+    return null
+  }
+
+  const exactMatch = normalized.match(/^\d{4}-\d{2}-\d{2}$/)
+  if (exactMatch) {
+    return exactMatch[0]
+  }
+
+  const embeddedMatch = normalized.match(/\b(\d{4}-\d{2}-\d{2})\b/)
+  return embeddedMatch?.[1] ?? null
+}
+
+function normalizeChannelHint(value: unknown): StructuredExtractionSignal["channelHint"] {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_")
+
+  switch (normalized) {
+    case "card":
+    case "wallet":
+    case "upi":
+    case "bank_transfer":
+    case "other":
+      return normalized
+    case "banktransfer":
+      return "bank_transfer"
+    default:
+      return null
+  }
+}
+
+function defaultSignalTypeForRoute(routeLabel: DocumentRouteLabel): StructuredExtractionSignal["signalType"] {
+  switch (routeLabel) {
+    case "purchase":
+      return "purchase_signal"
+    case "income":
+      return "income_signal"
+    case "subscription_charge":
+      return "subscription_signal"
+    case "emi_payment":
+      return "emi_signal"
+    case "bill_payment":
+      return "bill_signal"
+    case "refund":
+      return "refund_signal"
+    case "transfer":
+      return "transfer_signal"
+    case "generic_finance":
+      return "generic_finance_signal"
+  }
+}
+
+function normalizeSignalType(
+  value: unknown,
+  routeLabel: DocumentRouteLabel,
+): StructuredExtractionSignal["signalType"] {
+  if (typeof value !== "string") {
+    return defaultSignalTypeForRoute(routeLabel)
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_")
+
+  switch (normalized) {
+    case "purchase_signal":
+    case "purchase":
+      return "purchase_signal"
+    case "income_signal":
+    case "income":
+      return "income_signal"
+    case "subscription_signal":
+    case "subscription":
+    case "subscription_charge":
+      return "subscription_signal"
+    case "emi_signal":
+    case "emi":
+    case "emi_payment":
+      return "emi_signal"
+    case "bill_signal":
+    case "bill":
+    case "bill_payment":
+      return "bill_signal"
+    case "refund_signal":
+    case "refund":
+    case "reversal":
+      return "refund_signal"
+    case "transfer_signal":
+    case "transfer":
+    case "bank_transfer":
+      return "transfer_signal"
+    case "generic_finance_signal":
+    case "generic_finance":
+    case "generic":
+      return "generic_finance_signal"
+    default:
+      return defaultSignalTypeForRoute(routeLabel)
+  }
+}
+
+function normalizeCandidateEventType(
+  value: unknown,
+): StructuredExtractionSignal["candidateEventType"] {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_")
+
+  switch (normalized) {
+    case "purchase":
+      return "purchase"
+    case "income":
+      return "income"
+    case "subscription":
+    case "subscription_charge":
+      return "subscription_charge"
+    case "emi":
+    case "emi_payment":
+      return "emi_payment"
+    case "bill":
+    case "bill_payment":
+    case "statement":
+      return "bill_payment"
+    case "refund":
+    case "reversal":
+      return "refund"
+    case "transfer":
+    case "bank_transfer":
+      return "transfer"
+    default:
+      return null
+  }
+}
+
+function normalizeStringArray(value: unknown, maxItems: number, maxLength: number) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((entry) => normalizeString(entry, maxLength))
+    .filter((entry): entry is string => Boolean(entry))
+    .slice(0, maxItems)
+}
+
+function getFallbackEvidence(input: NormalizedFinanceDocumentInput) {
+  return normalizeStringArray(
+    [
+      input.subject,
+      input.snippet,
+      input.bodyText?.slice(0, 280),
+    ],
+    4,
+    280,
+  )
+}
+
+function parseLooseJson(text: string) {
+  const candidates = [text.trim()]
+  const firstBrace = text.indexOf("{")
+  const lastBrace = text.lastIndexOf("}")
+
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(text.slice(firstBrace, lastBrace + 1).trim())
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate) as unknown
+    } catch {
+      continue
+    }
+  }
+
+  return null
+}
+
+function coerceStructuredExtractionResult(
+  raw: unknown,
+  input: {
+    normalizedDocument: NormalizedFinanceDocumentInput
+    routeLabel: DocumentRouteLabel
+  },
+): StructuredExtractionResult {
+  const rawRecord = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null
+  const rawSignals = rawRecord?.signals
+  const signalEntries = Array.isArray(rawSignals)
+    ? rawSignals
+    : rawSignals && typeof rawSignals === "object"
+      ? [rawSignals]
+      : []
+
+  const signals: StructuredExtractionSignal[] = signalEntries.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return []
+    }
+
+    const record = entry as Record<string, unknown>
+    const signalType = normalizeSignalType(record.signalType, input.routeLabel)
+    const candidateEventType =
+      signalType === "generic_finance_signal"
+        ? null
+        : normalizeCandidateEventType(record.candidateEventType)
+    const amountMinorValue = normalizeNumber(record.amountMinor)
+
+    return [
+      {
+        signalType,
+        candidateEventType,
+        amountMinor: Number.isInteger(amountMinorValue) ? amountMinorValue : null,
+        currency: normalizeCurrency(record.currency),
+        eventDate: normalizeEventDate(record.eventDate),
+        issuerNameHint: normalizeString(record.issuerNameHint, 160),
+        instrumentLast4Hint: normalizeString(record.instrumentLast4Hint, 16),
+        merchantDescriptorRaw: normalizeString(record.merchantDescriptorRaw, 240),
+        merchantNameCandidate: normalizeString(record.merchantNameCandidate, 240),
+        processorNameCandidate: normalizeString(record.processorNameCandidate, 160),
+        channelHint: normalizeChannelHint(record.channelHint),
+        merchantRaw: normalizeString(record.merchantRaw, 240),
+        merchantHint: normalizeString(record.merchantHint, 240),
+        paymentInstrumentHint: normalizeString(record.paymentInstrumentHint, 120),
+        categoryHint: normalizeString(record.categoryHint, 120),
+        categoryCandidates: normalizeStringArray(record.categoryCandidates, 4, 120),
+        isRecurringHint: normalizeBoolean(record.isRecurringHint),
+        isEmiHint: normalizeBoolean(record.isEmiHint),
+        confidence: clampProbability(record.confidence),
+        roleConfidence: record.roleConfidence == null ? null : clampProbability(record.roleConfidence),
+        evidenceSnippets: (() => {
+          const snippets = normalizeStringArray(record.evidenceSnippets, 4, 280)
+          return snippets.length > 0 ? snippets : getFallbackEvidence(input.normalizedDocument)
+        })(),
+        explanation:
+          normalizeString(record.explanation, 240) ??
+          "Recovered extracted signal from schema-mismatch model output.",
+      } satisfies StructuredExtractionSignal,
+    ]
+  })
+
+  return {
+    signals,
+    extractionSummary:
+      normalizeString(rawRecord?.extractionSummary, 280) ??
+      (signals.length > 0 ? "Recovered structured extraction from schema-mismatch model output." : undefined),
+  }
+}
+
+function buildMetadataFromNoObjectError(error: NoObjectGeneratedError, startedAt: number) {
+  return {
+    provider: providerName,
+    modelName: aiModels.financeSignalExtractor,
+    promptVersion: aiPromptVersions.financeSignalExtractor,
+    latencyMs: Date.now() - startedAt,
+    requestId: getRequestIdFromNoObjectError(error),
+    ...getUsageFromNoObjectError(error),
+  } satisfies ModelRunMetadata
+}
+
 function buildBaseContext(input: NormalizedFinanceDocumentInput) {
   const attachmentSection =
     input.attachmentTexts.length > 0
@@ -301,29 +647,72 @@ export async function extractStructuredSignals(input: {
     buildBaseContext(input.normalizedDocument),
   ].join("\n")
 
-  const result = await generateObject({
-    model: gateway(aiModels.financeSignalExtractor),
-    schema: structuredExtractionResultSchema,
-    prompt,
-  })
+  try {
+    const result = await generateObject({
+      model: gateway(aiModels.financeSignalExtractor),
+      schema: structuredExtractionResultSchema,
+      prompt,
+    })
 
-  const metadata = {
-    provider: providerName,
-    modelName: aiModels.financeSignalExtractor,
-    promptVersion: aiPromptVersions.financeSignalExtractor,
-    latencyMs: Date.now() - startedAt,
-    requestId: getRequestId(result),
-    ...getUsage(result),
-  } satisfies ModelRunMetadata
+    const metadata = {
+      provider: providerName,
+      modelName: aiModels.financeSignalExtractor,
+      promptVersion: aiPromptVersions.financeSignalExtractor,
+      latencyMs: Date.now() - startedAt,
+      requestId: getRequestId(result),
+      ...getUsage(result),
+    } satisfies ModelRunMetadata
 
-  logger.info("Extracted structured finance signals", {
-    routeLabel: input.routeLabel,
-    signalCount: result.object.signals.length,
-    ...metadata,
-  })
+    logger.info("Extracted structured finance signals", {
+      routeLabel: input.routeLabel,
+      signalCount: result.object.signals.length,
+      ...metadata,
+    })
 
-  return {
-    extraction: result.object,
-    metadata,
+    return {
+      extraction: result.object,
+      metadata,
+    }
+  } catch (error) {
+    if (NoObjectGeneratedError.isInstance(error) && error.text) {
+      const metadata = buildMetadataFromNoObjectError(error, startedAt)
+      const parsed = parseLooseJson(error.text)
+
+      if (parsed) {
+        const extraction = coerceStructuredExtractionResult(parsed, input)
+
+        logger.warn("Recovered structured finance signals from schema-mismatch response", {
+          routeLabel: input.routeLabel,
+          signalCount: extraction.signals.length,
+          errorMessage: error.message,
+          finishReason: error.finishReason,
+          rawResponseExcerpt: error.text.slice(0, 800),
+          ...metadata,
+        })
+
+        return {
+          extraction,
+          metadata,
+        }
+      }
+
+      logger.warn("Falling back to empty extraction after unrecoverable schema-mismatch response", {
+        routeLabel: input.routeLabel,
+        errorMessage: error.message,
+        finishReason: error.finishReason,
+        rawResponseExcerpt: error.text.slice(0, 800),
+        ...metadata,
+      })
+
+      return {
+        extraction: {
+          signals: [],
+          extractionSummary: "Failed to recover schema-mismatch model output.",
+        },
+        metadata,
+      }
+    }
+
+    throw error
   }
 }

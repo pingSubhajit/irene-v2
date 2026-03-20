@@ -443,6 +443,30 @@ export async function listCandidateFinancialEvents(input: {
     .orderBy(desc(financialEvents.eventOccurredAt))
 }
 
+export async function listCandidateFinancialEventsByWindow(input: {
+  userId: string
+  eventTypes: FinancialEventType[]
+  from: Date
+  to: Date
+}) {
+  if (input.eventTypes.length === 0) {
+    return []
+  }
+
+  return db
+    .select()
+    .from(financialEvents)
+    .where(
+      and(
+        eq(financialEvents.userId, input.userId),
+        inArray(financialEvents.eventType, input.eventTypes),
+        gte(financialEvents.eventOccurredAt, input.from),
+        lte(financialEvents.eventOccurredAt, input.to),
+      ),
+    )
+    .orderBy(desc(financialEvents.eventOccurredAt))
+}
+
 export async function createFinancialEvent(input: FinancialEventInsert) {
   const [event] = await db.insert(financialEvents).values(input).returning()
 
@@ -754,6 +778,44 @@ export async function listFinancialEventSourcesForEventIds(eventIds: string[]) {
     )
     .where(inArray(financialEventSources.financialEventId, eventIds))
     .orderBy(desc(financialEventSources.createdAt))
+}
+
+export async function listFinancialEventReconciliationContexts(eventIds: string[]) {
+  if (eventIds.length === 0) {
+    return []
+  }
+
+  return db
+    .select({
+      event: financialEvents,
+      merchant: merchants,
+      paymentProcessor: paymentProcessors,
+      paymentInstrument: paymentInstruments,
+      source: financialEventSources,
+      rawDocument: rawDocuments,
+      extractedSignal: extractedSignals,
+    })
+    .from(financialEvents)
+    .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
+    .leftJoin(
+      paymentProcessors,
+      eq(financialEvents.paymentProcessorId, paymentProcessors.id),
+    )
+    .leftJoin(
+      paymentInstruments,
+      eq(financialEvents.paymentInstrumentId, paymentInstruments.id),
+    )
+    .leftJoin(
+      financialEventSources,
+      eq(financialEventSources.financialEventId, financialEvents.id),
+    )
+    .leftJoin(rawDocuments, eq(financialEventSources.rawDocumentId, rawDocuments.id))
+    .leftJoin(
+      extractedSignals,
+      eq(financialEventSources.extractedSignalId, extractedSignals.id),
+    )
+    .where(inArray(financialEvents.id, eventIds))
+    .orderBy(desc(financialEventSources.createdAt), desc(financialEvents.createdAt))
 }
 
 export async function listFinancialEventSourcesForRawDocumentIds(rawDocumentIds: string[]) {
