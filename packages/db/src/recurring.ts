@@ -330,6 +330,7 @@ export async function listRecurringObligationsForUser(input: {
   userId: string
   obligationType?: RecurringObligationSelect["obligationType"]
   status?: RecurringObligationSelect["status"]
+  merchantIds?: string[]
   limit?: number
 }) {
   const conditions = [eq(recurringObligations.userId, input.userId)]
@@ -340,6 +341,10 @@ export async function listRecurringObligationsForUser(input: {
 
   if (input.status) {
     conditions.push(eq(recurringObligations.status, input.status))
+  }
+
+  if (input.merchantIds?.length) {
+    conditions.push(inArray(recurringObligations.merchantId, input.merchantIds))
   }
 
   return db
@@ -370,12 +375,17 @@ export async function listRecurringObligationsForUser(input: {
 export async function listIncomeStreamsForUser(input: {
   userId: string
   status?: IncomeStreamSelect["status"]
+  merchantIds?: string[]
   limit?: number
 }) {
   const conditions = [eq(incomeStreams.userId, input.userId)]
 
   if (input.status) {
     conditions.push(eq(incomeStreams.status, input.status))
+  }
+
+  if (input.merchantIds?.length) {
+    conditions.push(inArray(incomeStreams.sourceMerchantId, input.merchantIds))
   }
 
   return db

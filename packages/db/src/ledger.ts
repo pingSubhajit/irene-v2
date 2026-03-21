@@ -10,6 +10,7 @@ import {
   inArray,
   isNull,
   lte,
+  ne,
   or,
   sql,
 } from "drizzle-orm"
@@ -20,6 +21,7 @@ import {
   extractedSignals,
   financialEvents,
   financialEventSources,
+  financialEventValuations,
   paymentProcessors,
   merchants,
   merchantAliases,
@@ -677,11 +679,21 @@ export async function findOpenReviewQueueItem(input: {
 export async function listLedgerEventsForUser(input: {
   userId: string
   eventType?: FinancialEventType
+  eventTypes?: FinancialEventType[]
   categoryId?: string
+  categoryIds?: string[]
+  direction?: FinancialEventDirection
+  merchantIds?: string[]
+  paymentInstrumentIds?: string[]
+  paymentProcessorIds?: string[]
   needsReview?: boolean
   query?: string
   dateFrom?: Date
   dateTo?: Date
+  reportingCurrency?: string
+  crossCurrency?: boolean
+  amountMinMinor?: number
+  amountMaxMinor?: number
   limit?: number
 }) {
   const conditions = [eq(financialEvents.userId, input.userId)]
@@ -690,8 +702,32 @@ export async function listLedgerEventsForUser(input: {
     conditions.push(eq(financialEvents.eventType, input.eventType))
   }
 
+  if (input.eventTypes?.length) {
+    conditions.push(inArray(financialEvents.eventType, input.eventTypes))
+  }
+
   if (input.categoryId) {
     conditions.push(eq(financialEvents.categoryId, input.categoryId))
+  }
+
+  if (input.categoryIds?.length) {
+    conditions.push(inArray(financialEvents.categoryId, input.categoryIds))
+  }
+
+  if (input.direction) {
+    conditions.push(eq(financialEvents.direction, input.direction))
+  }
+
+  if (input.merchantIds?.length) {
+    conditions.push(inArray(financialEvents.merchantId, input.merchantIds))
+  }
+
+  if (input.paymentInstrumentIds?.length) {
+    conditions.push(inArray(financialEvents.paymentInstrumentId, input.paymentInstrumentIds))
+  }
+
+  if (input.paymentProcessorIds?.length) {
+    conditions.push(inArray(financialEvents.paymentProcessorId, input.paymentProcessorIds))
   }
 
   if (typeof input.needsReview === "boolean") {
@@ -714,7 +750,33 @@ export async function listLedgerEventsForUser(input: {
         ilike(financialEvents.notes, pattern),
         existsMerchantMatch(input.query.trim()),
         existsProcessorMatch(input.query.trim()),
+        existsInstrumentMatch(input.query.trim()),
       )!,
+    )
+  }
+
+  if (input.reportingCurrency && input.crossCurrency) {
+    conditions.push(ne(financialEvents.currency, input.reportingCurrency))
+  }
+
+  const comparableAmountExpression =
+    input.reportingCurrency && (typeof input.amountMinMinor === "number" || typeof input.amountMaxMinor === "number")
+      ? sql<number>`case
+          when ${financialEvents.currency} = ${input.reportingCurrency}
+            then ${financialEvents.amountMinor}
+          else ${financialEventValuations.normalizedAmountMinor}
+        end`
+      : null
+
+  if (comparableAmountExpression && typeof input.amountMinMinor === "number") {
+    conditions.push(
+      sql<boolean>`${comparableAmountExpression} is not null and ${comparableAmountExpression} >= ${input.amountMinMinor}`,
+    )
+  }
+
+  if (comparableAmountExpression && typeof input.amountMaxMinor === "number") {
+    conditions.push(
+      sql<boolean>`${comparableAmountExpression} is not null and ${comparableAmountExpression} <= ${input.amountMaxMinor}`,
     )
   }
 
@@ -736,6 +798,16 @@ export async function listLedgerEventsForUser(input: {
     .leftJoin(
       paymentProcessors,
       eq(financialEvents.paymentProcessorId, paymentProcessors.id),
+    )
+    .leftJoin(
+      financialEventValuations,
+      input.reportingCurrency
+        ? and(
+            eq(financialEventValuations.financialEventId, financialEvents.id),
+            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+            isNull(financialEventValuations.supersededAt),
+          )
+        : sql`false`,
     )
     .where(and(...conditions))
     .orderBy(desc(financialEvents.eventOccurredAt), desc(financialEvents.createdAt))
@@ -760,6 +832,72 @@ function existsProcessorMatch(query: string) {
     where payment_processor.id = ${financialEvents.paymentProcessorId}
       and (payment_processor.display_name ilike ${pattern} or payment_processor.normalized_name ilike ${pattern})
   )`
+}
+
+function existsInstrumentMatch(query: string) {
+  const pattern = `%${query}%`
+
+  return sql<boolean>`exists (
+    select 1 from payment_instrument
+    where payment_instrument.id = ${financialEvents.paymentInstrumentId}
+      and (
+        payment_instrument.display_name ilike ${pattern}
+        or coalesce(payment_instrument.provider_name, '') ilike ${pattern}
+        or coalesce(payment_instrument.masked_identifier, '') ilike ${pattern}
+      )
+  )`
+}
+
+export async function listActivityMerchantsForUser(input: {
+  userId: string
+  limit?: number
+}) {
+  return db
+    .select({
+      id: merchants.id,
+      displayName: merchants.displayName,
+      normalizedName: merchants.normalizedName,
+      logoUrl: merchants.logoUrl,
+      lastSeenAt: merchants.lastSeenAt,
+    })
+    .from(merchants)
+    .where(eq(merchants.userId, input.userId))
+    .orderBy(desc(merchants.lastSeenAt), asc(merchants.displayName))
+    .limit(input.limit ?? 200)
+}
+
+export async function listActivityPaymentProcessorsForUser(input: {
+  userId: string
+  limit?: number
+}) {
+  return db
+    .select({
+      id: paymentProcessors.id,
+      displayName: paymentProcessors.displayName,
+      normalizedName: paymentProcessors.normalizedName,
+    })
+    .from(paymentProcessors)
+    .where(eq(paymentProcessors.userId, input.userId))
+    .orderBy(asc(paymentProcessors.displayName))
+    .limit(input.limit ?? 200)
+}
+
+export async function listActivityPaymentInstrumentsForUser(input: {
+  userId: string
+  limit?: number
+}) {
+  return db
+    .select({
+      id: paymentInstruments.id,
+      displayName: paymentInstruments.displayName,
+      instrumentType: paymentInstruments.instrumentType,
+      maskedIdentifier: paymentInstruments.maskedIdentifier,
+      providerName: paymentInstruments.providerName,
+    })
+    .from(paymentInstruments)
+    .where(eq(paymentInstruments.userId, input.userId))
+    .orderBy(asc(paymentInstruments.displayName))
+    .limit(input.limit ?? 200)
 }
 
 export async function listFinancialEventSourcesForEventIds(eventIds: string[]) {

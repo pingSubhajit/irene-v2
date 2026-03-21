@@ -1,19 +1,27 @@
 import {
   getUserSettings,
+  listActivityMerchantsForUser,
+  listActivityPaymentInstrumentsForUser,
+  listActivityPaymentProcessorsForUser,
+  listCategoriesForUser,
   listIncomeStreamsForUser,
   listFinancialEventSourcesForEventIds,
   listLedgerEventsForUser,
   listRecurringObligationsForUser,
 } from "@workspace/db"
-import { Input } from "@workspace/ui/components/input"
 
+import { ActivityToolbar } from "@/components/activity-toolbar"
 import { RecurringModelCard } from "@/components/recurring-model-card"
 import { TransactionCard } from "@/components/transaction-card"
 import {
   formatInUserTimeZone,
+  getDateRangeForPreset,
   getUserTimeZoneMonthKey,
+  getUtcEndOfUserDay,
+  getUtcStartOfUserDay,
 } from "@/lib/date-format"
 import { requireSession } from "@/lib/session"
+import type { FinancialEventType } from "@workspace/db"
 
 export const dynamic = "force-dynamic"
 
@@ -21,18 +29,74 @@ type ActivityPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
 
-const primaryViews = [
-  { value: "all", label: "All" },
-  { value: "outflow", label: "Outflows" },
-  { value: "inflow", label: "Inflows" },
-  { value: "review", label: "Review" },
-  { value: "subscriptions", label: "Subs" },
-  { value: "emis", label: "EMIs" },
-  { value: "income", label: "Income" },
-] as const
-
 function asSingleValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value
+}
+
+function asArrayValue(value: string | string[] | undefined) {
+  if (!value) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+function resolveSort(value: string | undefined) {
+  switch (value) {
+    case "oldest":
+    case "amount_desc":
+    case "amount_asc":
+      return value
+    default:
+      return "recent"
+  }
+}
+
+function resolveDatePreset(value: string | undefined) {
+  switch (value) {
+    case "today":
+    case "last_7_days":
+    case "this_month":
+    case "last_month":
+      return value
+    default:
+      return undefined
+  }
+}
+
+function resolveEventTypes(values: string[]): FinancialEventType[] {
+  return values.filter((value): value is FinancialEventType =>
+    [
+      "purchase",
+      "income",
+      "subscription_charge",
+      "emi_payment",
+      "bill_payment",
+      "refund",
+      "transfer",
+    ].includes(value),
+  )
+}
+
+function parseAmountValue(value: string | undefined) {
+  if (!value) return undefined
+
+  const parsed = Number(value)
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return undefined
+  }
+
+  return parsed
+}
+
+function convertMajorAmountToMinor(value: number | undefined) {
+  if (typeof value !== "number") {
+    return undefined
+  }
+
+  return Math.round(value * 100)
+}
+
+function dedupe<T>(values: T[]) {
+  return [...new Set(values)]
 }
 
 function formatCurrency(amountMinor: number, currency = "INR") {
@@ -74,33 +138,98 @@ export default async function ActivityPage({
   const params = (await searchParams) ?? {}
   const query = asSingleValue(params.query)?.trim() || undefined
   const view = asSingleValue(params.view) || "all"
+  const sort = resolveSort(asSingleValue(params.sort))
+  const selectedCategorySlugs = dedupe(
+    asArrayValue(params.category).filter((value) => value && value !== "all"),
+  )
+  const selectedMerchantIds = dedupe(asArrayValue(params.merchant).filter(Boolean))
+  const selectedInstrumentIds = dedupe(asArrayValue(params.instrument).filter(Boolean))
+  const selectedProcessorIds = dedupe(asArrayValue(params.processor).filter(Boolean))
+  const selectedTypes = dedupe(resolveEventTypes(asArrayValue(params.type)))
+  const datePreset = resolveDatePreset(asSingleValue(params.datePreset))
+  const customDateFrom = asSingleValue(params.dateFrom)
+  const customDateTo = asSingleValue(params.dateTo)
+  const crossCurrency = asSingleValue(params.crossCurrency) === "true"
+  const amountMinMajor = parseAmountValue(asSingleValue(params.amountMin))
+  const amountMaxMajor = parseAmountValue(asSingleValue(params.amountMax))
 
-  const [settings, events, subscriptions, emis, incomeStreams] = await Promise.all([
+  const [settings, categories] = await Promise.all([
     getUserSettings(session.user.id),
-    listLedgerEventsForUser({
-      userId: session.user.id,
-      query,
-      needsReview: view === "review" ? true : undefined,
-      limit: 160,
-    }),
-    listRecurringObligationsForUser({
-      userId: session.user.id,
-      obligationType: "subscription",
-      limit: 40,
-    }),
-    listRecurringObligationsForUser({
-      userId: session.user.id,
-      obligationType: "emi",
-      limit: 40,
-    }),
-    listIncomeStreamsForUser({
-      userId: session.user.id,
-      limit: 40,
-    }),
+    listCategoriesForUser(session.user.id),
   ])
+
+  const selectedCategoryIds = categories
+    .filter((entry) => selectedCategorySlugs.includes(entry.slug))
+    .map((entry) => entry.id)
+
+  const presetRange = datePreset
+    ? getDateRangeForPreset(datePreset, settings.timeZone)
+    : { dateFrom: null, dateTo: null }
+  const dateFrom =
+    presetRange.dateFrom ?? (customDateFrom ? getUtcStartOfUserDay(customDateFrom, settings.timeZone) : null)
+  const dateTo =
+    presetRange.dateTo ?? (customDateTo ? getUtcEndOfUserDay(customDateTo, settings.timeZone) : null)
 
   const isRecurringView =
     view === "subscriptions" || view === "emis" || view === "income"
+
+  const [events, merchants, paymentProcessors, paymentInstruments, subscriptions, emis, incomeStreams] =
+    await Promise.all([
+      isRecurringView
+        ? Promise.resolve([])
+        : listLedgerEventsForUser({
+            userId: session.user.id,
+            query,
+            direction:
+              view === "outflow" || view === "inflow" ? view : undefined,
+            needsReview: view === "review" ? true : undefined,
+            categoryIds: selectedCategoryIds,
+            merchantIds: selectedMerchantIds,
+            paymentInstrumentIds: selectedInstrumentIds,
+            paymentProcessorIds: selectedProcessorIds,
+            eventTypes: selectedTypes,
+            dateFrom: dateFrom ?? undefined,
+            dateTo: dateTo ?? undefined,
+            reportingCurrency: settings.reportingCurrency,
+            crossCurrency,
+            amountMinMinor: convertMajorAmountToMinor(amountMinMajor),
+            amountMaxMinor: convertMajorAmountToMinor(amountMaxMajor),
+            limit: 160,
+          }),
+      listActivityMerchantsForUser({
+        userId: session.user.id,
+        limit: 200,
+      }),
+      isRecurringView
+        ? Promise.resolve([])
+        : listActivityPaymentProcessorsForUser({
+            userId: session.user.id,
+            limit: 200,
+          }),
+      isRecurringView
+        ? Promise.resolve([])
+        : listActivityPaymentInstrumentsForUser({
+            userId: session.user.id,
+            limit: 200,
+          }),
+      listRecurringObligationsForUser({
+        userId: session.user.id,
+        obligationType: "subscription",
+        merchantIds: selectedMerchantIds,
+        limit: 40,
+      }),
+      listRecurringObligationsForUser({
+        userId: session.user.id,
+        obligationType: "emi",
+        merchantIds: selectedMerchantIds,
+        limit: 40,
+      }),
+      listIncomeStreamsForUser({
+        userId: session.user.id,
+        merchantIds: selectedMerchantIds,
+        limit: 40,
+      }),
+    ])
 
   const recurringRows =
     view === "subscriptions"
@@ -143,14 +272,23 @@ export default async function ActivityPage({
     },
   )
 
-  const eventsInputView = isRecurringView ? "all" : view
-  const filteredEvents = events.filter(({ event }) => {
-    if (eventsInputView === "outflow") return event.direction === "outflow"
-    if (eventsInputView === "inflow") return event.direction === "inflow"
-    return true
+  const sortedEvents = [...events].sort((left, right) => {
+    if (sort === "oldest") {
+      return left.event.eventOccurredAt.getTime() - right.event.eventOccurredAt.getTime()
+    }
+
+    if (sort === "amount_desc") {
+      return right.event.amountMinor - left.event.amountMinor
+    }
+
+    if (sort === "amount_asc") {
+      return left.event.amountMinor - right.event.amountMinor
+    }
+
+    return right.event.eventOccurredAt.getTime() - left.event.eventOccurredAt.getTime()
   })
 
-  const eventIds = filteredEvents.map(({ event }) => event.id)
+  const eventIds = sortedEvents.map(({ event }) => event.id)
   const sources = await listFinancialEventSourcesForEventIds(eventIds)
   const sourcesByEventId = new Map<string, typeof sources>()
 
@@ -161,8 +299,8 @@ export default async function ActivityPage({
     sourcesByEventId.set(source.source.financialEventId, existing)
   }
 
-  const grouped = new Map<string, typeof filteredEvents>()
-  for (const row of filteredEvents) {
+  const grouped = new Map<string, typeof sortedEvents>()
+  for (const row of sortedEvents) {
     const key = getUserTimeZoneMonthKey(
       row.event.eventOccurredAt,
       settings.timeZone,
@@ -176,12 +314,6 @@ export default async function ActivityPage({
     right[0].localeCompare(left[0]),
   )
 
-  const resultCount = isRecurringView
-    ? view === "income"
-      ? filteredIncomeStreams.length
-      : filteredRecurringRows.length
-    : filteredEvents.length
-
   return (
     <section className="mx-auto max-w-lg">
       {/* Header */}
@@ -189,44 +321,40 @@ export default async function ActivityPage({
         activity
       </h1>
 
-      {/* Filters */}
-      <form className="sticky top-[76px] z-30 -mx-4 border-b border-white/[0.06] bg-[var(--neo-black)] px-4 pb-4 md:-mx-6 md:top-[84px] md:px-6">
-        <Input
-          type="search"
-          name="query"
-          defaultValue={query}
-          placeholder="search merchant or note"
-          className="mb-3 h-10 border-white/[0.06] bg-white/[0.03] text-sm placeholder:text-white/24"
-        />
-
-        <div className="neo-scrollbar flex gap-2 overflow-x-auto pb-0.5">
-          {primaryViews.map((chip) => {
-            const active = view === chip.value
-            const nextParams = new URLSearchParams()
-            if (query) nextParams.set("query", query)
-            if (chip.value !== "all") nextParams.set("view", chip.value)
-
-            return (
-              <a
-                key={chip.value}
-                href={`/activity${nextParams.size > 0 ? `?${nextParams.toString()}` : ""}`}
-                className={[
-                  "shrink-0 border px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.18em] transition",
-                  active
-                    ? "border-[var(--neo-yellow)] bg-[var(--neo-yellow)] text-[var(--neo-black)]"
-                    : "border-white/10 bg-transparent text-white/40 hover:bg-white/[0.04]",
-                ].join(" ")}
-              >
-                {chip.label}
-              </a>
-            )
-          })}
-        </div>
-
-        <p className="mt-3 text-xs text-white/24">
-          {resultCount} {resultCount === 1 ? "result" : "results"}
-        </p>
-      </form>
+      <ActivityToolbar
+        query={query}
+        view={view}
+        sort={sort}
+        reportingCurrency={settings.reportingCurrency}
+        datePreset={datePreset}
+        dateFrom={customDateFrom}
+        dateTo={customDateTo}
+        categories={categories.map((entry) => ({
+          slug: entry.slug,
+          name: entry.name,
+        }))}
+        selectedCategories={selectedCategorySlugs}
+        merchants={merchants.map((entry) => ({
+          id: entry.id,
+          name: entry.displayName,
+          logoUrl: entry.logoUrl ?? null,
+        }))}
+        selectedMerchants={selectedMerchantIds}
+        paymentInstruments={paymentInstruments.map((entry) => ({
+          id: entry.id,
+          name: entry.displayName,
+        }))}
+        selectedInstruments={selectedInstrumentIds}
+        paymentProcessors={paymentProcessors.map((entry) => ({
+          id: entry.id,
+          name: entry.displayName,
+        }))}
+        selectedProcessors={selectedProcessorIds}
+        selectedTypes={selectedTypes}
+        amountMin={amountMinMajor}
+        amountMax={amountMaxMajor}
+        crossCurrency={crossCurrency}
+      />
 
       {/* Content */}
       <div className="mt-2">
