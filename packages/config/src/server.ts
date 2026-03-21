@@ -58,6 +58,8 @@ const storageEnvSchema = z.object({
 
 const aiEnvSchema = z.object({
   AI_GATEWAY_API_KEY: z.string().min(1),
+  LOGO_DOT_DEV_SECRET_KEY: z.string().min(1),
+  NEXT_PUBLIC_LOGO_DOT_DEV_PUBLIC_KEY: z.string().min(1),
 })
 
 const fxEnvSchema = z.object({

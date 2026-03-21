@@ -6,12 +6,18 @@ import {
   RiErrorWarningLine,
   RiSwapLine,
 } from "@remixicon/react"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar"
 
 import { formatInUserTimeZone } from "@/lib/date-format"
 
 type TransactionCardProps = {
   eventId: string
   merchant: string
+  merchantLogoUrl?: string | null
   processor?: string | null
   amount: string
   dateLabel: string
@@ -75,6 +81,7 @@ function formatRowTime(isoString: string, timeZone: string | undefined) {
 export function TransactionCard({
   eventId,
   merchant,
+  merchantLogoUrl,
   processor,
   amount,
   dateLabel,
@@ -85,9 +92,15 @@ export function TransactionCard({
 }: TransactionCardProps) {
   const content = (
     <div className="flex items-center gap-3.5 py-4">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/[0.07] text-xs font-semibold tracking-wide text-white/50">
-        {getInitials(merchant)}
-      </span>
+      <Avatar className="size-10 shrink-0 rounded-full bg-white/[0.07]">
+        {merchantLogoUrl ? (
+          <AvatarImage src={merchantLogoUrl} alt={merchant} />
+        ) : (
+          <AvatarFallback className="bg-white/[0.07] text-xs font-semibold tracking-wide text-white/50">
+            {getInitials(merchant)}
+          </AvatarFallback>
+        )}
+      </Avatar>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-medium text-white">
           {merchant}

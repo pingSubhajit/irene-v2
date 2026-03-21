@@ -354,6 +354,7 @@ export default async function DashboardPage() {
                   key={event.id}
                   eventId={event.id}
                   merchant={merchant?.displayName ?? event.description ?? "Unmapped event"}
+                  merchantLogoUrl={merchant?.logoUrl ?? null}
                   amount={formatCurrency(event.amountMinor, event.currency)}
                   dateLabel={formatEventDate(event.eventOccurredAt, settings.timeZone)}
                   category={category?.name ?? "Uncategorized"}

@@ -18,6 +18,7 @@ import {
 } from "@workspace/db"
 
 import { ModelRunList } from "@/components/model-run-list"
+import { MerchantLogoPicker } from "@/components/merchant-logo-picker"
 import { formatInUserTimeZone } from "@/lib/date-format"
 import { requireSession } from "@/lib/session"
 
@@ -143,9 +144,18 @@ export default async function EventTracePage({
       </Link>
 
       {/* Event header */}
-      <h1 className="text-[1.65rem] font-semibold tracking-tight text-white">
-        {merchantName}
-      </h1>
+      <div className="flex items-center gap-3">
+        {trace.merchant?.id ? (
+          <MerchantLogoPicker
+            merchantId={trace.merchant.id}
+            merchantName={merchantName}
+            currentLogoUrl={trace.merchant.logoUrl ?? null}
+          />
+        ) : null}
+        <h1 className="min-w-0 text-[1.65rem] font-semibold tracking-tight text-white">
+          {merchantName}
+        </h1>
+      </div>
       {secondaryLine ? (
         <p className="mt-1 text-sm text-white/48">{secondaryLine}</p>
       ) : null}

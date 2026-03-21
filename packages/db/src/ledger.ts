@@ -204,6 +204,7 @@ export async function getOrCreateMerchantForAlias(input: {
   aliasText: string
   source: string
   confidence?: number
+  logoUrl?: string | null
 }) {
   const normalizedName = normalizeMerchantName(input.aliasText)
 
@@ -225,6 +226,7 @@ export async function getOrCreateMerchantForAlias(input: {
         .values({
           userId: input.userId,
           displayName: input.aliasText.trim(),
+          logoUrl: input.logoUrl ?? null,
           normalizedName,
           merchantType: inferMerchantType(input.aliasText),
           isSubscriptionProne: /\b(subscription|renewal|apple|netflix|spotify)\b/i.test(
@@ -268,6 +270,7 @@ export async function getOrCreateMerchantForAlias(input: {
     .update(merchants)
     .set({
       displayName: resolvedMerchant.displayName || input.aliasText.trim(),
+      logoUrl: input.logoUrl ?? resolvedMerchant.logoUrl,
       lastSeenAt: new Date(),
       updatedAt: new Date(),
     })

@@ -311,6 +311,7 @@ export default async function ActivityPage({
                         event.description ??
                         "Unmapped event"
                       }
+                      merchantLogoUrl={merchant?.logoUrl ?? null}
                       amount={formatCurrency(
                         event.amountMinor,
                         event.currency,

@@ -1,0 +1,1 @@
+ALTER TABLE "merchant" ADD COLUMN "logo_url" text;

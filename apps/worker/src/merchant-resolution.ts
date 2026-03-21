@@ -35,6 +35,7 @@ import {
   resolveCategoryWithAi,
   resolveMerchantAndProcessorWithAi,
 } from "@workspace/ai"
+import { buildLogoDotDevBrandLogoUrl } from "@workspace/integrations"
 
 import {
   resolveExistingMerchantFastPath,
@@ -216,6 +217,18 @@ function getClusterKey(input: {
   )
 }
 
+function resolveMerchantLogoUrl(canonicalMerchantName: string | null) {
+  if (!canonicalMerchantName) {
+    return null
+  }
+
+  try {
+    return buildLogoDotDevBrandLogoUrl(canonicalMerchantName)
+  } catch {
+    return null
+  }
+}
+
 function selectParserFallbackDecision(input: {
   observations: MerchantObservationSelect[]
   aliasCandidates: MerchantAliasCandidate[]
@@ -390,6 +403,7 @@ async function applyMerchantDecision(input: {
     | "create_new_processor"
     | "merge_processors"
 }) {
+  const merchantLogoUrl = resolveMerchantLogoUrl(input.canonicalMerchantName)
   let merchant = input.targetMerchantId ? await getMerchantById(input.targetMerchantId) : null
 
   if (!merchant && input.canonicalMerchantName) {
@@ -398,12 +412,14 @@ async function applyMerchantDecision(input: {
       aliasText: input.canonicalMerchantName,
       source: "merchant_resolution",
       confidence: 1,
+      logoUrl: merchantLogoUrl,
     })
   }
 
   if (merchant && input.canonicalMerchantName) {
     await updateMerchant(merchant.id, {
       displayName: input.canonicalMerchantName,
+      logoUrl: merchantLogoUrl ?? undefined,
       normalizedName:
         normalizeMerchantResolutionName(input.canonicalMerchantName) ?? merchant.normalizedName,
       lastSeenAt: new Date(),

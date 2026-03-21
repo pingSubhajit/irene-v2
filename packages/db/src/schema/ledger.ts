@@ -85,6 +85,7 @@ export const merchants = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     displayName: text("display_name").notNull(),
+    logoUrl: text("logo_url"),
     normalizedName: text("normalized_name").notNull(),
     defaultCategory: text("default_category"),
     merchantType: text("merchant_type").$type<MerchantType>().notNull().default("unknown"),
