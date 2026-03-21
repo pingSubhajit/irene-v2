@@ -14,12 +14,14 @@ import {
   createExtractedSignals,
   createModelRun,
   closeDatabase,
+  createReviewQueueItem,
   ensureJobRun,
   getEmailSyncCursorById,
   getOauthConnectionById,
   getRawDocumentById,
   getUserSettings,
   hasExtractedSignalsForRawDocument,
+  listUserIdsForForecasting,
   listUserIdsForInstrumentRepair,
   updateEmailSyncCursor,
   updateJobRun,
@@ -49,6 +51,9 @@ import {
   DOCUMENT_NORMALIZE_JOB_NAME,
   ENTITY_RESOLUTION_QUEUE_NAME,
   EMAIL_SYNC_QUEUE_NAME,
+  FORECASTING_QUEUE_NAME,
+  FORECAST_REBUILD_USER_JOB_NAME,
+  FORECAST_REFRESH_USER_JOB_NAME,
   EVENT_EXTRACT_INSTRUMENT_OBSERVATION_JOB_NAME,
   EVENT_EXTRACT_MERCHANT_OBSERVATION_JOB_NAME,
   GMAIL_BACKFILL_PAGE_JOB_NAME,
@@ -74,6 +79,10 @@ import {
   documentExtractRouteJobPayloadSchema,
   documentExtractStructuredJobPayloadSchema,
   documentNormalizeJobPayloadSchema,
+  forecastRefreshUserJobPayloadSchema,
+  forecastRebuildUserJobPayloadSchema,
+  enqueueForecastRefreshUser,
+  enqueueForecastRebuildUser,
   enqueueEventExtractInstrumentObservation,
   enqueueEventExtractMerchantObservation,
   enqueueDocumentExtractRoute,
@@ -118,6 +127,11 @@ import {
   systemHealthcheckJobPayloadSchema,
 } from "@workspace/workflows"
 
+import {
+  inferAccountsAndPromoteBalancesForEvent,
+  inferAccountsAndPromoteBalancesForRawDocument,
+  refreshForecastForUser,
+} from "./forecast"
 import {
   buildNormalizedExtractionDocument,
   runDeterministicExtraction,
@@ -768,6 +782,71 @@ async function enqueueTrackedSignalReconcile(input: {
   })
 }
 
+async function enqueueTrackedForecastRefresh(input: {
+  userId: string
+  correlationId: string
+  source: "worker" | "web" | "scheduler" | "startup"
+  reason:
+    | "financial_event_changed"
+    | "recurring_changed"
+    | "review_resolved"
+    | "balance_anchor_changed"
+    | "manual_refresh"
+}) {
+  const jobKey = `${FORECAST_REFRESH_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: FORECASTING_QUEUE_NAME,
+    jobName: FORECAST_REFRESH_USER_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+    },
+  })
+
+  await enqueueForecastRefreshUser({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    source: input.source,
+    reason: input.reason,
+  })
+}
+
+async function enqueueTrackedForecastRebuild(input: {
+  userId: string
+  correlationId: string
+  source: "worker" | "web" | "scheduler" | "startup"
+  reason: "nightly_rebuild" | "startup_rebuild" | "manual_rebuild" | "logic_change"
+}) {
+  const jobKey = `${FORECAST_REBUILD_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: FORECASTING_QUEUE_NAME,
+    jobName: FORECAST_REBUILD_USER_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+    },
+  })
+
+  await enqueueForecastRebuildUser({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    source: input.source,
+    reason: input.reason,
+  })
+}
+
 async function persistExtractedSignals(input: {
   userId: string
   rawDocumentId: string
@@ -803,6 +882,14 @@ async function persistExtractedSignals(input: {
       merchantHint: signal.merchantHint ?? null,
       issuerNameHint: signal.issuerNameHint ?? null,
       instrumentLast4Hint: signal.instrumentLast4Hint ?? null,
+      availableBalanceMinor: signal.availableBalanceMinor ?? null,
+      availableCreditLimitMinor: signal.availableCreditLimitMinor ?? null,
+      balanceAsOfDate: signal.balanceAsOfDate ?? null,
+      balanceInstrumentLast4Hint: signal.balanceInstrumentLast4Hint ?? null,
+      backingAccountLast4Hint: signal.backingAccountLast4Hint ?? null,
+      backingAccountNameHint: signal.backingAccountNameHint ?? null,
+      accountRelationshipHint: signal.accountRelationshipHint ?? null,
+      balanceEvidenceStrength: signal.balanceEvidenceStrength ?? null,
       merchantDescriptorRaw: signal.merchantDescriptorRaw ?? null,
       merchantNameCandidate: signal.merchantNameCandidate ?? null,
       processorNameCandidate: signal.processorNameCandidate ?? null,
@@ -1402,12 +1489,27 @@ async function handleDocumentNormalize(job: Job) {
       signals: deterministic.signals,
     })
 
+    const balanceInference = await inferAccountsAndPromoteBalancesForRawDocument({
+      userId: payload.userId,
+      rawDocumentId: rawDocument.id,
+    })
+
+    if (balanceInference.promotedAnchorIds.length > 0) {
+      await enqueueTrackedForecastRefresh({
+        userId: payload.userId,
+        correlationId: payload.correlationId,
+        source: "worker",
+        reason: "balance_anchor_changed",
+      })
+    }
+
     await markJobSucceeded(job, payload, {
       extractionSource: "deterministic",
       signalCount: signals.length,
       parserName: deterministic.parserName,
       rawDocumentId: rawDocument.id,
       attachmentIds,
+      promotedAnchorCount: balanceInference.promotedAnchorIds.length,
     })
 
     return {
@@ -1559,6 +1661,10 @@ async function handleDocumentExtractStructured(job: Job) {
       outputTokens: extracted.metadata.outputTokens,
       latencyMs: extracted.metadata.latencyMs,
       requestId: extracted.metadata.requestId,
+      resultJson: {
+        extractionSummary: extracted.extraction.extractionSummary ?? null,
+        recovery: extracted.recovery,
+      },
     })
 
     const signalPayload: WorkerExtractedSignal[] =
@@ -1573,6 +1679,14 @@ async function handleDocumentExtractStructured(job: Job) {
             merchantHint: signal.merchantHint ?? null,
             issuerNameHint: signal.issuerNameHint ?? null,
             instrumentLast4Hint: signal.instrumentLast4Hint ?? null,
+            availableBalanceMinor: signal.availableBalanceMinor ?? null,
+            availableCreditLimitMinor: signal.availableCreditLimitMinor ?? null,
+            balanceAsOfDate: signal.balanceAsOfDate ?? null,
+            balanceInstrumentLast4Hint: signal.balanceInstrumentLast4Hint ?? null,
+            backingAccountLast4Hint: signal.backingAccountLast4Hint ?? null,
+            backingAccountNameHint: signal.backingAccountNameHint ?? null,
+            accountRelationshipHint: signal.accountRelationshipHint ?? null,
+            balanceEvidenceStrength: signal.balanceEvidenceStrength ?? null,
             merchantDescriptorRaw: signal.merchantDescriptorRaw ?? null,
             merchantNameCandidate: signal.merchantNameCandidate ?? null,
             processorNameCandidate: signal.processorNameCandidate ?? null,
@@ -1596,6 +1710,14 @@ async function handleDocumentExtractStructured(job: Job) {
               merchantHint: rawDocument.fromAddress,
               issuerNameHint: null,
               instrumentLast4Hint: null,
+              availableBalanceMinor: null,
+              availableCreditLimitMinor: null,
+              balanceAsOfDate: null,
+              balanceInstrumentLast4Hint: null,
+              backingAccountLast4Hint: null,
+              backingAccountNameHint: null,
+              accountRelationshipHint: null,
+              balanceEvidenceStrength: null,
               merchantDescriptorRaw: null,
               merchantNameCandidate: null,
               processorNameCandidate: null,
@@ -1625,11 +1747,45 @@ async function handleDocumentExtractStructured(job: Job) {
       signals: signalPayload,
     })
 
+    const balanceInference = await inferAccountsAndPromoteBalancesForRawDocument({
+      userId: payload.userId,
+      rawDocumentId: rawDocument.id,
+    })
+
+    if (extracted.recovery.mode === "fallback") {
+      await createReviewQueueItem({
+        userId: payload.userId,
+        itemType: "signal_reconciliation",
+        rawDocumentId: rawDocument.id,
+        priority: 2,
+        title: "Review degraded extraction",
+        explanation:
+          "Irene recovered from an invalid model response and saved a generic finance signal. This document should be reviewed before it is treated as truth.",
+        proposedResolutionJson: {
+          kind: "degraded_extraction",
+          modelRunId: modelRun.id,
+          recovery: extracted.recovery,
+          routeLabel: payload.routeLabel,
+          signalIds: signals.map((signal) => signal.id),
+        },
+      })
+    }
+
     await markJobSucceeded(job, payload, {
       signalCount: signals.length,
       modelRunId: modelRun.id,
       routeLabel: payload.routeLabel,
+      promotedAnchorCount: balanceInference.promotedAnchorIds.length,
     })
+
+    if (balanceInference.promotedAnchorIds.length > 0) {
+      await enqueueTrackedForecastRefresh({
+        userId: payload.userId,
+        correlationId: payload.correlationId,
+        source: "worker",
+        reason: "balance_anchor_changed",
+      })
+    }
 
     return {
       signalCount: signals.length,
@@ -1659,6 +1815,10 @@ async function handleSignalReconcile(job: Job) {
     outcome.financialEventId
   ) {
     const settings = await getUserSettings(payload.userId)
+    await inferAccountsAndPromoteBalancesForEvent({
+      userId: payload.userId,
+      financialEventId: outcome.financialEventId,
+    })
 
     await Promise.all([
       enqueueTrackedFxEventRefresh({
@@ -1688,6 +1848,12 @@ async function handleSignalReconcile(job: Job) {
         financialEventId: outcome.financialEventId,
         correlationId: payload.correlationId,
         source: "worker",
+      }),
+      enqueueTrackedForecastRefresh({
+        userId: payload.userId,
+        correlationId: payload.correlationId,
+        source: "worker",
+        reason: "financial_event_changed",
       }),
     ])
   }
@@ -1728,6 +1894,29 @@ async function handleInstrumentResolve(job: Job) {
     userId: payload.userId,
     maskedIdentifier: payload.maskedIdentifier,
   })
+
+  if (
+    outcome.action === "created" ||
+    outcome.action === "merged" ||
+    outcome.action === "updated" ||
+    outcome.action === "linked"
+  ) {
+    await Promise.all(
+      (outcome.financialEventIds ?? []).map((financialEventId) =>
+        inferAccountsAndPromoteBalancesForEvent({
+          userId: payload.userId,
+          financialEventId,
+        }),
+      ),
+    )
+
+    await enqueueTrackedForecastRefresh({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "financial_event_changed",
+    })
+  }
 
   await markJobSucceeded(job, payload, outcome)
   return outcome
@@ -1792,6 +1981,20 @@ async function handleMerchantResolve(job: Job) {
     })
   }
 
+  if (
+    outcome.action === "linked" ||
+    outcome.action === "created" ||
+    outcome.action === "updated" ||
+    outcome.action === "merged"
+  ) {
+    await enqueueTrackedForecastRefresh({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "financial_event_changed",
+    })
+  }
+
   await markJobSucceeded(job, payload, outcome)
   return outcome
 }
@@ -1815,6 +2018,15 @@ async function handleEventResolveCategory(job: Job) {
     financialEventId: payload.financialEventId,
   })
 
+  if (outcome.action === "updated") {
+    await enqueueTrackedForecastRefresh({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "financial_event_changed",
+    })
+  }
+
   await markJobSucceeded(job, payload, outcome)
   return outcome
 }
@@ -1824,6 +2036,19 @@ async function handleRecurringObligationDetection(job: Job) {
   await markJobRunning(job, payload)
 
   const outcome = await detectRecurringObligationFromEvent(payload.financialEventId)
+
+  if (
+    outcome.action === "created" ||
+    outcome.action === "updated" ||
+    outcome.action === "review"
+  ) {
+    await enqueueTrackedForecastRefresh({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "recurring_changed",
+    })
+  }
 
   await markJobSucceeded(job, payload, outcome)
   return outcome
@@ -1835,6 +2060,19 @@ async function handleIncomeStreamDetection(job: Job) {
 
   const outcome = await detectIncomeStreamFromEvent(payload.financialEventId)
 
+  if (
+    outcome.action === "created" ||
+    outcome.action === "updated" ||
+    outcome.action === "review"
+  ) {
+    await enqueueTrackedForecastRefresh({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "recurring_changed",
+    })
+  }
+
   await markJobSucceeded(job, payload, outcome)
   return outcome
 }
@@ -1845,6 +2083,13 @@ async function handleObligationRefresh(job: Job) {
 
   const outcome = await refreshRecurringObligation(payload.recurringObligationId)
 
+  await enqueueTrackedForecastRefresh({
+    userId: payload.userId,
+    correlationId: payload.correlationId,
+    source: "worker",
+    reason: "recurring_changed",
+  })
+
   await markJobSucceeded(job, payload, outcome)
   return outcome
 }
@@ -1854,6 +2099,39 @@ async function handleIncomeStreamRefresh(job: Job) {
   await markJobRunning(job, payload)
 
   const outcome = await refreshIncomeStream(payload.incomeStreamId)
+
+  await enqueueTrackedForecastRefresh({
+    userId: payload.userId,
+    correlationId: payload.correlationId,
+    source: "worker",
+    reason: "recurring_changed",
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleForecastRefresh(job: Job) {
+  const payload = forecastRefreshUserJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await refreshForecastForUser({
+    userId: payload.userId,
+    reason: payload.reason,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleForecastRebuild(job: Job) {
+  const payload = forecastRebuildUserJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await refreshForecastForUser({
+    userId: payload.userId,
+    reason: payload.reason,
+  })
 
   await markJobSucceeded(job, payload, outcome)
   return outcome
@@ -2063,6 +2341,26 @@ const recurringDetectionWorker = new Worker(
   },
 )
 
+const forecastingWorker = new Worker(
+  FORECASTING_QUEUE_NAME,
+  async (job) => {
+    if (job.name === FORECAST_REFRESH_USER_JOB_NAME) {
+      return handleForecastRefresh(job)
+    }
+
+    if (job.name === FORECAST_REBUILD_USER_JOB_NAME) {
+      return handleForecastRebuild(job)
+    }
+
+    throw new Error(`Unsupported job: ${job.name}`)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 2,
+  },
+)
+
 const entityResolutionWorker = new Worker(
   ENTITY_RESOLUTION_QUEUE_NAME,
   async (job) => {
@@ -2124,6 +2422,7 @@ for (const [queueName, worker] of [
   [AI_EXTRACTION_QUEUE_NAME, aiExtractionWorker],
   [RECONCILIATION_QUEUE_NAME, reconciliationWorker],
   [RECURRING_DETECTION_QUEUE_NAME, recurringDetectionWorker],
+  [FORECASTING_QUEUE_NAME, forecastingWorker],
   [ENTITY_RESOLUTION_QUEUE_NAME, entityResolutionWorker],
   [MERCHANT_RESOLUTION_QUEUE_NAME, merchantResolutionWorker],
 ] as const) {
@@ -2163,6 +2462,7 @@ for (const [queueName, worker] of [
 
 async function shutdown(signal: string) {
   logger.info("Shutting down worker", { signal })
+  clearInterval(forecastNightlyScheduler)
 
   await Promise.all([
     systemWorker.close(),
@@ -2173,6 +2473,7 @@ async function shutdown(signal: string) {
     aiExtractionWorker.close(),
     reconciliationWorker.close(),
     recurringDetectionWorker.close(),
+    forecastingWorker.close(),
     entityResolutionWorker.close(),
     merchantResolutionWorker.close(),
   ])
@@ -2180,10 +2481,45 @@ async function shutdown(signal: string) {
   await closeDatabase()
 }
 
+let lastNightlyForecastRebuildDate: string | null = null
+
+async function scheduleNightlyForecastRebuildIfDue() {
+  const today = new Date().toISOString().slice(0, 10)
+  if (lastNightlyForecastRebuildDate === today) {
+    return
+  }
+
+  lastNightlyForecastRebuildDate = today
+  const userIds = await listUserIdsForForecasting()
+
+  await Promise.all(
+    userIds.map((userId) =>
+      enqueueTrackedForecastRebuild({
+        userId,
+        correlationId: `scheduler:${today}:${userId}`,
+        source: "scheduler",
+        reason: "nightly_rebuild",
+      }),
+    ),
+  )
+
+  logger.info("Scheduled nightly forecast rebuilds", {
+    date: today,
+    userCount: userIds.length,
+  })
+}
+
+const forecastNightlyScheduler = setInterval(() => {
+  scheduleNightlyForecastRebuildIfDue().catch((error) => {
+    logger.errorWithCause("Failed to schedule nightly forecast rebuilds", error)
+  })
+}, 60 * 60 * 1000)
+
 void (async () => {
-  const [instrumentUserIds, merchantUserIds] = await Promise.all([
+  const [instrumentUserIds, merchantUserIds, forecastUserIds] = await Promise.all([
     listUserIdsForInstrumentRepair(),
     listUsersForMerchantRepair(),
+    listUserIdsForForecasting(),
   ])
 
   await Promise.all(
@@ -2205,6 +2541,19 @@ void (async () => {
       }),
     ),
   )
+
+  await Promise.all(
+    forecastUserIds.map((userId) =>
+      enqueueTrackedForecastRebuild({
+        userId,
+        correlationId: `startup:${userId}`,
+        source: "startup",
+        reason: "startup_rebuild",
+      }),
+    ),
+  )
+
+  lastNightlyForecastRebuildDate = new Date().toISOString().slice(0, 10)
 })().catch((error) => {
   logger.errorWithCause("Failed to schedule startup repair backfills", error)
 })
@@ -2215,6 +2564,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       .then(() => process.exit(0))
       .catch((error) => {
         logger.errorWithCause("Worker shutdown failed", error, { signal })
+        clearInterval(forecastNightlyScheduler)
         process.exit(1)
       })
   })

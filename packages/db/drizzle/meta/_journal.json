@@ -92,6 +92,20 @@
       "when": 1774072146342,
       "tag": "0012_nebulous_lifeguard",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1774082704377,
+      "tag": "0013_free_shocker",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1774104221643,
+      "tag": "0014_friendly_titanium_man",
+      "breakpoints": true
     }
   ]
 }

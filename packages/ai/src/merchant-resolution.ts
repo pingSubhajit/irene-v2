@@ -1,4 +1,3 @@
-import { generateObject } from "ai"
 import { createGateway } from "@ai-sdk/gateway"
 import { z } from "zod"
 
@@ -6,6 +5,7 @@ import { getAiEnv } from "@workspace/config/server"
 import { createLogger } from "@workspace/observability"
 
 import { aiModels, aiPromptVersions } from "./config"
+import { generateStructuredObject } from "./object-generation"
 
 const logger = createLogger("ai.merchant-resolution")
 const providerName = "ai-gateway"
@@ -111,16 +111,6 @@ export type MerchantResolutionInput = {
   candidateProcessors: CandidateProcessorSummary[]
 }
 
-type ModelRunMetadata = {
-  provider: string
-  modelName: string
-  promptVersion: string
-  inputTokens: number | null
-  outputTokens: number | null
-  latencyMs: number
-  requestId: string | null
-}
-
 function getGatewayProvider() {
   const env = getAiEnv()
 
@@ -129,23 +119,117 @@ function getGatewayProvider() {
   })
 }
 
-function getUsage(result: unknown) {
-  const usage = (result as { usage?: { inputTokens?: number; outputTokens?: number } }).usage
+function normalizeString(value: unknown, maxLength: number) {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const trimmed = value.replace(/\s+/g, " ").trim()
+  return trimmed ? trimmed.slice(0, maxLength) : null
+}
+
+function clampProbability(value: unknown, fallback = 0.5) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.min(Math.max(value, 0), 1)
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value.trim())
+    if (Number.isFinite(parsed)) {
+      return Math.min(Math.max(parsed, 0), 1)
+    }
+  }
+
+  return fallback
+}
+
+function normalizeStringArray(value: unknown, maxItems: number, maxLength: number) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((entry) => normalizeString(entry, maxLength))
+    .filter((entry): entry is string => Boolean(entry))
+    .slice(0, maxItems)
+}
+
+function normalizeUuidArray(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value)) {
+    return fallback
+  }
+
+  const ids = value
+    .filter((entry): entry is string => typeof entry === "string")
+    .filter((entry) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        entry,
+      ),
+    )
+
+  return ids.length > 0 ? ids.slice(0, 50) : fallback
+}
+
+function coerceMerchantResolutionResult(
+  raw: unknown,
+  fallbackObservationIds: string[],
+): MerchantResolutionResult | null {
+  if (!raw || typeof raw !== "object") {
+    return null
+  }
+
+  const record = raw as Record<string, unknown>
+  const decision = merchantResolutionDecisionSchema.safeParse(record.decision)
+  const categorySlug = categorySlugSchema.safeParse(record.categorySlug)
 
   return {
-    inputTokens: usage?.inputTokens ?? null,
-    outputTokens: usage?.outputTokens ?? null,
+    decision: decision.success ? decision.data : "needs_review",
+    confidence: clampProbability(record.confidence),
+    canonicalMerchantName: normalizeString(record.canonicalMerchantName, 160),
+    canonicalProcessorName: normalizeString(record.canonicalProcessorName, 160),
+    targetMerchantId:
+      typeof record.targetMerchantId === "string" ? record.targetMerchantId : null,
+    targetProcessorId:
+      typeof record.targetProcessorId === "string" ? record.targetProcessorId : null,
+    displayMerchantName: normalizeString(record.displayMerchantName, 200),
+    reason:
+      normalizeString(record.reason, 320) ??
+      "Recovered merchant resolution from schema-mismatch model output.",
+    ignoredHints: normalizeStringArray(record.ignoredHints, 8, 160),
+    supportingObservationIds: normalizeUuidArray(
+      record.supportingObservationIds,
+      fallbackObservationIds,
+    ),
+    categorySlug: categorySlug.success ? categorySlug.data : null,
+    categoryConfidence:
+      record.categoryConfidence == null ? null : clampProbability(record.categoryConfidence),
+    categoryReason: normalizeString(record.categoryReason, 240),
   }
 }
 
-function getRequestId(result: unknown) {
-  const response = (result as { response?: { id?: string } }).response
-  return response?.id ?? null
+function coerceCategoryResolutionResult(raw: unknown): CategoryResolutionResult | null {
+  if (!raw || typeof raw !== "object") {
+    return null
+  }
+
+  const record = raw as Record<string, unknown>
+  const categorySlug = categorySlugSchema.safeParse(record.categorySlug)
+
+  if (!categorySlug.success) {
+    return null
+  }
+
+  return {
+    categorySlug: categorySlug.data,
+    confidence: clampProbability(record.confidence),
+    reason:
+      normalizeString(record.reason, 240) ??
+      "Recovered category resolution from schema-mismatch model output.",
+  }
 }
 
 export async function resolveMerchantAndProcessorWithAi(input: MerchantResolutionInput) {
   const gateway = getGatewayProvider()
-  const startedAt = Date.now()
 
   const prompt = [
     "You resolve canonical merchant and payment processor identity from structured transaction evidence.",
@@ -173,30 +257,53 @@ export async function resolveMerchantAndProcessorWithAi(input: MerchantResolutio
     JSON.stringify(input.candidateProcessors, null, 2),
   ].join("\n")
 
-  const result = await generateObject({
+  const result = await generateStructuredObject({
     model: gateway(aiModels.financeMerchantResolver),
     schema: merchantResolutionResultSchema,
     prompt,
-  })
-
-  const metadata = {
     provider: providerName,
     modelName: aiModels.financeMerchantResolver,
     promptVersion: aiPromptVersions.financeMerchantResolver,
-    latencyMs: Date.now() - startedAt,
-    requestId: getRequestId(result),
-    ...getUsage(result),
-  } satisfies ModelRunMetadata
-
-  logger.info("Resolved merchant cluster", {
-    decision: result.object.decision,
-    confidence: result.object.confidence,
-    ...metadata,
+    coerce: (raw) => coerceMerchantResolutionResult(raw, input.observations.map((obs) => obs.id)),
+    fallback: () => ({
+      decision: "needs_review" as const,
+      confidence: 0.35,
+      canonicalMerchantName: null,
+      canonicalProcessorName: null,
+      targetMerchantId: null,
+      targetProcessorId: null,
+      displayMerchantName: null,
+      reason: "Model output could not be validated. Manual merchant review required.",
+      ignoredHints: [],
+      supportingObservationIds: input.observations.map((observation) => observation.id),
+      categorySlug: null,
+      categoryConfidence: null,
+      categoryReason: null,
+    }),
   })
+
+  if (result.recovery.mode === "strict") {
+    logger.info("Resolved merchant cluster", {
+      decision: result.object.decision,
+      confidence: result.object.confidence,
+      ...result.metadata,
+    })
+  } else {
+    logger.warn("Recovered merchant resolution from degraded model response", {
+      decision: result.object.decision,
+      confidence: result.object.confidence,
+      recoveryMode: result.recovery.mode,
+      errorMessage: result.recovery.errorMessage,
+      finishReason: result.recovery.finishReason,
+      rawResponseExcerpt: result.recovery.rawResponseExcerpt,
+      ...result.metadata,
+    })
+  }
 
   return {
     resolution: result.object,
-    metadata,
+    metadata: result.metadata,
+    recovery: result.recovery,
   }
 }
 
@@ -209,7 +316,6 @@ export async function resolveCategoryWithAi(input: {
   evidenceSnippets: string[]
 }) {
   const gateway = getGatewayProvider()
-  const startedAt = Date.now()
 
   const prompt = [
     "You choose the best category slug for a canonical financial event.",
@@ -225,29 +331,42 @@ export async function resolveCategoryWithAi(input: {
     `Evidence snippets: ${JSON.stringify(input.evidenceSnippets)}`,
   ].join("\n")
 
-  const result = await generateObject({
+  const result = await generateStructuredObject({
     model: gateway(aiModels.financeCategoryResolver),
     schema: categoryResolutionResultSchema,
     prompt,
-  })
-
-  const metadata = {
     provider: providerName,
     modelName: aiModels.financeCategoryResolver,
     promptVersion: aiPromptVersions.financeCategoryResolver,
-    latencyMs: Date.now() - startedAt,
-    requestId: getRequestId(result),
-    ...getUsage(result),
-  } satisfies ModelRunMetadata
-
-  logger.info("Resolved merchant category", {
-    categorySlug: result.object.categorySlug,
-    confidence: result.object.confidence,
-    ...metadata,
+    coerce: coerceCategoryResolutionResult,
+    fallback: () => ({
+      categorySlug: "uncategorized",
+      confidence: 0.2,
+      reason: "Model output could not be validated. Falling back to uncategorized.",
+    }),
   })
+
+  if (result.recovery.mode === "strict") {
+    logger.info("Resolved merchant category", {
+      categorySlug: result.object.categorySlug,
+      confidence: result.object.confidence,
+      ...result.metadata,
+    })
+  } else {
+    logger.warn("Recovered category resolution from degraded model response", {
+      categorySlug: result.object.categorySlug,
+      confidence: result.object.confidence,
+      recoveryMode: result.recovery.mode,
+      errorMessage: result.recovery.errorMessage,
+      finishReason: result.recovery.finishReason,
+      rawResponseExcerpt: result.recovery.rawResponseExcerpt,
+      ...result.metadata,
+    })
+  }
 
   return {
     category: result.object,
-    metadata,
+    metadata: result.metadata,
+    recovery: result.recovery,
   }
 }

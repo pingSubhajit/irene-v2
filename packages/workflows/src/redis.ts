@@ -9,6 +9,7 @@ type QueueRegistry = {
   backfillImport?: Queue
   emailSync?: Queue
   fxValuation?: Queue
+  forecasting?: Queue
   documentNormalization?: Queue
   aiExtraction?: Queue
   reconciliation?: Queue

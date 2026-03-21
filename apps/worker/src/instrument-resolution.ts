@@ -47,6 +47,7 @@ type ResolutionOutcome = {
   paymentInstrumentId?: string
   reviewQueueItemId?: string
   observationIds?: string[]
+  financialEventIds?: string[]
 }
 
 function normalizeWhitespace(input: string | null | undefined) {
@@ -559,6 +560,10 @@ export async function resolveInstrumentCluster(input: {
       outputTokens: aiResult.metadata.outputTokens,
       latencyMs: aiResult.metadata.latencyMs,
       requestId: aiResult.metadata.requestId,
+      resultJson: {
+        recovery: aiResult.recovery,
+        decision: aiResult.resolution,
+      },
     })
 
     const reviewAnchorEventId =
@@ -571,6 +576,13 @@ export async function resolveInstrumentCluster(input: {
       aiResult.resolution.decision === "ignore" ||
       (!highConfidence && !mediumConfidence)
     ) {
+      const financialEventIds = Array.from(
+        new Set(
+          observations
+            .map((observation) => observation.financialEventId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      )
       await updatePaymentInstrumentObservationStatus(
         observations.map((observation) => observation.id),
         "ignored",
@@ -583,6 +595,7 @@ export async function resolveInstrumentCluster(input: {
             ? "llm_ignored_cluster"
             : "low_confidence_resolution",
         observationIds: observations.map((observation) => observation.id),
+        financialEventIds,
       }
     }
 
@@ -636,6 +649,13 @@ export async function resolveInstrumentCluster(input: {
         reason: "instrument_resolution_review",
         reviewQueueItemId: reviewItem.id,
         observationIds: observations.map((observation) => observation.id),
+        financialEventIds: Array.from(
+          new Set(
+            observations
+              .map((observation) => observation.financialEventId)
+              .filter((value): value is string => Boolean(value)),
+          ),
+        ),
       }
     }
 
@@ -663,6 +683,13 @@ export async function resolveInstrumentCluster(input: {
       reason: aiResult.resolution.reason,
       paymentInstrumentId: canonicalInstrument.id,
       observationIds: observations.map((observation) => observation.id),
+      financialEventIds: Array.from(
+        new Set(
+          observations
+            .map((observation) => observation.financialEventId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ),
     }
   } catch (error) {
     await updateModelRun(modelRun.id, {

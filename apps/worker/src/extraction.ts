@@ -54,6 +54,14 @@ export type WorkerExtractedSignal = {
   eventDate: string | null
   issuerNameHint: string | null
   instrumentLast4Hint: string | null
+  availableBalanceMinor: number | null
+  availableCreditLimitMinor: number | null
+  balanceAsOfDate: string | null
+  balanceInstrumentLast4Hint: string | null
+  backingAccountLast4Hint: string | null
+  backingAccountNameHint: string | null
+  accountRelationshipHint: "direct_account" | "linked_card_account" | "unknown" | null
+  balanceEvidenceStrength: "explicit" | "strong" | "weak" | null
   merchantDescriptorRaw: string | null
   merchantNameCandidate: string | null
   processorNameCandidate: string | null
@@ -370,6 +378,14 @@ export function runDeterministicExtraction(
           eventDate,
           issuerNameHint: senderName,
           instrumentLast4Hint: paymentInstrumentHint,
+          availableBalanceMinor: null,
+          availableCreditLimitMinor: null,
+          balanceAsOfDate: null,
+          balanceInstrumentLast4Hint: null,
+          backingAccountLast4Hint: null,
+          backingAccountNameHint: null,
+          accountRelationshipHint: null,
+          balanceEvidenceStrength: null,
           merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
           merchantNameCandidate: roleHints.merchantNameCandidate,
           processorNameCandidate: roleHints.processorNameCandidate,
@@ -402,6 +418,14 @@ export function runDeterministicExtraction(
           eventDate,
           issuerNameHint: senderName,
           instrumentLast4Hint: paymentInstrumentHint,
+          availableBalanceMinor: null,
+          availableCreditLimitMinor: null,
+          balanceAsOfDate: null,
+          balanceInstrumentLast4Hint: null,
+          backingAccountLast4Hint: null,
+          backingAccountNameHint: null,
+          accountRelationshipHint: null,
+          balanceEvidenceStrength: null,
           merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
           merchantNameCandidate: roleHints.merchantNameCandidate,
           processorNameCandidate: roleHints.processorNameCandidate,

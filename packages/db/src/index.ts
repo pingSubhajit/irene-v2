@@ -1,6 +1,7 @@
 export * from "./client"
 export * from "./debug"
 export * from "./extraction"
+export * from "./forecast"
 export * from "./fx"
 export * from "./ingestion"
 export * from "./instrument-resolution"

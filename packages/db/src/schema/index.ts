@@ -1,5 +1,23 @@
 export { accounts, authSchema, sessions, users, verifications } from "./auth"
 export {
+  balanceAnchors,
+  balanceObservations,
+  forecastRuns,
+  forecastSnapshots,
+  type BalanceAnchorInsert,
+  type BalanceAnchorSelect,
+  type BalanceObservationInsert,
+  type BalanceObservationSelect,
+  type BalanceObservationKind,
+  type BalanceObservationSource,
+  type ForecastRunInsert,
+  type ForecastRunSelect,
+  type ForecastRunStatus,
+  type ForecastRunType,
+  type ForecastSnapshotInsert,
+  type ForecastSnapshotSelect,
+} from "./forecast"
+export {
   jobRuns,
   userSettings,
   type JobRunInsert,
@@ -29,6 +47,8 @@ export {
   extractedSignals,
   modelRuns,
   type ExtractedSignalCandidateEventType,
+  type ExtractedSignalAccountRelationshipHint,
+  type ExtractedSignalBalanceEvidenceStrength,
   type ExtractedSignalInsert,
   type ExtractedSignalSelect,
   type ExtractedSignalStatus,
@@ -127,6 +147,12 @@ export {
 import { authSchema } from "./auth"
 import { jobRuns, userSettings } from "./app"
 import { extractedSignals, modelRuns } from "./extraction"
+import {
+  balanceAnchors,
+  balanceObservations,
+  forecastRuns,
+  forecastSnapshots,
+} from "./forecast"
 import { financialEventValuations, fxRatesDaily } from "./fx"
 import {
   financialInstitutionAliases,
@@ -165,6 +191,10 @@ export const schema = {
   documentAttachments,
   modelRuns,
   extractedSignals,
+  forecastRuns,
+  forecastSnapshots,
+  balanceObservations,
+  balanceAnchors,
   fxRatesDaily,
   financialEventValuations,
   financialInstitutions,

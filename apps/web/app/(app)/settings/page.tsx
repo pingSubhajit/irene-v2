@@ -1,6 +1,12 @@
 import Link from "next/link"
 import { RiArrowRightSLine } from "@remixicon/react"
-import { getAuthUserProfile, getUserSettings } from "@workspace/db"
+import {
+  getAuthUserProfile,
+  getLatestForecastRunWithSnapshots,
+  getUserSettings,
+  listCashPaymentInstrumentsForUser,
+  listDebitAndUpiPaymentInstrumentsForUser,
+} from "@workspace/db"
 import {
   Avatar,
   AvatarFallback,
@@ -54,20 +60,6 @@ function getStatusMessage(value: string | undefined) {
   }
 }
 
-function formatDateTime(
-  value: Date | null | undefined,
-  timeZone: string,
-) {
-  if (!value) return "not yet"
-
-  return formatInUserTimeZone(value, timeZone, {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  })
-}
-
 function formatMemberSince(
   value: Date | null | undefined,
   timeZone: string,
@@ -96,15 +88,19 @@ export default async function SettingsPage({
 }: SettingsPageProps) {
   const session = await requireSession()
   const params = (await searchParams) ?? {}
-  const [gmailState, settings, authUser] = await Promise.all([
+  const [gmailState, settings, authUser, cashAccounts, cardLikeInstruments, latestForecast] = await Promise.all([
     getGmailIntegrationState(session.user.id),
     getUserSettings(session.user.id),
     getAuthUserProfile(session.user.id),
+    listCashPaymentInstrumentsForUser(session.user.id),
+    listDebitAndUpiPaymentInstrumentsForUser(session.user.id),
+    getLatestForecastRunWithSnapshots(session.user.id),
   ])
 
   const statusMessage =
     getStatusMessage(asSingleValue(params.gmail)) ??
     getStatusMessage(asSingleValue(params.fx)) ??
+    getStatusMessage(asSingleValue(params.balances)) ??
     (() => {
       const timeZoneStatus = asSingleValue(params.tz)
 
@@ -121,6 +117,17 @@ export default async function SettingsPage({
   const displayName = session.user.name
   const displayImage = session.user.image
   const memberSince = formatMemberSince(authUser?.createdAt ?? null, settings.timeZone)
+  const lastSyncValue = gmailState.connection?.lastSuccessfulSyncAt
+    ? formatInUserTimeZone(gmailState.connection.lastSuccessfulSyncAt, settings.timeZone, {
+        day: "numeric",
+        month: "short",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "not yet"
+  const linkedInstrumentCount = cardLikeInstruments.filter(
+    (instrument) => Boolean(instrument.backingPaymentInstrumentId),
+  ).length
 
   return (
     <section className="mx-auto max-w-lg">
@@ -176,10 +183,7 @@ export default async function SettingsPage({
         />
         <InfoRow
           label="last sync"
-          value={formatDateTime(
-            gmailState.connection?.lastSuccessfulSyncAt,
-            settings.timeZone,
-          )}
+          value={lastSyncValue}
         />
         <InfoRow label="backfill" value={backfillState} />
       </div>
@@ -195,6 +199,25 @@ export default async function SettingsPage({
           currentCurrency={settings.reportingCurrency}
         />
         <TimeZoneRow currentTimeZone={settings.timeZone} />
+      </div>
+
+      <SectionHeader>Accounts & balances</SectionHeader>
+      <div className="divide-y divide-white/[0.06]">
+        <NavRow
+          href="/settings/accounts/baseline"
+          label="forecast baseline"
+          value={latestForecast ? latestForecast.run.runType.replace("_", " ") : "set up"}
+        />
+        <NavRow
+          href="/settings/accounts/cash"
+          label="cash accounts"
+          value={`${cashAccounts.length}`}
+        />
+        <NavRow
+          href="/settings/accounts/links"
+          label="linked instruments"
+          value={`${linkedInstrumentCount}/${cardLikeInstruments.length}`}
+        />
       </div>
 
       {/* Diagnostics */}
@@ -244,10 +267,12 @@ function NavRow({
   href,
   label,
   description,
+  value,
 }: {
   href: string
   label: string
   description?: string
+  value?: string
 }) {
   return (
     <Link
@@ -260,7 +285,12 @@ function NavRow({
           <p className="mt-0.5 text-sm text-white/28">{description}</p>
         )}
       </div>
-      <RiArrowRightSLine className="size-5 shrink-0 text-white/16" />
+      <div className="ml-4 flex items-center gap-2">
+        {value ? (
+          <span className="text-[15px] text-white/36">{value}</span>
+        ) : null}
+        <RiArrowRightSLine className="size-5 shrink-0 text-white/16" />
+      </div>
     </Link>
   )
 }

@@ -1,4 +1,4 @@
-import { NoObjectGeneratedError, generateObject } from "ai"
+import { generateObject } from "ai"
 import { createGateway } from "@ai-sdk/gateway"
 import { z } from "zod"
 
@@ -6,6 +6,10 @@ import { getAiEnv } from "@workspace/config/server"
 import { createLogger } from "@workspace/observability"
 
 import { aiModels, aiPromptVersions } from "./config"
+import {
+  generateStructuredObject,
+  type GeneratedObjectMetadata,
+} from "./object-generation"
 
 const logger = createLogger("ai.finance-extraction")
 
@@ -65,6 +69,21 @@ const extractedSignalSchema = z.object({
     .optional(),
   issuerNameHint: z.string().max(160).nullable().optional(),
   instrumentLast4Hint: z.string().max(16).nullable().optional(),
+  availableBalanceMinor: z.number().int().nonnegative().nullable().optional(),
+  availableCreditLimitMinor: z.number().int().nonnegative().nullable().optional(),
+  balanceAsOfDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+  balanceInstrumentLast4Hint: z.string().max(16).nullable().optional(),
+  backingAccountLast4Hint: z.string().max(16).nullable().optional(),
+  backingAccountNameHint: z.string().max(160).nullable().optional(),
+  accountRelationshipHint: z
+    .enum(["direct_account", "linked_card_account", "unknown"])
+    .nullable()
+    .optional(),
+  balanceEvidenceStrength: z.enum(["explicit", "strong", "weak"]).nullable().optional(),
   merchantDescriptorRaw: z.string().max(240).nullable().optional(),
   merchantNameCandidate: z.string().max(240).nullable().optional(),
   processorNameCandidate: z.string().max(160).nullable().optional(),
@@ -112,15 +131,7 @@ export type NormalizedFinanceDocumentInput = {
   relevanceStage: string | null
 }
 
-type ModelRunMetadata = {
-  provider: string
-  modelName: string
-  promptVersion: string
-  inputTokens: number | null
-  outputTokens: number | null
-  latencyMs: number
-  requestId: string | null
-}
+type ModelRunMetadata = GeneratedObjectMetadata
 
 function getGatewayProvider() {
   const env = getAiEnv()
@@ -150,17 +161,6 @@ function getUsage(result: unknown) {
 function getRequestId(result: unknown) {
   const response = (result as { response?: { id?: string } }).response
   return response?.id ?? null
-}
-
-function getUsageFromNoObjectError(error: NoObjectGeneratedError) {
-  return {
-    inputTokens: error.usage?.inputTokens ?? null,
-    outputTokens: error.usage?.outputTokens ?? null,
-  }
-}
-
-function getRequestIdFromNoObjectError(error: NoObjectGeneratedError) {
-  return error.response?.id ?? null
 }
 
 function normalizeNumber(value: unknown) {
@@ -268,6 +268,59 @@ function normalizeChannelHint(value: unknown): StructuredExtractionSignal["chann
       return normalized
     case "banktransfer":
       return "bank_transfer"
+    default:
+      return null
+  }
+}
+
+function normalizeAccountRelationshipHint(
+  value: unknown,
+): StructuredExtractionSignal["accountRelationshipHint"] {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_")
+
+  switch (normalized) {
+    case "direct_account":
+    case "linked_card_account":
+    case "unknown":
+      return normalized
+    case "direct":
+    case "account":
+    case "bank_account":
+      return "direct_account"
+    case "linked_card":
+    case "linked_account":
+    case "card_account":
+      return "linked_card_account"
+    default:
+      return null
+  }
+}
+
+function normalizeBalanceEvidenceStrength(
+  value: unknown,
+): StructuredExtractionSignal["balanceEvidenceStrength"] {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase()
+
+  switch (normalized) {
+    case "explicit":
+    case "strong":
+    case "weak":
+      return normalized
+    case "high":
+    case "clear":
+      return "explicit"
+    case "medium":
+      return "strong"
+    case "low":
+      return "weak"
     default:
       return null
   }
@@ -398,26 +451,6 @@ function getFallbackEvidence(input: NormalizedFinanceDocumentInput) {
   )
 }
 
-function parseLooseJson(text: string) {
-  const candidates = [text.trim()]
-  const firstBrace = text.indexOf("{")
-  const lastBrace = text.lastIndexOf("}")
-
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    candidates.push(text.slice(firstBrace, lastBrace + 1).trim())
-  }
-
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate) as unknown
-    } catch {
-      continue
-    }
-  }
-
-  return null
-}
-
 function coerceStructuredExtractionResult(
   raw: unknown,
   input: {
@@ -455,6 +488,22 @@ function coerceStructuredExtractionResult(
         eventDate: normalizeEventDate(record.eventDate),
         issuerNameHint: normalizeString(record.issuerNameHint, 160),
         instrumentLast4Hint: normalizeString(record.instrumentLast4Hint, 16),
+        availableBalanceMinor: (() => {
+          const value = normalizeNumber(record.availableBalanceMinor)
+          return Number.isInteger(value) ? value : null
+        })(),
+        availableCreditLimitMinor: (() => {
+          const value = normalizeNumber(record.availableCreditLimitMinor)
+          return Number.isInteger(value) ? value : null
+        })(),
+        balanceAsOfDate: normalizeEventDate(record.balanceAsOfDate),
+        balanceInstrumentLast4Hint: normalizeString(record.balanceInstrumentLast4Hint, 16),
+        backingAccountLast4Hint: normalizeString(record.backingAccountLast4Hint, 16),
+        backingAccountNameHint: normalizeString(record.backingAccountNameHint, 160),
+        accountRelationshipHint: normalizeAccountRelationshipHint(record.accountRelationshipHint),
+        balanceEvidenceStrength: normalizeBalanceEvidenceStrength(
+          record.balanceEvidenceStrength,
+        ),
         merchantDescriptorRaw: normalizeString(record.merchantDescriptorRaw, 240),
         merchantNameCandidate: normalizeString(record.merchantNameCandidate, 240),
         processorNameCandidate: normalizeString(record.processorNameCandidate, 160),
@@ -485,17 +534,6 @@ function coerceStructuredExtractionResult(
       normalizeString(rawRecord?.extractionSummary, 280) ??
       (signals.length > 0 ? "Recovered structured extraction from schema-mismatch model output." : undefined),
   }
-}
-
-function buildMetadataFromNoObjectError(error: NoObjectGeneratedError, startedAt: number) {
-  return {
-    provider: providerName,
-    modelName: aiModels.financeSignalExtractor,
-    promptVersion: aiPromptVersions.financeSignalExtractor,
-    latencyMs: Date.now() - startedAt,
-    requestId: getRequestIdFromNoObjectError(error),
-    ...getUsageFromNoObjectError(error),
-  } satisfies ModelRunMetadata
 }
 
 function buildBaseContext(input: NormalizedFinanceDocumentInput) {
@@ -619,7 +657,6 @@ export async function extractStructuredSignals(input: {
   routeLabel: DocumentRouteLabel
 }) {
   const gateway = getGatewayProvider()
-  const startedAt = Date.now()
   const prompt = [
     "You extract structured candidate finance signals from a single normalized document.",
     "Return only what is supported by the source text. Do not guess.",
@@ -644,78 +681,89 @@ export async function extractStructuredSignals(input: {
     "merchantDescriptorRaw should preserve the raw descriptor fragment if one is visible.",
     "channelHint should capture payment channel when inferable: card, wallet, upi, bank_transfer, or other.",
     "categoryCandidates should contain up to four candidate slugs in priority order such as gaming, software, digital_goods, food, transport, subscriptions, bills, shopping, salary, utilities, travel, entertainment.",
+    "If the document explicitly mentions available balance or available credit limit, extract it as availableBalanceMinor or availableCreditLimitMinor in minor units.",
+    "If the balance or limit is tied to a card/account ending, populate balanceInstrumentLast4Hint.",
+    "Use balanceAsOfDate when the document clearly gives the date the balance/limit was stated for.",
+    "If the document clearly identifies a backing bank account or wallet separately from the transacting card or UPI instrument, populate backingAccountLast4Hint and backingAccountNameHint.",
+    "accountRelationshipHint should be direct_account when the balance belongs to the main account itself, linked_card_account when a card or UPI instrument is explicitly tied to a backing account, or unknown otherwise.",
+    "balanceEvidenceStrength should be explicit for direct clear balance statements, strong for clear but slightly indirect balance evidence, and weak when the balance linkage is incomplete.",
+    "Available balance on a bank account or wallet is cash-balance evidence. Available credit limit on a credit card is headroom evidence only.",
     "",
     ...routeSpecificInstructions[input.routeLabel],
     "",
     buildBaseContext(input.normalizedDocument),
   ].join("\n")
 
-  try {
-    const result = await generateObject({
-      model: gateway(aiModels.financeSignalExtractor),
-      schema: structuredExtractionResultSchema,
-      prompt,
-    })
+  const result = await generateStructuredObject({
+    model: gateway(aiModels.financeSignalExtractor),
+    schema: structuredExtractionResultSchema,
+    prompt,
+    provider: providerName,
+    modelName: aiModels.financeSignalExtractor,
+    promptVersion: aiPromptVersions.financeSignalExtractor,
+    coerce: (raw) => coerceStructuredExtractionResult(raw, input),
+    fallback: () => ({
+      signals: [
+        {
+          signalType: "generic_finance_signal" as const,
+          candidateEventType: null,
+          amountMinor: null,
+          currency: null,
+          eventDate: input.normalizedDocument.messageTimestamp.slice(0, 10),
+          issuerNameHint: null,
+          instrumentLast4Hint: null,
+          availableBalanceMinor: null,
+          availableCreditLimitMinor: null,
+          balanceAsOfDate: null,
+          balanceInstrumentLast4Hint: null,
+          backingAccountLast4Hint: null,
+          backingAccountNameHint: null,
+          accountRelationshipHint: null,
+          balanceEvidenceStrength: null,
+          merchantDescriptorRaw: null,
+          merchantNameCandidate: null,
+          processorNameCandidate: null,
+          channelHint: null,
+          merchantRaw: input.normalizedDocument.sender ?? null,
+          merchantHint: input.normalizedDocument.sender ?? null,
+          paymentInstrumentHint: null,
+          categoryHint: null,
+          categoryCandidates: [],
+          isRecurringHint: false,
+          isEmiHint: false,
+          confidence: 0.2,
+          roleConfidence: 0.1,
+          evidenceSnippets: getFallbackEvidence(input.normalizedDocument),
+          explanation:
+            "Model output could not be validated. Falling back to a generic finance signal.",
+        },
+      ],
+      extractionSummary:
+        "Recovered via generic fallback after schema-mismatch model output.",
+    }),
+  })
 
-    const metadata = {
-      provider: providerName,
-      modelName: aiModels.financeSignalExtractor,
-      promptVersion: aiPromptVersions.financeSignalExtractor,
-      latencyMs: Date.now() - startedAt,
-      requestId: getRequestId(result),
-      ...getUsage(result),
-    } satisfies ModelRunMetadata
-
+  if (result.recovery.mode === "strict") {
     logger.info("Extracted structured finance signals", {
       routeLabel: input.routeLabel,
       signalCount: result.object.signals.length,
-      ...metadata,
+      ...result.metadata,
     })
+  } else {
+    logger.warn("Recovered structured finance signals from degraded model response", {
+      routeLabel: input.routeLabel,
+      signalCount: result.object.signals.length,
+      recoveryMode: result.recovery.mode,
+      errorMessage: result.recovery.errorMessage,
+      finishReason: result.recovery.finishReason,
+      rawResponseExcerpt: result.recovery.rawResponseExcerpt,
+      ...result.metadata,
+    })
+  }
 
-    return {
-      extraction: result.object,
-      metadata,
-    }
-  } catch (error) {
-    if (NoObjectGeneratedError.isInstance(error) && error.text) {
-      const metadata = buildMetadataFromNoObjectError(error, startedAt)
-      const parsed = parseLooseJson(error.text)
-
-      if (parsed) {
-        const extraction = coerceStructuredExtractionResult(parsed, input)
-
-        logger.warn("Recovered structured finance signals from schema-mismatch response", {
-          routeLabel: input.routeLabel,
-          signalCount: extraction.signals.length,
-          errorMessage: error.message,
-          finishReason: error.finishReason,
-          rawResponseExcerpt: error.text.slice(0, 800),
-          ...metadata,
-        })
-
-        return {
-          extraction,
-          metadata,
-        }
-      }
-
-      logger.warn("Falling back to empty extraction after unrecoverable schema-mismatch response", {
-        routeLabel: input.routeLabel,
-        errorMessage: error.message,
-        finishReason: error.finishReason,
-        rawResponseExcerpt: error.text.slice(0, 800),
-        ...metadata,
-      })
-
-      return {
-        extraction: {
-          signals: [],
-          extractionSummary: "Failed to recover schema-mismatch model output.",
-        },
-        metadata,
-      }
-    }
-
-    throw error
+  return {
+    extraction: result.object,
+    metadata: result.metadata,
+    recovery: result.recovery,
   }
 }

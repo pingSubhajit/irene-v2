@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm"
 import {
+  AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -163,6 +164,10 @@ export const paymentInstruments = pgTable(
       () => financialInstitutions.id,
       { onDelete: "set null" },
     ),
+    backingPaymentInstrumentId: uuid("backing_payment_instrument_id").references(
+      (): AnyPgColumn => paymentInstruments.id,
+      { onDelete: "set null" },
+    ),
     instrumentType: text("instrument_type")
       .$type<PaymentInstrumentType>()
       .notNull(),
@@ -187,6 +192,7 @@ export const paymentInstruments = pgTable(
       table.instrumentType,
       table.status,
     ),
+    index("payment_instrument_backing_instrument_idx").on(table.backingPaymentInstrumentId),
     uniqueIndex("payment_instrument_user_identity_unique").on(
       table.userId,
       table.financialInstitutionId,
@@ -212,6 +218,10 @@ export const paymentInstruments = pgTable(
     check(
       "payment_instrument_credit_limit_minor_check",
       sql`${table.creditLimitMinor} IS NULL OR ${table.creditLimitMinor} >= 0`,
+    ),
+    check(
+      "payment_instrument_backing_payment_instrument_self_check",
+      sql`${table.backingPaymentInstrumentId} IS NULL OR ${table.backingPaymentInstrumentId} <> ${table.id}`,
     ),
     check(
       "payment_instrument_currency_check",

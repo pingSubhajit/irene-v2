@@ -683,6 +683,10 @@ export async function resolveMerchantCluster(input: {
       outputTokens: resolved.metadata.outputTokens,
       latencyMs: resolved.metadata.latencyMs,
       requestId: resolved.metadata.requestId,
+      resultJson: {
+        recovery: resolved.recovery,
+        decision: resolved.resolution,
+      },
     })
 
     const decision = resolved.resolution
@@ -867,6 +871,10 @@ export async function resolveEventCategory(input: {
       outputTokens: resolved.metadata.outputTokens,
       latencyMs: resolved.metadata.latencyMs,
       requestId: resolved.metadata.requestId,
+      resultJson: {
+        recovery: resolved.recovery,
+        category: resolved.category,
+      },
     })
 
     const category = await getCategoryBySlug(input.userId, resolved.category.categorySlug)

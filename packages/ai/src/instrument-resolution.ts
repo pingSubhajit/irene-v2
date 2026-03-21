@@ -1,4 +1,3 @@
-import { generateObject } from "ai"
 import { createGateway } from "@ai-sdk/gateway"
 import { z } from "zod"
 
@@ -6,6 +5,7 @@ import { getAiEnv } from "@workspace/config/server"
 import { createLogger } from "@workspace/observability"
 
 import { aiModels, aiPromptVersions } from "./config"
+import { generateStructuredObject } from "./object-generation"
 
 const logger = createLogger("ai.instrument-resolution")
 const providerName = "ai-gateway"
@@ -84,16 +84,6 @@ export type InstrumentResolutionInput = {
   candidateInstitutions: CandidateInstitutionSummary[]
 }
 
-type ModelRunMetadata = {
-  provider: string
-  modelName: string
-  promptVersion: string
-  inputTokens: number | null
-  outputTokens: number | null
-  latencyMs: number
-  requestId: string | null
-}
-
 function getGatewayProvider() {
   const env = getAiEnv()
 
@@ -102,23 +92,92 @@ function getGatewayProvider() {
   })
 }
 
-function getUsage(result: unknown) {
-  const usage = (result as { usage?: { inputTokens?: number; outputTokens?: number } }).usage
-
-  return {
-    inputTokens: usage?.inputTokens ?? null,
-    outputTokens: usage?.outputTokens ?? null,
+function normalizeString(value: unknown, maxLength: number) {
+  if (typeof value !== "string") {
+    return null
   }
+
+  const trimmed = value.replace(/\s+/g, " ").trim()
+  return trimmed ? trimmed.slice(0, maxLength) : null
 }
 
-function getRequestId(result: unknown) {
-  const response = (result as { response?: { id?: string } }).response
-  return response?.id ?? null
+function clampProbability(value: unknown, fallback = 0.5) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.min(Math.max(value, 0), 1)
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value.trim())
+    if (Number.isFinite(parsed)) {
+      return Math.min(Math.max(parsed, 0), 1)
+    }
+  }
+
+  return fallback
+}
+
+function normalizeStringArray(value: unknown, maxItems: number, maxLength: number) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((entry) => normalizeString(entry, maxLength))
+    .filter((entry): entry is string => Boolean(entry))
+    .slice(0, maxItems)
+}
+
+function normalizeUuidArray(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value)) {
+    return fallback
+  }
+
+  const ids = value
+    .filter((entry): entry is string => typeof entry === "string")
+    .filter((entry) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        entry,
+      ),
+    )
+
+  return ids.length > 0 ? ids.slice(0, 50) : fallback
+}
+
+function coerceInstrumentResolutionResult(
+  raw: unknown,
+  fallbackObservationIds: string[],
+): InstrumentResolutionResult | null {
+  if (!raw || typeof raw !== "object") {
+    return null
+  }
+
+  const record = raw as Record<string, unknown>
+  const decision = instrumentResolutionDecisionSchema.safeParse(record.decision)
+  const instrumentType = canonicalInstrumentTypeSchema.safeParse(record.canonicalInstrumentType)
+
+  return {
+    decision: decision.success ? decision.data : "needs_review",
+    confidence: clampProbability(record.confidence),
+    canonicalInstitutionName: normalizeString(record.canonicalInstitutionName, 160),
+    canonicalInstrumentType: instrumentType.success ? instrumentType.data : "unknown",
+    targetPaymentInstrumentId:
+      typeof record.targetPaymentInstrumentId === "string"
+        ? record.targetPaymentInstrumentId
+        : null,
+    instrumentDisplayName: normalizeString(record.instrumentDisplayName, 200),
+    reason:
+      normalizeString(record.reason, 320) ??
+      "Recovered instrument resolution from schema-mismatch model output.",
+    ignoredHints: normalizeStringArray(record.ignoredHints, 8, 160),
+    supportingObservationIds: normalizeUuidArray(
+      record.supportingObservationIds,
+      fallbackObservationIds,
+    ),
+  }
 }
 
 export async function resolvePaymentInstrumentWithAi(input: InstrumentResolutionInput) {
   const gateway = getGatewayProvider()
-  const startedAt = Date.now()
 
   const prompt = [
     "You resolve canonical payment instrument identity from structured evidence.",
@@ -143,30 +202,51 @@ export async function resolvePaymentInstrumentWithAi(input: InstrumentResolution
     JSON.stringify(input.candidateInstitutions, null, 2),
   ].join("\n")
 
-  const result = await generateObject({
+  const result = await generateStructuredObject({
     model: gateway(aiModels.financeInstrumentResolver),
     schema: instrumentResolutionResultSchema,
     prompt,
-  })
-
-  const metadata = {
     provider: providerName,
     modelName: aiModels.financeInstrumentResolver,
     promptVersion: aiPromptVersions.financeInstrumentResolver,
-    latencyMs: Date.now() - startedAt,
-    requestId: getRequestId(result),
-    ...getUsage(result),
-  } satisfies ModelRunMetadata
-
-  logger.info("Resolved payment instrument cluster", {
-    maskedIdentifier: input.maskedIdentifier,
-    decision: result.object.decision,
-    confidence: result.object.confidence,
-    ...metadata,
+    coerce: (raw) =>
+      coerceInstrumentResolutionResult(raw, input.observations.map((observation) => observation.id)),
+    fallback: () => ({
+      decision: "needs_review" as const,
+      confidence: 0.35,
+      canonicalInstitutionName: null,
+      canonicalInstrumentType: "unknown" as const,
+      targetPaymentInstrumentId: null,
+      instrumentDisplayName: null,
+      reason: "Model output could not be validated. Manual payment instrument review required.",
+      ignoredHints: [],
+      supportingObservationIds: input.observations.map((observation) => observation.id),
+    }),
   })
+
+  if (result.recovery.mode === "strict") {
+    logger.info("Resolved payment instrument cluster", {
+      maskedIdentifier: input.maskedIdentifier,
+      decision: result.object.decision,
+      confidence: result.object.confidence,
+      ...result.metadata,
+    })
+  } else {
+    logger.warn("Recovered payment instrument resolution from degraded model response", {
+      maskedIdentifier: input.maskedIdentifier,
+      decision: result.object.decision,
+      confidence: result.object.confidence,
+      recoveryMode: result.recovery.mode,
+      errorMessage: result.recovery.errorMessage,
+      finishReason: result.recovery.finishReason,
+      rawResponseExcerpt: result.recovery.rawResponseExcerpt,
+      ...result.metadata,
+    })
+  }
 
   return {
     resolution: result.object,
-    metadata,
+    metadata: result.metadata,
+    recovery: result.recovery,
   }
 }

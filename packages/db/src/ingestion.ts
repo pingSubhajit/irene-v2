@@ -2,8 +2,12 @@ import { and, desc, eq, inArray, not } from "drizzle-orm"
 
 import { db } from "./client"
 import {
+  balanceAnchors,
+  balanceObservations,
   documentAttachments,
   emailSyncCursors,
+  forecastRuns,
+  forecastSnapshots,
   financialEvents,
   financialEventSources,
   financialInstitutionAliases,
@@ -467,6 +471,10 @@ export async function resetGmailIngestionForConnection(
       merchantObservationRows,
       paymentInstrumentRows,
       paymentProcessorRows,
+      balanceObservationRows,
+      balanceAnchorRows,
+      forecastRunRows,
+      forecastSnapshotRows,
     ] = await Promise.all([
       tx.select({ id: reviewQueueItems.id }).from(reviewQueueItems).where(eq(reviewQueueItems.userId, userId)),
       tx
@@ -500,11 +508,28 @@ export async function resetGmailIngestionForConnection(
         .select({ id: paymentProcessors.id })
         .from(paymentProcessors)
         .where(eq(paymentProcessors.userId, userId)),
+      tx
+        .select({ id: balanceObservations.id })
+        .from(balanceObservations)
+        .where(eq(balanceObservations.userId, userId)),
+      tx
+        .select({ id: balanceAnchors.id })
+        .from(balanceAnchors)
+        .where(eq(balanceAnchors.userId, userId)),
+      tx.select({ id: forecastRuns.id }).from(forecastRuns).where(eq(forecastRuns.userId, userId)),
+      tx
+        .select({ id: forecastSnapshots.id })
+        .from(forecastSnapshots)
+        .innerJoin(forecastRuns, eq(forecastSnapshots.forecastRunId, forecastRuns.id))
+        .where(eq(forecastRuns.userId, userId)),
     ])
 
     await tx.delete(reviewQueueItems).where(eq(reviewQueueItems.userId, userId))
     await tx.delete(incomeStreams).where(eq(incomeStreams.userId, userId))
     await tx.delete(recurringObligations).where(eq(recurringObligations.userId, userId))
+    await tx.delete(balanceAnchors).where(eq(balanceAnchors.userId, userId))
+    await tx.delete(balanceObservations).where(eq(balanceObservations.userId, userId))
+    await tx.delete(forecastRuns).where(eq(forecastRuns.userId, userId))
     await tx.delete(financialEvents).where(eq(financialEvents.userId, userId))
     await tx.delete(modelRuns).where(eq(modelRuns.userId, userId))
     await tx
@@ -582,6 +607,10 @@ export async function resetGmailIngestionForConnection(
       deletedMerchantObservations: merchantObservationRows.length,
       deletedPaymentInstruments: paymentInstrumentRows.length,
       deletedPaymentProcessors: paymentProcessorRows.length,
+      deletedBalanceObservations: balanceObservationRows.length,
+      deletedBalanceAnchors: balanceAnchorRows.length,
+      deletedForecastRuns: forecastRunRows.length,
+      deletedForecastSnapshots: forecastSnapshotRows.length,
     }
   })
 }

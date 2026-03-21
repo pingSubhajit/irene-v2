@@ -209,7 +209,10 @@ export const incomeStreams = pgTable(
     ),
     expectedAmountMinor: bigint("expected_amount_minor", { mode: "number" }),
     currency: text("currency"),
+    cadence: text("cadence").$type<RecurringCadence>().notNull().default("monthly"),
+    intervalCount: integer("interval_count").notNull().default(1),
     expectedDayOfMonth: integer("expected_day_of_month"),
+    secondaryDayOfMonth: integer("secondary_day_of_month"),
     variabilityScore: numeric("variability_score", {
       precision: 5,
       scale: 4,
@@ -256,6 +259,15 @@ export const incomeStreams = pgTable(
       "income_stream_expected_day_of_month_check",
       sql`${table.expectedDayOfMonth} IS NULL OR ${table.expectedDayOfMonth} BETWEEN 1 AND 31`,
     ),
+    check(
+      "income_stream_secondary_day_of_month_check",
+      sql`${table.secondaryDayOfMonth} IS NULL OR ${table.secondaryDayOfMonth} BETWEEN 1 AND 31`,
+    ),
+    check(
+      "income_stream_cadence_check",
+      sql`${table.cadence} in ('weekly', 'monthly', 'quarterly', 'yearly', 'irregular')`,
+    ),
+    check("income_stream_interval_count_check", sql`${table.intervalCount} > 0`),
     check(
       "income_stream_variability_score_check",
       sql`${table.variabilityScore} >= 0 AND ${table.variabilityScore} <= 1`,

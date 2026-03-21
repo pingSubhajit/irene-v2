@@ -56,6 +56,13 @@ export type ExtractedSignalStatus =
   | "needs_review"
   | "failed"
 
+export type ExtractedSignalAccountRelationshipHint =
+  | "direct_account"
+  | "linked_card_account"
+  | "unknown"
+
+export type ExtractedSignalBalanceEvidenceStrength = "explicit" | "strong" | "weak"
+
 export const modelRuns = pgTable(
   "model_run",
   {
@@ -144,6 +151,18 @@ export const extractedSignals = pgTable(
     eventDate: date("event_date", { mode: "string" }),
     issuerNameHint: text("issuer_name_hint"),
     instrumentLast4Hint: text("instrument_last4_hint"),
+    availableBalanceMinor: bigint("available_balance_minor", { mode: "number" }),
+    availableCreditLimitMinor: bigint("available_credit_limit_minor", { mode: "number" }),
+    balanceAsOfDate: date("balance_as_of_date", { mode: "string" }),
+    balanceInstrumentLast4Hint: text("balance_instrument_last4_hint"),
+    backingAccountLast4Hint: text("backing_account_last4_hint"),
+    backingAccountNameHint: text("backing_account_name_hint"),
+    accountRelationshipHint: text("account_relationship_hint").$type<
+      ExtractedSignalAccountRelationshipHint | null
+    >(),
+    balanceEvidenceStrength: text("balance_evidence_strength").$type<
+      ExtractedSignalBalanceEvidenceStrength | null
+    >(),
     merchantDescriptorRaw: text("merchant_descriptor_raw"),
     merchantNameCandidate: text("merchant_name_candidate"),
     processorNameCandidate: text("processor_name_candidate"),
@@ -211,8 +230,24 @@ export const extractedSignals = pgTable(
       sql`${table.channelHint} IS NULL OR ${table.channelHint} in ('card', 'wallet', 'upi', 'bank_transfer', 'other')`,
     ),
     check(
+      "extracted_signal_account_relationship_hint_check",
+      sql`${table.accountRelationshipHint} IS NULL OR ${table.accountRelationshipHint} in ('direct_account', 'linked_card_account', 'unknown')`,
+    ),
+    check(
+      "extracted_signal_balance_evidence_strength_check",
+      sql`${table.balanceEvidenceStrength} IS NULL OR ${table.balanceEvidenceStrength} in ('explicit', 'strong', 'weak')`,
+    ),
+    check(
       "extracted_signal_amount_minor_check",
       sql`${table.amountMinor} IS NULL OR ${table.amountMinor} >= 0`,
+    ),
+    check(
+      "extracted_signal_available_balance_minor_check",
+      sql`${table.availableBalanceMinor} IS NULL OR ${table.availableBalanceMinor} >= 0`,
+    ),
+    check(
+      "extracted_signal_available_credit_limit_minor_check",
+      sql`${table.availableCreditLimitMinor} IS NULL OR ${table.availableCreditLimitMinor} >= 0`,
     ),
   ],
 )
