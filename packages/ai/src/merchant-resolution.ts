@@ -132,6 +132,7 @@ export type MerchantResolutionInput = {
   observations: MerchantObservationSummary[]
   candidateMerchants: CandidateMerchantSummary[]
   candidateProcessors: CandidateProcessorSummary[]
+  memorySummary?: string[]
 }
 
 function getGatewayProvider() {
@@ -304,6 +305,7 @@ export function buildCategoryResolutionPrompt(input: {
   notes: string | null
   evidenceSnippets: string[]
   categories: CategoryResolutionCategorySummary[]
+  memorySummary?: string[]
 }) {
   const existingCategories = input.categories.map((category) => ({
     slug: category.slug,
@@ -353,6 +355,9 @@ export function buildCategoryResolutionPrompt(input: {
     `Description: ${input.description ?? "none"}`,
     `Notes: ${input.notes ?? "none"}`,
     `Evidence snippets: ${JSON.stringify(input.evidenceSnippets)}`,
+    "",
+    "User memory:",
+    input.memorySummary?.length ? input.memorySummary.join("\n") : "none",
   ].join("\n")
 }
 
@@ -385,6 +390,9 @@ export async function resolveMerchantAndProcessorWithAi(
     "",
     "Existing candidate processors:",
     JSON.stringify(input.candidateProcessors, null, 2),
+    "",
+    "User memory:",
+    input.memorySummary?.length ? input.memorySummary.join("\n") : "none",
   ].join("\n")
 
   const result = await generateStructuredObject({
@@ -452,6 +460,7 @@ export async function resolveCategoryWithAi(input: {
   notes: string | null
   evidenceSnippets: string[]
   categories: CategoryResolutionCategorySummary[]
+  memorySummary?: string[]
 }) {
   const gateway = getGatewayProvider()
   const prompt = buildCategoryResolutionPrompt(input)

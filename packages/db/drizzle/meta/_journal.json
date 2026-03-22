@@ -127,6 +127,20 @@
       "when": 1774161140358,
       "tag": "0017_bright_hawkeye",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1774178047882,
+      "tag": "0018_yellow_gorgon",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1774180910904,
+      "tag": "0019_abandoned_logan",
+      "breakpoints": true
     }
   ]
 }

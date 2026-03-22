@@ -44,6 +44,7 @@ export type FinanceRelevanceInput = {
   labelIds: string[]
   timestamp: string | null
   attachmentNames: string[]
+  memorySummary?: string[]
 }
 
 export type FinanceRelevanceModelMetadata = {
@@ -133,6 +134,9 @@ export function buildFinanceRelevancePrompt(input: FinanceRelevanceInput) {
     `Labels: ${input.labelIds.join(", ") || "none"}`,
     `Timestamp: ${input.timestamp ?? "unknown"}`,
     `Attachment names: ${input.attachmentNames.join(", ") || "none"}`,
+    "",
+    "User memory:",
+    input.memorySummary?.length ? input.memorySummary.join("\n") : "none",
   ].join("\n")
 }
 

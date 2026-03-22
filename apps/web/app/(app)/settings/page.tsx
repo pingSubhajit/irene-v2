@@ -3,6 +3,7 @@ import { RiArrowRightSLine } from "@remixicon/react"
 import {
   getAuthUserProfile,
   getLatestForecastRunWithSnapshots,
+  listMemoryFactsForUser,
   getUserSettings,
   listCashPaymentInstrumentsForUser,
   listDebitAndUpiPaymentInstrumentsForUser,
@@ -55,6 +56,16 @@ function getStatusMessage(value: string | undefined) {
       return "The selected time zone is not supported."
     case "time-zone-save-failed":
       return "Irene could not save the new time zone."
+    case "pinned":
+      return "Memory pinned. Irene will keep preferring it over learned facts."
+    case "unpinned":
+      return "Memory unpinned."
+    case "expired":
+      return "Memory disabled."
+    case "restored":
+      return "Memory restored."
+    case "invalid":
+      return "That memory action could not be applied."
     default:
       return null
   }
@@ -88,13 +99,14 @@ export default async function SettingsPage({
 }: SettingsPageProps) {
   const session = await requireSession()
   const params = (await searchParams) ?? {}
-  const [gmailState, settings, authUser, cashAccounts, cardLikeInstruments, latestForecast] = await Promise.all([
+  const [gmailState, settings, authUser, cashAccounts, cardLikeInstruments, latestForecast, memoryFacts] = await Promise.all([
     getGmailIntegrationState(session.user.id),
     getUserSettings(session.user.id),
     getAuthUserProfile(session.user.id),
     listCashPaymentInstrumentsForUser(session.user.id),
     listDebitAndUpiPaymentInstrumentsForUser(session.user.id),
     getLatestForecastRunWithSnapshots(session.user.id),
+    listMemoryFactsForUser({ userId: session.user.id, includeExpired: false, limit: 200 }),
   ])
 
   const statusMessage =
@@ -108,7 +120,8 @@ export default async function SettingsPage({
       if (timeZoneStatus === "invalid-time-zone") return getStatusMessage("invalid-time-zone")
       if (timeZoneStatus === "save-failed") return getStatusMessage("time-zone-save-failed")
       return null
-    })()
+    })() ??
+    getStatusMessage(asSingleValue(params.memory))
   const backfillState = gmailState.cursor?.backfillCompletedAt
     ? "ready"
     : gmailState.cursor?.backfillStartedAt
@@ -217,6 +230,15 @@ export default async function SettingsPage({
           href="/settings/accounts/links"
           label="linked instruments"
           value={`${linkedInstrumentCount}/${cardLikeInstruments.length}`}
+        />
+      </div>
+
+      <SectionHeader>Memory & learning</SectionHeader>
+      <div className="divide-y divide-white/[0.06]">
+        <NavRow
+          href="/settings/memory"
+          label="memory & learning"
+          value={`${memoryFacts.length}`}
         />
       </div>
 

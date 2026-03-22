@@ -75,16 +75,18 @@ export function formatCurrencyMinor(amountMinor: number, currency = "INR") {
 export function SettingsSubpageShell({
   title,
   description,
+  backHref = "/settings",
   children,
 }: {
   title: React.ReactNode
   description: string
+  backHref?: string
   children: React.ReactNode
 }) {
   return (
     <section className="mx-auto max-w-lg">
       <Link
-        href="/settings"
+        href={backHref}
         className="inline-flex py-6 text-white/50 transition hover:text-white"
       >
         <RiArrowLeftLine className="size-5" />

@@ -82,6 +82,7 @@ export type InstrumentResolutionInput = {
   observations: InstrumentObservationSummary[]
   candidateInstruments: CandidateInstrumentSummary[]
   candidateInstitutions: CandidateInstitutionSummary[]
+  memorySummary?: string[]
 }
 
 function getGatewayProvider() {
@@ -200,6 +201,9 @@ export async function resolvePaymentInstrumentWithAi(input: InstrumentResolution
     "",
     "Existing candidate institutions:",
     JSON.stringify(input.candidateInstitutions, null, 2),
+    "",
+    "User memory:",
+    input.memorySummary?.length ? input.memorySummary.join("\n") : "none",
   ].join("\n")
 
   const result = await generateStructuredObject({

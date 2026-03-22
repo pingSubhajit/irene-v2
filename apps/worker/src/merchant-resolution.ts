@@ -8,6 +8,7 @@ import {
   getCategoryBySlug,
   getFinancialEventById,
   getFinancialEventMerchantContext,
+  getMemoryBundleForUser,
   getOrCreateMerchantForAlias,
   getOrCreatePaymentProcessor,
   getMerchantById,
@@ -666,6 +667,21 @@ export async function resolveMerchantCluster(input: {
   })
 
   try {
+    const memory = await getMemoryBundleForUser({
+      userId: input.userId,
+      merchantHints: relevantObservations.flatMap((observation) => [
+        observation.merchantNameHint,
+        observation.merchantDescriptorRaw,
+      ]),
+      senderHints: relevantObservations.flatMap((observation) => [
+        observation.senderAliasHint,
+        observation.issuerHint,
+      ]),
+      processorHints: relevantObservations.map(
+        (observation) => observation.processorNameHint,
+      ),
+    })
+
     const resolved = await resolveMerchantAndProcessorWithAi({
       userId: input.userId,
       sourceReliability: {
@@ -738,6 +754,7 @@ export async function resolveMerchantCluster(input: {
         })
         return accumulator
       }, []),
+      memorySummary: memory.summaryLines,
     })
 
     await updateModelRun(merchantModelRun.id, {
@@ -928,6 +945,12 @@ export async function resolveEventCategory(input: {
   })
 
   try {
+    const memory = await getMemoryBundleForUser({
+      userId: input.userId,
+      merchantHints: [context.merchant?.displayName, context.event.description],
+      processorHints: [context.paymentProcessor?.displayName],
+    })
+
     const resolved = await resolveCategoryWithAi({
       merchantName: context.merchant?.displayName ?? null,
       processorName: context.paymentProcessor?.displayName ?? null,
@@ -955,6 +978,7 @@ export async function resolveEventCategory(input: {
           return snippets
         })
         .slice(0, 4),
+      memorySummary: memory.summaryLines,
     })
 
     await updateModelRun(categoryModelRun.id, {

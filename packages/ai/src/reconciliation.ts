@@ -92,6 +92,7 @@ export type ReconciliationCandidateEvent = {
 export type ReconciliationAiInput = {
   incoming: ReconciliationIncomingSignal
   candidates: ReconciliationCandidateEvent[]
+  memorySummary?: string[]
 }
 
 type ModelRunMetadata = {
@@ -150,6 +151,9 @@ export async function resolveReconciliationWithAi(input: ReconciliationAiInput) 
     "",
     "Candidate canonical events:",
     JSON.stringify(input.candidates, null, 2),
+    "",
+    "User memory:",
+    input.memorySummary?.length ? input.memorySummary.join("\n") : "none",
   ].join("\n")
 
   const result = await generateObject({

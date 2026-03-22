@@ -13,6 +13,16 @@ export async function createFeedbackEvent(input: FeedbackEventInsert) {
   return row
 }
 
+export async function getFeedbackEventById(feedbackEventId: string) {
+  const [row] = await db
+    .select()
+    .from(feedbackEvents)
+    .where(eq(feedbackEvents.id, feedbackEventId))
+    .limit(1)
+
+  return row ?? null
+}
+
 export async function listFeedbackEventsForTarget(input: {
   userId: string
   targetType: FeedbackEventTargetType

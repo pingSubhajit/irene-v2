@@ -1,4 +1,15 @@
-import { createFeedbackEvent, type FeedbackEventSourceSurface, type FeedbackEventTargetType } from "@workspace/db"
+import {
+  createFeedbackEvent,
+  ensureJobRun,
+  type FeedbackEventSourceSurface,
+  type FeedbackEventTargetType,
+} from "@workspace/db"
+import { createCorrelationId } from "@workspace/observability"
+import {
+  enqueueFeedbackProcess,
+  FEEDBACK_PROCESS_JOB_NAME,
+  MEMORY_LEARNING_QUEUE_NAME,
+} from "@workspace/workflows"
 
 export async function recordFeedbackEvent(input: {
   userId: string
@@ -10,7 +21,7 @@ export async function recordFeedbackEvent(input: {
   newValue?: Record<string, unknown> | null
   metadata?: Record<string, unknown> | null
 }) {
-  return createFeedbackEvent({
+  const feedbackEvent = await createFeedbackEvent({
     userId: input.userId,
     actorUserId: input.userId,
     targetType: input.targetType,
@@ -21,4 +32,30 @@ export async function recordFeedbackEvent(input: {
     newValueJson: input.newValue ?? null,
     metadataJson: input.metadata ?? null,
   })
+
+  const correlationId = createCorrelationId()
+  const jobKey = `${FEEDBACK_PROCESS_JOB_NAME}:${feedbackEvent.id}`
+  const jobRun = await ensureJobRun({
+    queueName: MEMORY_LEARNING_QUEUE_NAME,
+    jobName: FEEDBACK_PROCESS_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId,
+      userId: input.userId,
+      feedbackEventId: feedbackEvent.id,
+      source: "web",
+    },
+  })
+
+  await enqueueFeedbackProcess({
+    correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    feedbackEventId: feedbackEvent.id,
+    source: "web",
+  })
+
+  return feedbackEvent
 }

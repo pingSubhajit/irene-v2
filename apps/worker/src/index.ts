@@ -18,6 +18,7 @@ import {
   createReviewQueueItem,
   ensureJobRun,
   getEmailSyncCursorById,
+  getMemoryBundleForUser,
   getOauthConnectionById,
   listRecentPaymentInstrumentsForUser,
   listExtractedSignalsForRawDocumentIds,
@@ -26,6 +27,7 @@ import {
   hasExtractedSignalsForRawDocument,
   listUserIdsForForecasting,
   listUserIdsForInstrumentRepair,
+  listUserIdsForMemoryLearning,
   updateExtractedSignal,
   updateEmailSyncCursor,
   updateJobRun,
@@ -75,6 +77,15 @@ import {
   MERCHANT_REPAIR_BACKFILL_JOB_NAME,
   MERCHANT_RESOLUTION_QUEUE_NAME,
   MERCHANT_RESOLVE_JOB_NAME,
+  MEMORY_DECAY_SCAN_JOB_NAME,
+  MEMORY_LEARNING_QUEUE_NAME,
+  MEMORY_REBUILD_USER_JOB_NAME,
+  memoryDecayScanJobPayloadSchema,
+  memoryRebuildUserJobPayloadSchema,
+  FEEDBACK_PROCESS_JOB_NAME,
+  feedbackProcessJobPayloadSchema,
+  enqueueMemoryDecayScan,
+  enqueueMemoryRebuildUser,
   RECONCILIATION_MODEL_RETRY_JOB_NAME,
   RECONCILIATION_QUEUE_NAME,
   QUEUE_PREFIX,
@@ -165,6 +176,11 @@ import {
   resolveMerchantCluster,
   runMerchantRepairBackfill,
 } from "./merchant-resolution"
+import {
+  processFeedbackMemory,
+  rebuildMemoryForUser,
+  runMemoryDecayScan,
+} from "./memory-learning"
 import {
   linkAcceptedRelevanceModelRun,
   processCandidateMessageRelevance,
@@ -1020,6 +1036,72 @@ async function enqueueTrackedForecastRebuild(input: {
   })
 }
 
+async function enqueueTrackedMemoryRebuild(input: {
+  userId: string
+  correlationId: string
+  source: "worker" | "web" | "startup"
+  reason:
+    | "feedback"
+    | "review_resolution"
+    | "automation_refresh"
+    | "manual_refresh"
+    | "startup_rebuild"
+  sourceReferenceId?: string
+}) {
+  const jobKey = `${MEMORY_REBUILD_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.sourceReferenceId ?? input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: MEMORY_LEARNING_QUEUE_NAME,
+    jobName: MEMORY_REBUILD_USER_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+      sourceReferenceId: input.sourceReferenceId ?? null,
+    },
+  })
+
+  await enqueueMemoryRebuildUser({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    source: input.source,
+    reason: input.reason,
+    sourceReferenceId: input.sourceReferenceId,
+  })
+}
+
+async function enqueueTrackedMemoryDecayScan(input: {
+  correlationId: string
+  source: "startup" | "scheduler"
+  reason: "startup_scan" | "nightly_scan"
+}) {
+  const today = new Date().toISOString().slice(0, 10)
+  const jobKey = `${MEMORY_DECAY_SCAN_JOB_NAME}:${input.reason}:${today}`
+  const jobRun = await ensureJobRun({
+    queueName: MEMORY_LEARNING_QUEUE_NAME,
+    jobName: MEMORY_DECAY_SCAN_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      source: input.source,
+      reason: input.reason,
+    },
+  })
+
+  await enqueueMemoryDecayScan({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    source: input.source,
+    reason: input.reason,
+  })
+}
+
 async function persistExtractedSignals(input: {
   userId: string
   rawDocumentId: string
@@ -1151,7 +1233,17 @@ async function processCandidateMessages(input: {
       {
         createModelRun,
         updateModelRun,
-        classifyFinanceRelevance,
+        classifyFinanceRelevance: async (classifierInput) => {
+          const memory = await getMemoryBundleForUser({
+            userId: input.userId,
+            senderHints: [classifierInput.sender],
+            merchantHints: [classifierInput.subject, classifierInput.snippet],
+          })
+          return classifyFinanceRelevance({
+            ...classifierInput,
+            memorySummary: memory.summaryLines,
+          })
+        },
         enqueueMessageIngest: enqueueTrackedMessageIngest,
         warn: (message, context) => logger.warn(message, context),
       },
@@ -1711,6 +1803,11 @@ async function handleDocumentExtractRoute(job: Job) {
   }
 
   const normalizedDocument = await buildNormalizedExtractionDocument(rawDocument)
+  const memory = await getMemoryBundleForUser({
+    userId: payload.userId,
+    senderHints: [normalizedDocument.sender],
+    merchantHints: [normalizedDocument.subject, normalizedDocument.snippet],
+  })
   const modelRun = await createModelRun({
     userId: payload.userId,
     rawDocumentId: rawDocument.id,
@@ -1722,7 +1819,10 @@ async function handleDocumentExtractRoute(job: Job) {
   })
 
   try {
-    const routed = await routeDocumentForExtraction(normalizedDocument)
+    const routed = await routeDocumentForExtraction({
+      ...normalizedDocument,
+      memorySummary: memory.summaryLines,
+    })
 
     await updateModelRun(modelRun.id, {
       status: "succeeded",
@@ -1786,6 +1886,11 @@ async function handleDocumentExtractStructured(job: Job) {
   }
 
   const normalizedDocument = await buildNormalizedExtractionDocument(rawDocument)
+  const memory = await getMemoryBundleForUser({
+    userId: payload.userId,
+    senderHints: [normalizedDocument.sender],
+    merchantHints: [normalizedDocument.subject, normalizedDocument.snippet],
+  })
   const attachmentIds = normalizedDocument.attachmentTexts.map(
     (attachment) => attachment.attachmentId,
   )
@@ -1803,6 +1908,7 @@ async function handleDocumentExtractStructured(job: Job) {
     const extracted = await extractStructuredSignals({
       normalizedDocument,
       routeLabel: payload.routeLabel,
+      memorySummary: memory.summaryLines,
     })
 
     await updateModelRun(modelRun.id, {
@@ -1969,6 +2075,24 @@ async function handleDocumentInferBalance(job: Job) {
   const normalizedDocument = await buildNormalizedExtractionDocument(rawDocument)
   const signals = await listExtractedSignalsForRawDocumentIds([rawDocument.id])
   const knownInstruments = await listRecentPaymentInstrumentsForUser(payload.userId)
+  const memory = await getMemoryBundleForUser({
+    userId: payload.userId,
+    senderHints: [normalizedDocument.sender],
+    merchantHints: [
+      normalizedDocument.subject,
+      normalizedDocument.snippet,
+      ...signals.flatMap((signal) => [
+        signal.merchantHint,
+        signal.merchantRaw,
+        signal.merchantDescriptorRaw,
+      ]),
+    ],
+    instrumentHints: signals.flatMap((signal) => [
+      signal.instrumentLast4Hint,
+      signal.balanceInstrumentLast4Hint,
+      signal.backingAccountLast4Hint,
+    ]),
+  })
   const modelRun = await createModelRun({
     userId: payload.userId,
     rawDocumentId: rawDocument.id,
@@ -2002,6 +2126,7 @@ async function handleDocumentInferBalance(job: Job) {
         maskedIdentifier: entry.instrument.maskedIdentifier ?? null,
         institutionName: entry.institution?.displayName ?? null,
       })),
+      memorySummary: memory.summaryLines,
     })
 
     await updateModelRun(modelRun.id, {
@@ -2233,6 +2358,14 @@ async function handleInstrumentResolve(job: Job) {
       source: "worker",
       reason: "financial_event_changed",
     })
+
+    await enqueueTrackedMemoryRebuild({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "automation_refresh",
+      sourceReferenceId: outcome.paymentInstrumentId ?? undefined,
+    })
   }
 
   await markJobSucceeded(job, payload, outcome)
@@ -2310,6 +2443,14 @@ async function handleMerchantResolve(job: Job) {
       source: "worker",
       reason: "financial_event_changed",
     })
+
+    await enqueueTrackedMemoryRebuild({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "automation_refresh",
+      sourceReferenceId: outcome.merchantId ?? undefined,
+    })
   }
 
   await markJobSucceeded(job, payload, outcome)
@@ -2342,6 +2483,14 @@ async function handleEventResolveCategory(job: Job) {
       source: "worker",
       reason: "financial_event_changed",
     })
+
+    await enqueueTrackedMemoryRebuild({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "automation_refresh",
+      sourceReferenceId: payload.financialEventId,
+    })
   }
 
   await markJobSucceeded(job, payload, outcome)
@@ -2365,6 +2514,15 @@ async function handleRecurringObligationDetection(job: Job) {
       source: "worker",
       reason: "recurring_changed",
     })
+
+    await enqueueTrackedMemoryRebuild({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "automation_refresh",
+      sourceReferenceId:
+        "recurringObligationId" in outcome ? outcome.recurringObligationId : undefined,
+    })
   }
 
   await markJobSucceeded(job, payload, outcome)
@@ -2387,6 +2545,15 @@ async function handleIncomeStreamDetection(job: Job) {
       correlationId: payload.correlationId,
       source: "worker",
       reason: "recurring_changed",
+    })
+
+    await enqueueTrackedMemoryRebuild({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "automation_refresh",
+      sourceReferenceId:
+        "incomeStreamId" in outcome ? outcome.incomeStreamId : undefined,
     })
   }
 
@@ -2451,6 +2618,43 @@ async function handleForecastRebuild(job: Job) {
   })
 
   await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleFeedbackProcess(job: Job) {
+  const payload = feedbackProcessJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await processFeedbackMemory(payload.feedbackEventId)
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleMemoryRebuild(job: Job) {
+  const payload = memoryRebuildUserJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await rebuildMemoryForUser({
+    userId: payload.userId,
+    reason: payload.reason,
+    sourceReferenceId: payload.sourceReferenceId,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleMemoryDecayScan(job: Job) {
+  const payload = memoryDecayScanJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await runMemoryDecayScan()
+
+  await markJobSucceeded(job, payload, {
+    ...outcome,
+    reason: payload.reason,
+  })
   return outcome
 }
 
@@ -2698,6 +2902,30 @@ const forecastingWorker = new Worker(
   },
 )
 
+const memoryLearningWorker = new Worker(
+  MEMORY_LEARNING_QUEUE_NAME,
+  async (job) => {
+    if (job.name === FEEDBACK_PROCESS_JOB_NAME) {
+      return handleFeedbackProcess(job)
+    }
+
+    if (job.name === MEMORY_REBUILD_USER_JOB_NAME) {
+      return handleMemoryRebuild(job)
+    }
+
+    if (job.name === MEMORY_DECAY_SCAN_JOB_NAME) {
+      return handleMemoryDecayScan(job)
+    }
+
+    throw new Error(`Unsupported job: ${job.name}`)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 2,
+  },
+)
+
 const entityResolutionWorker = new Worker(
   ENTITY_RESOLUTION_QUEUE_NAME,
   async (job) => {
@@ -2761,6 +2989,7 @@ for (const [queueName, worker] of [
   [RECONCILIATION_QUEUE_NAME, reconciliationWorker],
   [RECURRING_DETECTION_QUEUE_NAME, recurringDetectionWorker],
   [FORECASTING_QUEUE_NAME, forecastingWorker],
+  [MEMORY_LEARNING_QUEUE_NAME, memoryLearningWorker],
   [ENTITY_RESOLUTION_QUEUE_NAME, entityResolutionWorker],
   [MERCHANT_RESOLUTION_QUEUE_NAME, merchantResolutionWorker],
 ] as const) {
@@ -2801,6 +3030,7 @@ for (const [queueName, worker] of [
 async function shutdown(signal: string) {
   logger.info("Shutting down worker", { signal })
   clearInterval(forecastNightlyScheduler)
+  clearInterval(memoryDecayScheduler)
 
   await Promise.all([
     systemWorker.close(),
@@ -2812,6 +3042,7 @@ async function shutdown(signal: string) {
     reconciliationWorker.close(),
     recurringDetectionWorker.close(),
     forecastingWorker.close(),
+    memoryLearningWorker.close(),
     entityResolutionWorker.close(),
     merchantResolutionWorker.close(),
   ])
@@ -2820,6 +3051,7 @@ async function shutdown(signal: string) {
 }
 
 let lastNightlyForecastRebuildDate: string | null = null
+let lastMemoryDecayScanDate: string | null = null
 
 async function scheduleNightlyForecastRebuildIfDue() {
   const today = new Date().toISOString().slice(0, 10)
@@ -2853,11 +3085,33 @@ const forecastNightlyScheduler = setInterval(() => {
   })
 }, 60 * 60 * 1000)
 
+async function scheduleMemoryDecayScanIfDue() {
+  const today = new Date().toISOString().slice(0, 10)
+  if (lastMemoryDecayScanDate === today) {
+    return
+  }
+
+  lastMemoryDecayScanDate = today
+
+  await enqueueTrackedMemoryDecayScan({
+    correlationId: `scheduler:${today}`,
+    source: "scheduler",
+    reason: "nightly_scan",
+  })
+}
+
+const memoryDecayScheduler = setInterval(() => {
+  scheduleMemoryDecayScanIfDue().catch((error) => {
+    logger.errorWithCause("Failed to schedule memory decay scan", error)
+  })
+}, 60 * 60 * 1000)
+
 void (async () => {
-  const [instrumentUserIds, merchantUserIds, forecastUserIds] = await Promise.all([
+  const [instrumentUserIds, merchantUserIds, forecastUserIds, memoryUserIds] = await Promise.all([
     listUserIdsForInstrumentRepair(),
     listUsersForMerchantRepair(),
     listUserIdsForForecasting(),
+    listUserIdsForMemoryLearning(),
   ])
 
   await Promise.all(
@@ -2891,7 +3145,25 @@ void (async () => {
     ),
   )
 
+  await Promise.all(
+    memoryUserIds.map((userId) =>
+      enqueueTrackedMemoryRebuild({
+        userId,
+        correlationId: `startup:${userId}`,
+        source: "startup",
+        reason: "startup_rebuild",
+      }),
+    ),
+  )
+
+  await enqueueTrackedMemoryDecayScan({
+    correlationId: "startup:memory-decay",
+    source: "startup",
+    reason: "startup_scan",
+  })
+
   lastNightlyForecastRebuildDate = new Date().toISOString().slice(0, 10)
+  lastMemoryDecayScanDate = new Date().toISOString().slice(0, 10)
 })().catch((error) => {
   logger.errorWithCause("Failed to schedule startup repair backfills", error)
 })
@@ -2903,6 +3175,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       .catch((error) => {
         logger.errorWithCause("Worker shutdown failed", error, { signal })
         clearInterval(forecastNightlyScheduler)
+        clearInterval(memoryDecayScheduler)
         process.exit(1)
       })
   })

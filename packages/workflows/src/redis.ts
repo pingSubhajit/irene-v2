@@ -10,6 +10,7 @@ type QueueRegistry = {
   emailSync?: Queue
   fxValuation?: Queue
   forecasting?: Queue
+  memoryLearning?: Queue
   balanceInference?: Queue
   documentNormalization?: Queue
   aiExtraction?: Queue

@@ -15,6 +15,7 @@ import {
   incomeStreams,
   jobRuns,
   merchantObservations,
+  memoryFacts,
   merchants,
   modelRuns,
   oauthConnections,
@@ -211,6 +212,7 @@ export async function resetUserDatabaseState(input: {
         .select({ id: feedbackEvents.id })
         .from(feedbackEvents)
         .where(eq(feedbackEvents.userId, input.userId)),
+      tx.select({ id: memoryFacts.id }).from(memoryFacts).where(eq(memoryFacts.userId, input.userId)),
     ])
 
     const recurringIds = recurringRows.map((row) => row.id)
@@ -258,6 +260,7 @@ export async function resetUserDatabaseState(input: {
     await tx.delete(rawDocuments).where(eq(rawDocuments.userId, input.userId))
     await tx.delete(paymentInstruments).where(eq(paymentInstruments.userId, input.userId))
     await tx.delete(feedbackEvents).where(eq(feedbackEvents.userId, input.userId))
+    await tx.delete(memoryFacts).where(eq(memoryFacts.userId, input.userId))
 
     if (paymentProcessorIds.length > 0) {
       await tx

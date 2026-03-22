@@ -15,6 +15,7 @@ export type FeedbackEventTargetType =
   | "financial_event"
   | "merchant"
   | "payment_instrument"
+  | "memory_fact"
   | "balance_anchor"
   | "balance_observation"
   | "recurring_obligation"
@@ -59,6 +60,7 @@ export const feedbackEvents = pgTable(
         'financial_event',
         'merchant',
         'payment_instrument',
+        'memory_fact',
         'balance_anchor',
         'balance_observation',
         'recurring_obligation',

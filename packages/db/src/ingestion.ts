@@ -15,6 +15,7 @@ import {
   financialInstitutions,
   incomeStreams,
   merchantObservations,
+  memoryFacts,
   merchants,
   modelRuns,
   oauthConnections,
@@ -477,6 +478,7 @@ export async function resetGmailIngestionForConnection(
       forecastRunRows,
       forecastSnapshotRows,
       feedbackRows,
+      ,
     ] = await Promise.all([
       tx.select({ id: reviewQueueItems.id }).from(reviewQueueItems).where(eq(reviewQueueItems.userId, userId)),
       tx
@@ -525,6 +527,7 @@ export async function resetGmailIngestionForConnection(
         .innerJoin(forecastRuns, eq(forecastSnapshots.forecastRunId, forecastRuns.id))
         .where(eq(forecastRuns.userId, userId)),
       tx.select({ id: feedbackEvents.id }).from(feedbackEvents).where(eq(feedbackEvents.userId, userId)),
+      tx.select({ id: memoryFacts.id }).from(memoryFacts).where(eq(memoryFacts.userId, userId)),
     ])
 
     await tx.delete(reviewQueueItems).where(eq(reviewQueueItems.userId, userId))
@@ -534,6 +537,7 @@ export async function resetGmailIngestionForConnection(
     await tx.delete(balanceObservations).where(eq(balanceObservations.userId, userId))
     await tx.delete(forecastRuns).where(eq(forecastRuns.userId, userId))
     await tx.delete(feedbackEvents).where(eq(feedbackEvents.userId, userId))
+    await tx.delete(memoryFacts).where(eq(memoryFacts.userId, userId))
     await tx.delete(financialEvents).where(eq(financialEvents.userId, userId))
     await tx.delete(modelRuns).where(eq(modelRuns.userId, userId))
     await tx

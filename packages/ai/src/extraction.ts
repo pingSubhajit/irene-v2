@@ -131,6 +131,14 @@ export type NormalizedFinanceDocumentInput = {
   relevanceStage: string | null
 }
 
+function buildMemoryContext(memorySummary?: string[]) {
+  return [
+    "",
+    "User memory:",
+    memorySummary?.length ? memorySummary.join("\n") : "none",
+  ].join("\n")
+}
+
 type ModelRunMetadata = GeneratedObjectMetadata
 
 const balanceRecoverySchema = z.object({
@@ -490,6 +498,7 @@ export async function inferDocumentBalanceContext(input: {
     maskedIdentifier: string | null
     institutionName: string | null
   }>
+  memorySummary?: string[]
 }) {
   const gateway = getGatewayProvider()
   const prompt = [
@@ -515,6 +524,7 @@ export async function inferDocumentBalanceContext(input: {
     buildInstrumentContext(input.existingInstruments ?? []),
     "",
     buildBaseContext(input.normalizedDocument),
+    buildMemoryContext(input.memorySummary),
   ].join("\n")
 
   return generateStructuredObject({
@@ -832,7 +842,9 @@ function buildBaseContext(input: NormalizedFinanceDocumentInput) {
   ].join("\n")
 }
 
-export async function routeDocumentForExtraction(input: NormalizedFinanceDocumentInput) {
+export async function routeDocumentForExtraction(input: NormalizedFinanceDocumentInput & {
+  memorySummary?: string[]
+}) {
   const gateway = getGatewayProvider()
   const startedAt = Date.now()
   const prompt = [
@@ -852,6 +864,7 @@ export async function routeDocumentForExtraction(input: NormalizedFinanceDocumen
     "Mention of EMI, installment, bill, card, or amount alone is not enough to choose emi_payment or bill_payment.",
     "",
     buildBaseContext(input),
+    buildMemoryContext(input.memorySummary),
   ].join("\n")
 
   const result = await generateObject({
@@ -920,6 +933,7 @@ const routeSpecificInstructions: Record<DocumentRouteLabel, string[]> = {
 export async function extractStructuredSignals(input: {
   normalizedDocument: NormalizedFinanceDocumentInput
   routeLabel: DocumentRouteLabel
+  memorySummary?: string[]
 }) {
   const gateway = getGatewayProvider()
   const prompt = [
@@ -959,6 +973,7 @@ export async function extractStructuredSignals(input: {
     ...routeSpecificInstructions[input.routeLabel],
     "",
     buildBaseContext(input.normalizedDocument),
+    buildMemoryContext(input.memorySummary),
   ].join("\n")
 
   const result = await generateStructuredObject({

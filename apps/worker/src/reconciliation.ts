@@ -8,6 +8,7 @@ import {
   getFinancialEventById,
   getFinancialEventSourceByExtractedSignal,
   getFinancialEventSourceByRawDocument,
+  getMemoryBundleForUser,
   getOrCreateMerchantForAlias,
   getRawDocumentById,
   getLatestFxRateDailyOnOrBefore,
@@ -741,10 +742,23 @@ async function resolveAiReconciliationDecision(input: {
       .map((candidateId) => candidateContexts.get(candidateId))
       .filter((candidate): candidate is ReconciliationCandidateEventSummary => Boolean(candidate))
       .slice(0, AI_RECONCILIATION_SHORTLIST_LIMIT)
+    const incoming = summarizeIncomingForAi(input)
+    const memory = await getMemoryBundleForUser({
+      userId: input.userId,
+      merchantHints: [
+        incoming.merchantName,
+        incoming.descriptor,
+        ...candidates.map((candidate) => candidate.merchantName),
+      ],
+      senderHints: [incoming.sender, incoming.issuerName],
+      processorHints: [incoming.processorName, ...candidates.map((candidate) => candidate.paymentProcessorName)],
+      instrumentHints: [incoming.issuerName, input.signal.instrumentLast4Hint],
+    })
 
     const resolved = await resolveReconciliationWithAi({
-      incoming: summarizeIncomingForAi(input),
+      incoming,
       candidates: candidates.map(summarizeCandidateForAi),
+      memorySummary: memory.summaryLines,
     })
 
     const decision = resolved.decision

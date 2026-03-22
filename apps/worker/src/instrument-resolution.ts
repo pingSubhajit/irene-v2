@@ -6,6 +6,7 @@ import {
   findExistingCanonicalPaymentInstrument,
   findOpenPaymentInstrumentReview,
   getFinancialEventInstrumentContext,
+  getMemoryBundleForUser,
   getOrCreateFinancialInstitution,
   getPaymentInstrumentById,
   listCandidateFinancialInstitutions,
@@ -512,6 +513,18 @@ export async function resolveInstrumentCluster(input: {
   })
 
   try {
+    const memory = await getMemoryBundleForUser({
+      userId: input.userId,
+      senderHints: observations.flatMap((observation) => [
+        observation.issuerAliasHint,
+        observation.issuerHint,
+      ]),
+      instrumentHints: observations.flatMap((observation) => [
+        observation.maskedIdentifier,
+        observation.counterpartyHint,
+      ]),
+    })
+
     const aiResult = await resolvePaymentInstrumentWithAi({
       userId: input.userId,
       maskedIdentifier: input.maskedIdentifier,
@@ -549,6 +562,7 @@ export async function resolveInstrumentCluster(input: {
           ]),
         ).values(),
       ),
+      memorySummary: memory.summaryLines,
     })
 
     await updateModelRun(modelRun.id, {

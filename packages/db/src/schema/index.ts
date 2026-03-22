@@ -1,5 +1,13 @@
 export { accounts, authSchema, sessions, users, verifications } from "./auth"
 export {
+  memoryFacts,
+  type MemoryFactInsert,
+  type MemoryFactSelect,
+  type MemoryFactSource,
+  type MemoryFactSubjectType,
+  type MemoryFactType,
+} from "./memory"
+export {
   feedbackEvents,
   type FeedbackEventInsert,
   type FeedbackEventSelect,
@@ -155,6 +163,7 @@ export {
 import { authSchema } from "./auth"
 import { jobRuns, userSettings } from "./app"
 import { feedbackEvents } from "./feedback"
+import { memoryFacts } from "./memory"
 import { extractedSignals, modelRuns } from "./extraction"
 import {
   balanceAnchors,
@@ -194,6 +203,7 @@ export const schema = {
   ...authSchema,
   userSettings,
   jobRuns,
+  memoryFacts,
   feedbackEvents,
   oauthConnections,
   emailSyncCursors,
