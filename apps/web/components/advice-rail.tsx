@@ -113,51 +113,53 @@ export function AdviceList({
                   .filter(Boolean)
                   .join(" · ")}
               </p>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <Link
                   href={item.href}
                   className="text-sm text-white transition hover:text-white/70"
                 >
                   Open context
                 </Link>
-                {item.status === "active" ? (
-                  <>
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  {item.status === "active" ? (
+                    <>
+                      <form action="/api/advice" method="post">
+                        <input type="hidden" name="action" value="dismiss" />
+                        <input type="hidden" name="adviceItemId" value={item.id} />
+                        <input type="hidden" name="redirectTo" value="/advice" />
+                        <button
+                          type="submit"
+                          className="text-sm text-white/42 transition hover:text-white"
+                        >
+                          Dismiss
+                        </button>
+                      </form>
+                      <form action="/api/advice" method="post">
+                        <input type="hidden" name="action" value="done" />
+                        <input type="hidden" name="adviceItemId" value={item.id} />
+                        <input type="hidden" name="redirectTo" value="/advice" />
+                        <button
+                          type="submit"
+                          className="text-sm text-[var(--neo-green)] transition hover:text-white"
+                        >
+                          Mark done
+                        </button>
+                      </form>
+                    </>
+                  ) : (
                     <form action="/api/advice" method="post">
-                      <input type="hidden" name="action" value="dismiss" />
+                      <input type="hidden" name="action" value="restore" />
                       <input type="hidden" name="adviceItemId" value={item.id} />
                       <input type="hidden" name="redirectTo" value="/advice" />
                       <button
                         type="submit"
                         className="text-sm text-white/42 transition hover:text-white"
                       >
-                        Dismiss
+                        Restore
                       </button>
                     </form>
-                    <form action="/api/advice" method="post">
-                      <input type="hidden" name="action" value="done" />
-                      <input type="hidden" name="adviceItemId" value={item.id} />
-                      <input type="hidden" name="redirectTo" value="/advice" />
-                      <button
-                        type="submit"
-                        className="text-sm text-[var(--neo-green)] transition hover:text-white"
-                      >
-                        Mark done
-                      </button>
-                    </form>
-                  </>
-                ) : (
-                  <form action="/api/advice" method="post">
-                    <input type="hidden" name="action" value="restore" />
-                    <input type="hidden" name="adviceItemId" value={item.id} />
-                    <input type="hidden" name="redirectTo" value="/advice" />
-                    <button
-                      type="submit"
-                      className="text-sm text-white/42 transition hover:text-white"
-                    >
-                      Restore
-                    </button>
-                  </form>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           </div>

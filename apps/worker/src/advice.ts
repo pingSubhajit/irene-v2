@@ -4,6 +4,7 @@ import {
   expireMissingAdviceItems,
   getLatestForecastRunWithSnapshots,
   getMemoryBundleForUser,
+  getUserSettings,
   listFinancialGoalsForUser,
   listIncomeStreamsForUser,
   listLedgerEventsForUser,
@@ -108,6 +109,7 @@ function normalizeDateStart(date: Date) {
 
 function buildLowCashProjectionTrigger(input: {
   forecast: Awaited<ReturnType<typeof getLatestForecastRunWithSnapshots>>
+  reportingCurrency: string
   now: Date
 }): TriggerCandidate | null {
   if (!input.forecast || input.forecast.run.runType !== "anchored") {
@@ -153,8 +155,20 @@ function buildLowCashProjectionTrigger(input: {
       runType: input.forecast.run.runType,
       forecastRunId: input.forecast.run.id,
       snapshotDate: urgentSnapshot.snapshotDate,
+      reportingCurrency: input.reportingCurrency,
       projectedBalanceMinor: urgentSnapshot.projectedBalanceMinor,
+      projectedBalanceLabel:
+        urgentSnapshot.projectedBalanceMinor !== null
+          ? currencyAmount(
+              urgentSnapshot.projectedBalanceMinor,
+              input.reportingCurrency,
+            )
+          : null,
       safeToSpendMinor: urgentSnapshot.safeToSpendMinor,
+      safeToSpendLabel:
+        urgentSnapshot.safeToSpendMinor !== null
+          ? currencyAmount(urgentSnapshot.safeToSpendMinor, input.reportingCurrency)
+          : null,
       projectedIncomeMinor: urgentSnapshot.projectedIncomeMinor,
       projectedFixedOutflowMinor: urgentSnapshot.projectedFixedOutflowMinor,
       projectedVariableOutflowMinor: urgentSnapshot.projectedVariableOutflowMinor,
@@ -167,7 +181,7 @@ function buildLowCashProjectionTrigger(input: {
       summary: negativeBalance
         ? `Your projected balance could dip below zero around ${humanDate(urgentSnapshot.snapshotDate)}.`
         : `Safe-to-spend is already below zero for ${humanDate(urgentSnapshot.snapshotDate)}.`,
-      detail: `The latest anchored forecast shows projected balance ${urgentSnapshot.projectedBalanceMinor !== null ? currencyAmount(urgentSnapshot.projectedBalanceMinor) : "still uncertain"} and safe-to-spend ${urgentSnapshot.safeToSpendMinor !== null ? currencyAmount(urgentSnapshot.safeToSpendMinor) : "still unclear"} by ${humanDate(urgentSnapshot.snapshotDate)}.`,
+      detail: `The latest anchored forecast shows projected balance ${urgentSnapshot.projectedBalanceMinor !== null ? currencyAmount(urgentSnapshot.projectedBalanceMinor, input.reportingCurrency) : "still uncertain"} and safe-to-spend ${urgentSnapshot.safeToSpendMinor !== null ? currencyAmount(urgentSnapshot.safeToSpendMinor, input.reportingCurrency) : "still unclear"} by ${humanDate(urgentSnapshot.snapshotDate)}.`,
     },
   }
 }
@@ -175,6 +189,7 @@ function buildLowCashProjectionTrigger(input: {
 function buildRecurringPressureTrigger(input: {
   forecast: Awaited<ReturnType<typeof getLatestForecastRunWithSnapshots>>
   recurring: Awaited<ReturnType<typeof listRecurringObligationsForUser>>
+  reportingCurrency: string
   now: Date
 }): TriggerCandidate | null {
   if (!input.forecast) {
@@ -217,15 +232,24 @@ function buildRecurringPressureTrigger(input: {
     relatedFinancialGoalId: null,
     payload: {
       forecastRunId: input.forecast.run.id,
+      reportingCurrency: input.reportingCurrency,
       activeRecurringCount: activeRecurring.length,
       recurringMerchants: merchants,
       upcoming30DayFixedOutflowMinor: fixedOutflowMinor,
+      upcoming30DayFixedOutflowLabel: currencyAmount(
+        fixedOutflowMinor,
+        input.reportingCurrency,
+      ),
       upcoming30DayIncomeMinor: projectedIncomeMinor,
+      upcoming30DayIncomeLabel: currencyAmount(
+        projectedIncomeMinor,
+        input.reportingCurrency,
+      ),
       fixedOutflowShareOfIncome: share,
     },
     fallback: {
       title: "Recurring commitments are stacking up",
-      summary: `About ${currencyAmount(fixedOutflowMinor)} in fixed obligations are expected over the next 30 days.`,
+      summary: `About ${currencyAmount(fixedOutflowMinor, input.reportingCurrency)} in fixed obligations are expected over the next 30 days.`,
       detail:
         merchants.length > 0
           ? `Recurring outflows from ${merchants.join(", ")} are taking a larger share of the next month than usual.`
@@ -275,7 +299,14 @@ function buildDelayedIncomeTriggers(input: {
             incomeStreamId: row.incomeStream.id,
             incomeStreamName: streamName,
             expectedAmountMinor: row.incomeStream.expectedAmountMinor,
-            currency: row.incomeStream.currency,
+            currency: row.incomeStream.currency ?? "INR",
+            expectedAmountLabel:
+              row.incomeStream.expectedAmountMinor !== null
+                ? currencyAmount(
+                    row.incomeStream.expectedAmountMinor,
+                    row.incomeStream.currency ?? "INR",
+                  )
+                : null,
             nextExpectedAt: nextExpectedAt.toISOString(),
             daysLate,
             cadence: row.incomeStream.cadence,
@@ -295,6 +326,7 @@ function buildDelayedIncomeTriggers(input: {
 
 function buildDiscretionaryOverspendingTrigger(input: {
   events: Awaited<ReturnType<typeof listLedgerEventsForUser>>
+  reportingCurrency: string
   now: Date
 }): TriggerCandidate | null {
   const discretionaryEvents = input.events.filter(({ event }) => {
@@ -355,8 +387,17 @@ function buildDiscretionaryOverspendingTrigger(input: {
       recent.find((row) => row.merchant?.displayName === topMerchant)?.merchant?.id ?? null,
     relatedFinancialGoalId: null,
     payload: {
+      reportingCurrency: input.reportingCurrency,
       recentDailyOutflowMinor: Math.round(recentDaily),
+      recentDailyOutflowLabel: currencyAmount(
+        Math.round(recentDaily),
+        input.reportingCurrency,
+      ),
       baselineDailyOutflowMinor: Math.round(baselineDaily),
+      baselineDailyOutflowLabel: currencyAmount(
+        Math.round(baselineDaily),
+        input.reportingCurrency,
+      ),
       recentWindowDays: 14,
       baselineWindowDays: 60,
       topMerchant,
@@ -365,8 +406,8 @@ function buildDiscretionaryOverspendingTrigger(input: {
       title: "Discretionary spend is running hot",
       summary: `The last 14 days are tracking above your usual discretionary pace.`,
       detail: topMerchant
-        ? `Recent discretionary outflow is about ${currencyAmount(Math.round(recentDaily))} a day versus ${currencyAmount(Math.round(baselineDaily))} before that, with ${topMerchant} showing up prominently.`
-        : `Recent discretionary outflow is about ${currencyAmount(Math.round(recentDaily))} a day versus ${currencyAmount(Math.round(baselineDaily))} before that.`,
+        ? `Recent discretionary outflow is about ${currencyAmount(Math.round(recentDaily), input.reportingCurrency)} a day versus ${currencyAmount(Math.round(baselineDaily), input.reportingCurrency)} before that, with ${topMerchant} showing up prominently.`
+        : `Recent discretionary outflow is about ${currencyAmount(Math.round(recentDaily), input.reportingCurrency)} a day versus ${currencyAmount(Math.round(baselineDaily), input.reportingCurrency)} before that.`,
     },
     memoryMerchantHints: topMerchant ? [topMerchant] : undefined,
   }
@@ -403,6 +444,7 @@ async function buildGoalSnapshotsAndTriggers(input: {
   userId: string
   goals: Awaited<ReturnType<typeof listFinancialGoalsForUser>>
   forecast: Awaited<ReturnType<typeof getLatestForecastRunWithSnapshots>>
+  reportingCurrency: string
   now: Date
 }) {
   const triggers: TriggerCandidate[] = []
@@ -473,10 +515,15 @@ async function buildGoalSnapshotsAndTriggers(input: {
         goalName: row.goal.name,
         goalType: row.goal.goalType,
         targetDate: row.goal.targetDate,
+        currency: row.goal.currency,
         targetAmountMinor: row.goal.targetAmountMinor,
+        targetAmountLabel: currencyAmount(row.goal.targetAmountMinor, row.goal.currency),
         savedAmountMinor,
+        savedAmountLabel: currencyAmount(savedAmountMinor, row.goal.currency),
         projectedAmountMinor,
+        projectedAmountLabel: currencyAmount(projectedAmountMinor, row.goal.currency),
         gapAmountMinor,
+        gapAmountLabel: currencyAmount(gapAmountMinor, row.goal.currency),
         confidence,
         daysUntilTarget,
       },
@@ -565,7 +612,8 @@ export async function refreshAdviceForUser(input: {
   reason: AdviceRefreshReason
 }) {
   const now = new Date()
-  const [forecast, recurring, incomeStreams, events, openReviewCount, goals] = await Promise.all([
+  const [settings, forecast, recurring, incomeStreams, events, openReviewCount, goals] = await Promise.all([
+    getUserSettings(input.userId),
     getLatestForecastRunWithSnapshots(input.userId),
     listRecurringObligationsForUser({
       userId: input.userId,
@@ -592,7 +640,11 @@ export async function refreshAdviceForUser(input: {
 
   const triggers: TriggerCandidate[] = []
 
-  const lowCash = buildLowCashProjectionTrigger({ forecast, now })
+  const lowCash = buildLowCashProjectionTrigger({
+    forecast,
+    reportingCurrency: settings.reportingCurrency,
+    now,
+  })
   if (lowCash) {
     triggers.push(lowCash)
   }
@@ -600,6 +652,7 @@ export async function refreshAdviceForUser(input: {
   const recurringPressure = buildRecurringPressureTrigger({
     forecast,
     recurring,
+    reportingCurrency: settings.reportingCurrency,
     now,
   })
   if (recurringPressure) {
@@ -608,7 +661,11 @@ export async function refreshAdviceForUser(input: {
 
   triggers.push(...buildDelayedIncomeTriggers({ incomeStreams, now }))
 
-  const overspending = buildDiscretionaryOverspendingTrigger({ events, now })
+  const overspending = buildDiscretionaryOverspendingTrigger({
+    events,
+    reportingCurrency: settings.reportingCurrency,
+    now,
+  })
   if (overspending) {
     triggers.push(overspending)
   }
@@ -622,6 +679,7 @@ export async function refreshAdviceForUser(input: {
     userId: input.userId,
     goals,
     forecast,
+    reportingCurrency: settings.reportingCurrency,
     now,
   })
   triggers.push(...goalTriggers)
