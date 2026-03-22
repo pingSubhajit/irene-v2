@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 
-import { updatePaymentInstrumentBackingLink } from "@workspace/db"
+import { getPaymentInstrumentById, updatePaymentInstrumentBackingLink } from "@workspace/db"
 
+import { recordFeedbackEvent } from "@/lib/feedback"
 import { triggerUserForecastRefresh } from "@/lib/forecasting"
 import { requireSession } from "@/lib/session"
 
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
     return NextResponse.redirect(redirectUrl, 303)
   }
 
+  const previousInstrument = await getPaymentInstrumentById(paymentInstrumentId)
   const result = await updatePaymentInstrumentBackingLink({
     userId: session.user.id,
     paymentInstrumentId,
@@ -29,6 +31,23 @@ export async function POST(request: Request) {
     redirectUrl.searchParams.set("balances", "link-invalid")
     return NextResponse.redirect(redirectUrl, 303)
   }
+
+  await recordFeedbackEvent({
+    userId: session.user.id,
+    targetType: "payment_instrument",
+    targetId: result.id,
+    correctionType: "link_backing_account",
+    sourceSurface: "settings",
+    previousValue: previousInstrument?.instrument
+      ? {
+          backingPaymentInstrumentId:
+            previousInstrument.instrument.backingPaymentInstrumentId,
+        }
+      : null,
+    newValue: {
+      backingPaymentInstrumentId: result.backingPaymentInstrumentId,
+    },
+  })
 
   await triggerUserForecastRefresh({
     userId: session.user.id,

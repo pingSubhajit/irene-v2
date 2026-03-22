@@ -1,5 +1,12 @@
 export { accounts, authSchema, sessions, users, verifications } from "./auth"
 export {
+  feedbackEvents,
+  type FeedbackEventInsert,
+  type FeedbackEventSelect,
+  type FeedbackEventSourceSurface,
+  type FeedbackEventTargetType,
+} from "./feedback"
+export {
   balanceAnchors,
   balanceObservations,
   forecastRuns,
@@ -10,6 +17,7 @@ export {
   type BalanceObservationSelect,
   type BalanceObservationKind,
   type BalanceObservationSource,
+  type BalanceObservationStatus,
   type ForecastRunInsert,
   type ForecastRunSelect,
   type ForecastRunStatus,
@@ -146,6 +154,7 @@ export {
 
 import { authSchema } from "./auth"
 import { jobRuns, userSettings } from "./app"
+import { feedbackEvents } from "./feedback"
 import { extractedSignals, modelRuns } from "./extraction"
 import {
   balanceAnchors,
@@ -185,6 +194,7 @@ export const schema = {
   ...authSchema,
   userSettings,
   jobRuns,
+  feedbackEvents,
   oauthConnections,
   emailSyncCursors,
   rawDocuments,

@@ -47,6 +47,13 @@ export default async function SettingsAccountsLinksPage({
             backingLabel:
               cashAccounts.find((account) => account.id === instrument.backingPaymentInstrumentId)
                 ?.displayName ?? "not linked",
+            instrumentType: instrument.instrumentType,
+            status: instrument.status,
+            creditLimitMajor:
+              typeof instrument.creditLimitMinor === "number"
+                ? (instrument.creditLimitMinor / 100).toFixed(2)
+                : "",
+            redirectTo: "/settings/accounts/links",
           }))}
           cashAccounts={cashAccounts.map((account) => ({
             id: account.id,

@@ -22,6 +22,7 @@ export type ForecastRunType = "anchored" | "net_only"
 export type ForecastRunStatus = "queued" | "running" | "succeeded" | "failed"
 export type BalanceObservationKind = "available_balance" | "available_credit_limit"
 export type BalanceObservationSource = "email" | "manual"
+export type BalanceObservationStatus = "active" | "ignored"
 
 export const forecastRuns = pgTable(
   "forecast_run",
@@ -125,6 +126,7 @@ export const balanceObservations = pgTable(
     extractedSignalId: uuid("extracted_signal_id").references(() => extractedSignals.id, {
       onDelete: "set null",
     }),
+    status: text("status").$type<BalanceObservationStatus>().notNull().default("active"),
     confidence: numeric("confidence", {
       precision: 5,
       scale: 4,
@@ -149,6 +151,10 @@ export const balanceObservations = pgTable(
     check(
       "balance_observation_source_check",
       sql`${table.source} in ('email', 'manual')`,
+    ),
+    check(
+      "balance_observation_status_check",
+      sql`${table.status} in ('active', 'ignored')`,
     ),
     check(
       "balance_observation_confidence_check",

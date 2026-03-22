@@ -154,6 +154,18 @@ export async function createBalanceObservation(input: BalanceObservationInsert) 
     .limit(1)
 
   if (existing) {
+    if (existing.status === "ignored") {
+      const [reactivated] = await db
+        .update(balanceObservations)
+        .set({
+          status: "active",
+        })
+        .where(eq(balanceObservations.id, existing.id))
+        .returning()
+
+      return reactivated ?? existing
+    }
+
     return existing
   }
 
@@ -177,7 +189,12 @@ export async function listRecentBalanceObservationsForUser(userId: string, limit
       paymentInstruments,
       eq(balanceObservations.paymentInstrumentId, paymentInstruments.id),
     )
-    .where(eq(balanceObservations.userId, userId))
+    .where(
+      and(
+        eq(balanceObservations.userId, userId),
+        eq(balanceObservations.status, "active"),
+      ),
+    )
     .orderBy(desc(balanceObservations.observedAt))
     .limit(limit)
 }
@@ -205,6 +222,7 @@ export async function listSuggestedBalanceObservationsForUser(userId: string, li
       and(
         eq(balanceObservations.userId, userId),
         eq(balanceObservations.observationKind, "available_balance"),
+        eq(balanceObservations.status, "active"),
       ),
     )
     .orderBy(desc(balanceObservations.observedAt))
@@ -278,6 +296,44 @@ export async function getBalanceObservationById(observationId: string) {
     .from(balanceObservations)
     .where(eq(balanceObservations.id, observationId))
     .limit(1)
+
+  return row ?? null
+}
+
+export async function updateBalanceObservationStatus(input: {
+  userId: string
+  observationId: string
+  status: "active" | "ignored"
+}) {
+  const [row] = await db
+    .update(balanceObservations)
+    .set({
+      status: input.status,
+    })
+    .where(
+      and(
+        eq(balanceObservations.userId, input.userId),
+        eq(balanceObservations.id, input.observationId),
+      ),
+    )
+    .returning()
+
+  return row ?? null
+}
+
+export async function deleteBalanceAnchor(input: {
+  userId: string
+  paymentInstrumentId: string
+}) {
+  const [row] = await db
+    .delete(balanceAnchors)
+    .where(
+      and(
+        eq(balanceAnchors.userId, input.userId),
+        eq(balanceAnchors.paymentInstrumentId, input.paymentInstrumentId),
+      ),
+    )
+    .returning()
 
   return row ?? null
 }

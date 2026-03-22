@@ -383,6 +383,7 @@ export default async function ActivityPage({
                   }
                   confidenceLabel={`${Math.round(Number(incomeStream.confidence) * 100)}%`}
                   status={incomeStream.status}
+                  href={`/activity/recurring/income/${incomeStream.id}`}
                 />
               ))}
             </div>
@@ -410,6 +411,7 @@ export default async function ActivityPage({
                   }
                   confidenceLabel={`${Math.round(Number(obligation.detectionConfidence) * 100)}%`}
                   status={obligation.status}
+                  href={`/activity/recurring/obligation/${obligation.id}`}
                 />
               ))}
             </div>

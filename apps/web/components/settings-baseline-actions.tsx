@@ -25,6 +25,7 @@ type BaselineAccount = {
   suggestionId: string | null
   suggestionAmountLabel: string | null
   suggestionSeenLabel: string | null
+  redirectTo: string
 }
 
 export function SettingsBaselineActions({
@@ -72,8 +73,20 @@ export function SettingsBaselineActions({
 
                   <form action="/api/settings/balance-anchor/from-observation" method="post" className="mt-4">
                     <input type="hidden" name="observationId" value={account.suggestionId} />
-                    <Button type="submit" size="sm">
-                      Use this
+                    <input type="hidden" name="redirectTo" value={account.redirectTo} />
+                    <div className="flex gap-3">
+                      <Button type="submit" size="sm">
+                        Use this
+                      </Button>
+                    </div>
+                  </form>
+
+                  <form action="/api/settings/balance-observation" method="post" className="mt-3">
+                    <input type="hidden" name="observationId" value={account.suggestionId} />
+                    <input type="hidden" name="status" value="ignored" />
+                    <input type="hidden" name="redirectTo" value={account.redirectTo} />
+                    <Button type="submit" size="sm" variant="secondary">
+                      Ignore suggestion
                     </Button>
                   </form>
                 </div>
@@ -93,6 +106,13 @@ export function SettingsBaselineActions({
                   />
                 </label>
                 <Button type="submit">Save balance</Button>
+              </form>
+
+              <form action="/api/settings/balance-anchor/delete" method="post">
+                <input type="hidden" name="paymentInstrumentId" value={account.id} />
+                <Button type="submit" variant="secondary">
+                  Remove anchor
+                </Button>
               </form>
             </div>
           </SheetContent>

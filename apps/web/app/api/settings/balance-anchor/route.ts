@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 
-import { upsertBalanceAnchor } from "@workspace/db"
+import { getBalanceAnchorForInstrument, upsertBalanceAnchor } from "@workspace/db"
 
+import { recordFeedbackEvent } from "@/lib/feedback"
 import { triggerUserForecastRefresh } from "@/lib/forecasting"
 import { requireSession } from "@/lib/session"
 
@@ -27,13 +28,40 @@ export async function POST(request: Request) {
     return NextResponse.redirect(redirectUrl, 303)
   }
 
-  await upsertBalanceAnchor({
+  const previousAnchor = await getBalanceAnchorForInstrument({
+    userId: session.user.id,
+    paymentInstrumentId,
+  })
+
+  const anchor = await upsertBalanceAnchor({
     userId: session.user.id,
     paymentInstrumentId,
     amountMinor,
     currency,
     anchoredAt: new Date(),
     sourceObservationId: null,
+  })
+
+  await recordFeedbackEvent({
+    userId: session.user.id,
+    targetType: "balance_anchor",
+    targetId: anchor.id,
+    correctionType: previousAnchor ? "replace_anchor" : "set_anchor",
+    sourceSurface: "settings",
+    previousValue: previousAnchor
+      ? {
+          amountMinor: previousAnchor.amountMinor,
+          currency: previousAnchor.currency,
+          anchoredAt: previousAnchor.anchoredAt.toISOString(),
+          sourceObservationId: previousAnchor.sourceObservationId,
+        }
+      : null,
+    newValue: {
+      amountMinor: anchor.amountMinor,
+      currency: anchor.currency,
+      anchoredAt: anchor.anchoredAt.toISOString(),
+      sourceObservationId: anchor.sourceObservationId,
+    },
   })
 
   await triggerUserForecastRefresh({

@@ -51,6 +51,10 @@ export default async function SettingsAccountsCashPage({
               ? "Built from explicit bank-email issuer and account evidence."
               : "Created manually because no explicit inbox evidence was available.",
             currencyLabel: account.currency ?? settings.reportingCurrency,
+            instrumentType: account.instrumentType,
+            status: account.status,
+            creditLimitMinor: account.creditLimitMinor,
+            redirectTo: "/settings/accounts/cash",
           }))}
         />
       ) : (

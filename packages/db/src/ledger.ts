@@ -188,6 +188,16 @@ export async function getCategoryBySlug(userId: string, slug: string) {
   return category ?? null
 }
 
+export async function getCategoryById(userId: string, categoryId: string) {
+  const [category] = await db
+    .select()
+    .from(categories)
+    .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
+    .limit(1)
+
+  return category ?? null
+}
+
 export async function resolveCategoryForSignal(userId: string, signal: ExtractedSignalSelect) {
   await ensureSystemCategories(userId)
   return getCategoryBySlug(userId, inferCategorySlug(signal))
@@ -696,7 +706,10 @@ export async function listLedgerEventsForUser(input: {
   amountMaxMinor?: number
   limit?: number
 }) {
-  const conditions = [eq(financialEvents.userId, input.userId)]
+  const conditions = [
+    eq(financialEvents.userId, input.userId),
+    inArray(financialEvents.status, ["confirmed", "needs_review"]),
+  ]
 
   if (input.eventType) {
     conditions.push(eq(financialEvents.eventType, input.eventType))

@@ -6,6 +6,7 @@ import {
   documentAttachments,
   emailSyncCursors,
   extractedSignals,
+  feedbackEvents,
   financialEventSources,
   financialEvents,
   financialEventValuations,
@@ -136,6 +137,7 @@ export async function resetUserDatabaseState(input: {
       oauthRows,
       cursorRows,
       jobRunRows,
+      feedbackRows,
     ] = await Promise.all([
       tx
         .select({ id: recurringObligations.id })
@@ -205,6 +207,10 @@ export async function resetUserDatabaseState(input: {
         .select({ id: jobRuns.id })
         .from(jobRuns)
         .where(sql`${jobRuns.payloadJson} ->> 'userId' = ${input.userId}`),
+      tx
+        .select({ id: feedbackEvents.id })
+        .from(feedbackEvents)
+        .where(eq(feedbackEvents.userId, input.userId)),
     ])
 
     const recurringIds = recurringRows.map((row) => row.id)
@@ -251,6 +257,7 @@ export async function resetUserDatabaseState(input: {
     await tx.delete(modelRuns).where(eq(modelRuns.userId, input.userId))
     await tx.delete(rawDocuments).where(eq(rawDocuments.userId, input.userId))
     await tx.delete(paymentInstruments).where(eq(paymentInstruments.userId, input.userId))
+    await tx.delete(feedbackEvents).where(eq(feedbackEvents.userId, input.userId))
 
     if (paymentProcessorIds.length > 0) {
       await tx
@@ -315,6 +322,7 @@ export async function resetUserDatabaseState(input: {
       deletedFinancialEvents: eventRows.length,
       deletedExtractedSignals: signalRows.length,
       deletedModelRuns: modelRunRows.length,
+      deletedFeedbackEvents: feedbackRows.length,
       deletedMerchants: merchantRows.length,
       deletedMerchantObservations: merchantObservationRows.length,
       deletedPaymentProcessors: paymentProcessorRows.length,

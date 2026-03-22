@@ -17,6 +17,7 @@ import {
   getFinancialEventSourceByExtractedSignal,
   getIncomeStreamById,
   getOrCreateMerchantForAlias,
+  getReviewQueueItemById,
   getRecurringObligationById,
   getReviewQueueContext,
   refreshFinancialEventSourceCount,
@@ -28,7 +29,7 @@ import {
   updateExtractedSignalStatus,
   updateFinancialEvent,
   updateRecurringObligation,
-  updateReviewQueueItem,
+  updateReviewQueueItem as updateReviewQueueItemInDb,
   upsertEmiPlan,
   upsertFinancialInstitutionAliases,
   upsertMerchantAliases,
@@ -48,6 +49,7 @@ import {
 } from "@workspace/workflows"
 
 import { triggerFinancialEventValuationRefresh } from "@/lib/fx-valuation"
+import { recordFeedbackEvent } from "@/lib/feedback"
 import { getServerSession } from "@/lib/session"
 
 function redirectToReview(request: Request, status: string) {
@@ -235,6 +237,43 @@ export async function POST(request: Request) {
     overrideRecurringTypeValue === "emi"
       ? overrideRecurringTypeValue
       : null
+
+  const updateReviewQueueItem = async (
+    reviewItemId: string,
+    input: Parameters<typeof updateReviewQueueItemInDb>[1],
+  ) => {
+    const previousItem = await getReviewQueueItemById(reviewItemId)
+    const item = await updateReviewQueueItemInDb(reviewItemId, input)
+
+    if (item) {
+      await recordFeedbackEvent({
+        userId: session.user.id,
+        targetType: "review_queue_item",
+        targetId: item.id,
+        correctionType: "resolve_review_item",
+        sourceSurface: "review",
+        previousValue: previousItem
+          ? {
+              status: previousItem.status,
+              financialEventId: previousItem.financialEventId,
+              proposedResolutionJson: previousItem.proposedResolutionJson,
+              resolvedAt: previousItem.resolvedAt?.toISOString() ?? null,
+            }
+          : null,
+        newValue: {
+          status: item.status,
+          financialEventId: item.financialEventId,
+          proposedResolutionJson: item.proposedResolutionJson,
+          resolvedAt: item.resolvedAt?.toISOString() ?? null,
+        },
+        metadata: {
+          resolution,
+        },
+      })
+    }
+
+    return item
+  }
 
   if (!reviewItemId || !resolution) {
     return redirectToReview(request, "invalid-request")

@@ -14,9 +14,13 @@ import { Badge } from "@workspace/ui/components/badge"
 import { downloadPrivateObject } from "@workspace/integrations"
 import {
   getFinancialEventTraceForUser,
+  listActivityMerchantsForUser,
+  listActivityPaymentInstrumentsForUser,
+  listCategoriesForUser,
   getUserSettings,
 } from "@workspace/db"
 
+import { ActivityEventActions } from "@/components/activity-event-actions"
 import { ModelRunList } from "@/components/model-run-list"
 import { MerchantLogoPicker } from "@/components/merchant-logo-picker"
 import { formatInUserTimeZone } from "@/lib/date-format"
@@ -28,6 +32,7 @@ type EventTracePageProps = {
   params: Promise<{
     eventId: string
   }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
 
 function formatCurrency(amountMinor: number, currency: string) {
@@ -69,54 +74,30 @@ function formatShortDate(
   })
 }
 
-function asSnippetList(value: unknown) {
-  if (!value || typeof value !== "object") return []
-
-  const snippets = (value as Record<string, unknown>).snippets
-  if (!Array.isArray(snippets)) return []
-
-  return snippets.filter(
-    (snippet): snippet is string => typeof snippet === "string",
-  )
-}
-
-function asExplanation(value: unknown) {
-  if (!value || typeof value !== "object") return null
-
-  const explanation = (value as Record<string, unknown>).explanation
-  return typeof explanation === "string" ? explanation : null
-}
-
-function formatMinorValue(value: number | null | undefined, currency = "INR") {
-  if (typeof value !== "number") {
-    return "null"
-  }
-
-  return `${formatCurrency(value, currency)} (${value})`
-}
-
-function formatJson(value: unknown) {
-  if (value == null) {
-    return "null"
-  }
-
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
-}
-
 export default async function EventTracePage({
   params,
+  searchParams,
 }: EventTracePageProps) {
   const session = await requireSession()
   const { eventId } = await params
-  const [settings, trace] = await Promise.all([
+  const routeSearchParams = (await searchParams) ?? {}
+  const statusParam = Array.isArray(routeSearchParams.status)
+    ? routeSearchParams.status[0]
+    : routeSearchParams.status
+  const [settings, trace, categories, merchants, paymentInstruments] = await Promise.all([
     getUserSettings(session.user.id),
     getFinancialEventTraceForUser({
       userId: session.user.id,
       eventId,
+    }),
+    listCategoriesForUser(session.user.id),
+    listActivityMerchantsForUser({
+      userId: session.user.id,
+      limit: 300,
+    }),
+    listActivityPaymentInstrumentsForUser({
+      userId: session.user.id,
+      limit: 300,
     }),
   ])
 
@@ -152,6 +133,7 @@ export default async function EventTracePage({
     : null
   const issuerLine = trace.paymentInstrument?.displayName ?? null
   const secondaryLine = [processorLine, issuerLine].filter(Boolean).join(" · ")
+  const statusMessage = getStatusMessage(statusParam)
 
   return (
     <section className="mx-auto max-w-2xl">
@@ -164,17 +146,68 @@ export default async function EventTracePage({
       </Link>
 
       {/* Event header */}
-      <div className="flex items-center gap-3">
-        {trace.merchant?.id ? (
-          <MerchantLogoPicker
-            merchantId={trace.merchant.id}
-            merchantName={merchantName}
-            currentLogoUrl={trace.merchant.logoUrl ?? null}
-          />
-        ) : null}
-        <h1 className="min-w-0 text-[1.65rem] font-semibold tracking-tight text-white">
-          {merchantName}
-        </h1>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {trace.merchant?.id ? (
+            <MerchantLogoPicker
+              merchantId={trace.merchant.id}
+              merchantName={merchantName}
+              currentLogoUrl={trace.merchant.logoUrl ?? null}
+            />
+          ) : null}
+          <h1 className="min-w-0 text-[1.65rem] font-semibold tracking-tight text-white">
+            {merchantName}
+          </h1>
+        </div>
+        <ActivityEventActions
+          redirectTo={`/activity/${trace.event.id}/trace`}
+          event={{
+            id: trace.event.id,
+            status: trace.event.status,
+            amountMinor: trace.event.amountMinor,
+            eventType: trace.event.eventType,
+            merchantId: trace.event.merchantId,
+            categoryId: trace.event.categoryId,
+            paymentInstrumentId: trace.event.paymentInstrumentId,
+            description: trace.event.description,
+            notes: trace.event.notes,
+          }}
+          merchant={
+            trace.merchant
+              ? {
+                  id: trace.merchant.id,
+                  displayName: trace.merchant.displayName,
+                  defaultCategory: trace.merchant.defaultCategory,
+                }
+              : null
+          }
+          paymentInstrument={
+            trace.paymentInstrument
+              ? {
+                  id: trace.paymentInstrument.id,
+                  displayName: trace.paymentInstrument.displayName,
+                  instrumentType: trace.paymentInstrument.instrumentType,
+                  status: trace.paymentInstrument.status,
+                  creditLimitMinor: trace.paymentInstrument.creditLimitMinor,
+                }
+              : null
+          }
+          merchants={merchants.map((merchant) => ({
+            id: merchant.id,
+            displayName: merchant.displayName,
+          }))}
+          categories={categories.map((category) => ({
+            id: category.id,
+            displayName: category.name,
+          }))}
+          paymentInstruments={paymentInstruments.map((instrument) => ({
+            id: instrument.id,
+            displayName: instrument.displayName,
+            subtitle: instrument.maskedIdentifier
+              ? `${instrument.instrumentType.replace("_", " ")} • ${instrument.maskedIdentifier}`
+              : instrument.instrumentType.replace("_", " "),
+          }))}
+        />
       </div>
       {secondaryLine ? (
         <p className="mt-1 text-sm text-white/48">{secondaryLine}</p>
@@ -184,6 +217,11 @@ export default async function EventTracePage({
         {formatShortDate(trace.event.eventOccurredAt, settings.timeZone)} ·{" "}
         {trace.event.eventType}
       </p>
+      {statusMessage ? (
+        <div className="mt-5 border-l-2 border-[var(--neo-green)] bg-[rgba(111,247,184,0.04)] px-4 py-3">
+          <p className="text-sm leading-relaxed text-white/68">{statusMessage}</p>
+        </div>
+      ) : null}
 
       {/* Event summary */}
       <div className="mt-8 divide-y divide-white/[0.06]">
@@ -191,6 +229,7 @@ export default async function EventTracePage({
         <InfoRow label="direction" value={trace.event.direction} />
         <InfoRow label="date" value={formatDateTime(trace.event.eventOccurredAt, settings.timeZone)} />
         <InfoRow label="type" value={trace.event.eventType} />
+        <InfoRow label="status" value={trace.event.status} />
         <InfoRow label="processor" value={trace.paymentProcessor?.displayName ?? "unlinked"} />
         <InfoRow label="instrument" value={trace.paymentInstrument?.displayName ?? "unlinked"} />
         <InfoRow
@@ -220,18 +259,11 @@ export default async function EventTracePage({
           <Accordion
             type="single"
             collapsible
-            defaultValue={trace.traces[0]?.source.id}
             className="gap-0 divide-y divide-white/[0.06]"
           >
             {trace.traces.map((entry, index) => {
               const emailHtml =
                 htmlByTraceId.get(entry.source.id) ?? null
-              const snippets = asSnippetList(
-                entry.extractedSignal?.evidenceJson,
-              )
-              const explanation = asExplanation(
-                entry.extractedSignal?.evidenceJson,
-              )
 
               return (
                 <AccordionItem
@@ -373,134 +405,6 @@ export default async function EventTracePage({
                           value={entry.source.linkReason}
                         />
                       </div>
-
-                      {explanation && (
-                        <div className="mt-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/28">
-                            explanation
-                          </p>
-                          <p className="mt-2 text-sm leading-relaxed text-white/56">
-                            {explanation}
-                          </p>
-                        </div>
-                      )}
-
-                      {snippets.length > 0 && (
-                        <div className="mt-4 min-w-0">
-                          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/28">
-                            evidence snippets
-                          </p>
-                          <div className="grid min-w-0 gap-1.5">
-                            {snippets.map((snippet) => (
-                              <p
-                                key={snippet}
-                                className="min-w-0 overflow-hidden border-l-2 border-white/8 py-1 pl-3 text-sm leading-relaxed text-white/44 [overflow-wrap:anywhere]"
-                              >
-                                {snippet}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <SectionLabel>Debug</SectionLabel>
-                      <div className="divide-y divide-white/[0.06]">
-                        <InfoRow
-                          label="signal id"
-                          value={entry.extractedSignal?.id ?? "unavailable"}
-                        />
-                        <InfoRow
-                          label="signal type"
-                          value={entry.extractedSignal?.signalType ?? "unavailable"}
-                        />
-                        <InfoRow
-                          label="amount minor"
-                          value={typeof entry.extractedSignal?.amountMinor === "number"
-                            ? `${entry.extractedSignal.amountMinor}`
-                            : "null"}
-                        />
-                        <InfoRow
-                          label="instrument last4"
-                          value={entry.extractedSignal?.instrumentLast4Hint ?? "null"}
-                        />
-                        <InfoRow
-                          label="balance instrument last4"
-                          value={entry.extractedSignal?.balanceInstrumentLast4Hint ?? "null"}
-                        />
-                        <InfoRow
-                          label="backing account last4"
-                          value={entry.extractedSignal?.backingAccountLast4Hint ?? "null"}
-                        />
-                        <InfoRow
-                          label="account relationship"
-                          value={entry.extractedSignal?.accountRelationshipHint ?? "null"}
-                        />
-                        <InfoRow
-                          label="balance evidence"
-                          value={entry.extractedSignal?.balanceEvidenceStrength ?? "null"}
-                        />
-                        <InfoRow
-                          label="available balance"
-                          value={formatMinorValue(
-                            entry.extractedSignal?.availableBalanceMinor,
-                            entry.extractedSignal?.currency ?? trace.event.currency,
-                          )}
-                        />
-                        <InfoRow
-                          label="available credit limit"
-                          value={formatMinorValue(
-                            entry.extractedSignal?.availableCreditLimitMinor,
-                            entry.extractedSignal?.currency ?? trace.event.currency,
-                          )}
-                        />
-                      </div>
-
-                      <div className="mt-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/28">
-                          balance observations
-                        </p>
-                        {entry.balanceObservations.length > 0 ? (
-                          <div className="mt-2 divide-y divide-white/[0.06]">
-                            {entry.balanceObservations.map((balanceRow) => (
-                              <div key={balanceRow.observation.id} className="py-3">
-                                <p className="text-sm text-white">
-                                  {balanceRow.observation.observationKind} ·{" "}
-                                  {formatMinorValue(
-                                    balanceRow.observation.amountMinor,
-                                    balanceRow.observation.currency,
-                                  )}
-                                </p>
-                                <p className="mt-1 text-sm text-white/32">
-                                  {balanceRow.paymentInstrument?.displayName ?? "unlinked instrument"} ·{" "}
-                                  {formatDateTime(balanceRow.observation.observedAt, settings.timeZone)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="mt-2 text-sm text-white/36">none</p>
-                        )}
-                      </div>
-
-                      {entry.modelRuns.length > 0 ? (
-                        <div className="mt-4 grid gap-4">
-                          {entry.modelRuns.map((modelRun) => (
-                            <div key={modelRun.id} className="border border-white/8 bg-white/[0.02] p-4">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/28">
-                                {modelRun.taskType}
-                              </p>
-                              <p className="mt-2 text-sm text-white/36">
-                                {modelRun.provider} · {modelRun.modelName}
-                              </p>
-                              <pre className="mt-3 overflow-x-auto border border-white/8 bg-[rgba(255,255,255,0.03)] p-3 text-xs leading-6 whitespace-pre-wrap text-white/62 [overflow-wrap:anywhere]">
-                                {formatJson(modelRun.resultJson)}
-                              </pre>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
 
                     {/* Model runs */}
@@ -558,6 +462,25 @@ export default async function EventTracePage({
       </div>
     </section>
   )
+}
+
+function getStatusMessage(value: string | undefined) {
+  switch (value) {
+    case "event-updated":
+      return "Event updated. Irene will now treat the canonical event using your corrected values."
+    case "event-ignored":
+      return "Event ignored. It will stay traceable, but it drops out of normal activity views."
+    case "event-restored":
+      return "Event restored."
+    case "merchant-updated":
+      return "Merchant updated."
+    case "merchant-merged":
+      return "Merchant merged into the selected canonical merchant."
+    case "instrument-updated":
+      return "Instrument updated."
+    default:
+      return null
+  }
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {

@@ -24,6 +24,10 @@ type LinkedInstrument = {
   instrumentLabel: string
   backingPaymentInstrumentId: string | null
   backingLabel: string
+  instrumentType: string
+  status: string
+  creditLimitMajor: string
+  redirectTo: string
 }
 
 export function SettingsLinkActions({
@@ -80,6 +84,61 @@ export function SettingsLinkActions({
               </select>
 
               <Button type="submit">Save link</Button>
+            </form>
+
+            <form
+              action="/api/settings/payment-instrument/update"
+              method="post"
+              className="grid gap-4 border-t border-white/[0.06] px-6 pb-10 pt-5"
+            >
+              <input type="hidden" name="paymentInstrumentId" value={instrument.id} />
+              <input type="hidden" name="redirectTo" value={instrument.redirectTo} />
+              <label className="grid gap-2 text-sm font-medium text-white">
+                <span>display name</span>
+                <input
+                  name="displayName"
+                  defaultValue={instrument.displayName}
+                  className="h-12 w-full border border-white/10 bg-[rgba(20,20,22,0.92)] px-4 text-sm text-[var(--neo-cream)] outline-none"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-white">
+                <span>instrument type</span>
+                <select
+                  name="instrumentType"
+                  defaultValue={instrument.instrumentType}
+                  className="h-12 w-full border border-white/10 bg-[rgba(20,20,22,0.92)] px-4 text-sm text-[var(--neo-cream)] outline-none"
+                >
+                  <option value="debit_card">debit card</option>
+                  <option value="upi">upi</option>
+                  <option value="wallet">wallet</option>
+                  <option value="bank_account">bank account</option>
+                  <option value="credit_card">credit card</option>
+                  <option value="unknown">unknown</option>
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-white">
+                <span>status</span>
+                <select
+                  name="status"
+                  defaultValue={instrument.status}
+                  className="h-12 w-full border border-white/10 bg-[rgba(20,20,22,0.92)] px-4 text-sm text-[var(--neo-cream)] outline-none"
+                >
+                  <option value="active">active</option>
+                  <option value="inactive">inactive</option>
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-white">
+                <span>credit limit</span>
+                <input
+                  name="creditLimit"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  defaultValue={instrument.creditLimitMajor}
+                  className="h-12 w-full border border-white/10 bg-[rgba(20,20,22,0.92)] px-4 text-sm text-[var(--neo-cream)] outline-none"
+                />
+              </label>
+              <Button type="submit">Save instrument</Button>
             </form>
           </SheetContent>
         </Sheet>

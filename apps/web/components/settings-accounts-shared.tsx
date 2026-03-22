@@ -22,10 +22,20 @@ export function getBalancesStatusMessage(value: string | undefined) {
       return "The balance anchor could not be saved. Check the amount and try again."
     case "anchor-updated":
       return "Balance anchor updated. Irene has started refreshing your forecast."
+    case "anchor-removed":
+      return "Balance anchor removed. Forecast will fall back to net-only mode until a new baseline is confirmed."
     case "observation-accepted":
       return "Inbox balance evidence accepted as the current anchor."
+    case "observation-ignored":
+      return "Balance observation ignored. Irene will stop using it as a suggested baseline."
+    case "observation-restored":
+      return "Balance observation restored."
     case "observation-invalid":
       return "That balance suggestion was no longer valid."
+    case "instrument-updated":
+      return "Instrument updated."
+    case "instrument-invalid":
+      return "The instrument update could not be saved."
     case "link-updated":
       return "Backing account link updated."
     case "link-invalid":

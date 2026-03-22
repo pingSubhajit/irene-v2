@@ -140,6 +140,7 @@ export default async function SettingsAccountsBaselinePage({
               suggestionSeenLabel: suggestion
                 ? formatDateTime(suggestion.observation.observedAt, settings.timeZone)
                 : null,
+              redirectTo: "/settings/accounts/baseline",
             }
           })}
         />

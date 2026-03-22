@@ -21,6 +21,10 @@ type CashAccount = {
   sourceLabel: string
   sourceMetaLabel: string
   currencyLabel: string
+  instrumentType: string
+  status: string
+  creditLimitMinor: number | null
+  redirectTo: string
 }
 
 export function SettingsCashAccountActions({
@@ -65,6 +69,45 @@ export function SettingsCashAccountActions({
                   {account.currencyLabel}
                 </p>
               </div>
+
+              <form
+                action="/api/settings/payment-instrument/update"
+                method="post"
+                className="grid gap-4 border border-white/[0.06] px-4 py-4"
+              >
+                <input type="hidden" name="paymentInstrumentId" value={account.id} />
+                <input type="hidden" name="redirectTo" value={account.redirectTo} />
+                <label className="grid gap-2 text-sm font-medium text-white">
+                  <span>display name</span>
+                  <Input name="displayName" defaultValue={account.displayName} />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-white">
+                  <span>instrument type</span>
+                  <select
+                    name="instrumentType"
+                    defaultValue={account.instrumentType}
+                    className="h-12 w-full border border-white/10 bg-[rgba(20,20,22,0.92)] px-4 text-sm text-[var(--neo-cream)] outline-none"
+                  >
+                    <option value="bank_account">bank account</option>
+                    <option value="wallet">wallet</option>
+                    <option value="debit_card">debit card</option>
+                    <option value="upi">upi</option>
+                    <option value="unknown">unknown</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-white">
+                  <span>status</span>
+                  <select
+                    name="status"
+                    defaultValue={account.status}
+                    className="h-12 w-full border border-white/10 bg-[rgba(20,20,22,0.92)] px-4 text-sm text-[var(--neo-cream)] outline-none"
+                  >
+                    <option value="active">active</option>
+                    <option value="inactive">inactive</option>
+                  </select>
+                </label>
+                <Button type="submit">Save account</Button>
+              </form>
             </div>
           </SheetContent>
         </Sheet>
