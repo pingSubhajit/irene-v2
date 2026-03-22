@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 
 import { db } from "./client"
 import {
+  balanceObservations,
   documentAttachments,
   emailSyncCursors,
   extractedSignals,
@@ -528,6 +529,13 @@ export async function getFinancialEventTraceForUser(input: {
     .where(eq(financialEventSources.financialEventId, input.eventId))
     .orderBy(asc(financialEventSources.createdAt))
 
+  const traceSignalIds = traceRows
+    .map((row) => row.extractedSignal?.id ?? null)
+    .filter((value): value is string => Boolean(value))
+  const traceRawDocumentIds = traceRows
+    .map((row) => row.rawDocument?.id ?? null)
+    .filter((value): value is string => Boolean(value))
+
   const rawDocumentIds = [...new Set(
     traceRows
       .map((row) => row.rawDocument?.id ?? row.extractedSignal?.rawDocumentId ?? null)
@@ -550,6 +558,40 @@ export async function getFinancialEventTraceForUser(input: {
   const modelRunsByDocumentId = new Map<string, typeof relatedModelRuns>()
   const eventModelRuns: typeof relatedModelRuns = []
 
+  const balanceObservationRows =
+    traceSignalIds.length > 0 || traceRawDocumentIds.length > 0
+      ? await db
+          .select({
+            observation: balanceObservations,
+            paymentInstrument: paymentInstruments,
+          })
+          .from(balanceObservations)
+          .leftJoin(
+            paymentInstruments,
+            eq(balanceObservations.paymentInstrumentId, paymentInstruments.id),
+          )
+          .where(
+            traceSignalIds.length > 0 && traceRawDocumentIds.length > 0
+              ? or(
+                  inArray(balanceObservations.extractedSignalId, traceSignalIds),
+                  inArray(balanceObservations.rawDocumentId, traceRawDocumentIds),
+                )
+              : traceSignalIds.length > 0
+                ? inArray(balanceObservations.extractedSignalId, traceSignalIds)
+                : inArray(balanceObservations.rawDocumentId, traceRawDocumentIds),
+          )
+          .orderBy(desc(balanceObservations.observedAt))
+      : []
+
+  const balanceObservationsBySignalId = new Map<
+    string,
+    typeof balanceObservationRows
+  >()
+  const balanceObservationsByRawDocumentId = new Map<
+    string,
+    typeof balanceObservationRows
+  >()
+
   for (const modelRun of relatedModelRuns) {
     if (modelRun.financialEventId === input.eventId) {
       eventModelRuns.push(modelRun)
@@ -565,6 +607,22 @@ export async function getFinancialEventTraceForUser(input: {
     modelRunsByDocumentId.set(modelRun.rawDocumentId, existing)
   }
 
+  for (const row of balanceObservationRows) {
+    if (row.observation.extractedSignalId) {
+      const existing =
+        balanceObservationsBySignalId.get(row.observation.extractedSignalId) ?? []
+      existing.push(row)
+      balanceObservationsBySignalId.set(row.observation.extractedSignalId, existing)
+    }
+
+    if (row.observation.rawDocumentId) {
+      const existing =
+        balanceObservationsByRawDocumentId.get(row.observation.rawDocumentId) ?? []
+      existing.push(row)
+      balanceObservationsByRawDocumentId.set(row.observation.rawDocumentId, existing)
+    }
+  }
+
   return {
     ...eventRow,
     eventModelRuns,
@@ -575,6 +633,18 @@ export async function getFinancialEventTraceForUser(input: {
         ...row,
         modelRuns:
           rawDocumentId ? modelRunsByDocumentId.get(rawDocumentId) ?? [] : [],
+        balanceObservations: [
+          ...(row.extractedSignal?.id
+            ? balanceObservationsBySignalId.get(row.extractedSignal.id) ?? []
+            : []),
+          ...(rawDocumentId
+            ? balanceObservationsByRawDocumentId.get(rawDocumentId) ?? []
+            : []),
+        ].filter(
+          (value, index, array) =>
+            array.findIndex((candidate) => candidate.observation.id === value.observation.id) ===
+            index,
+        ),
       }
     }),
   }

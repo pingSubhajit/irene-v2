@@ -106,6 +106,13 @@
       "when": 1774104221643,
       "tag": "0014_friendly_titanium_man",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1774154537204,
+      "tag": "0015_fat_diamondback",
+      "breakpoints": true
     }
   ]
 }

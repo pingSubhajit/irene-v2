@@ -35,7 +35,7 @@ import {
   resolveCategoryWithAi,
   resolveMerchantAndProcessorWithAi,
 } from "@workspace/ai"
-import { buildLogoDotDevBrandLogoUrl } from "@workspace/integrations"
+import { resolveLogoDotDevBrandLogoUrl } from "@workspace/integrations"
 
 import {
   resolveExistingMerchantFastPath,
@@ -217,13 +217,13 @@ function getClusterKey(input: {
   )
 }
 
-function resolveMerchantLogoUrl(canonicalMerchantName: string | null) {
+async function resolveMerchantLogoUrl(canonicalMerchantName: string | null) {
   if (!canonicalMerchantName) {
     return null
   }
 
   try {
-    return buildLogoDotDevBrandLogoUrl(canonicalMerchantName)
+    return await resolveLogoDotDevBrandLogoUrl(canonicalMerchantName)
   } catch {
     return null
   }
@@ -403,7 +403,7 @@ async function applyMerchantDecision(input: {
     | "create_new_processor"
     | "merge_processors"
 }) {
-  const merchantLogoUrl = resolveMerchantLogoUrl(input.canonicalMerchantName)
+  const merchantLogoUrl = await resolveMerchantLogoUrl(input.canonicalMerchantName)
   let merchant = input.targetMerchantId ? await getMerchantById(input.targetMerchantId) : null
 
   if (!merchant && input.canonicalMerchantName) {

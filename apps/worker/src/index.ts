@@ -8,6 +8,7 @@ import {
   aiPromptVersions,
   classifyFinanceRelevance,
   extractStructuredSignals,
+  inferDocumentBalanceContext,
   routeDocumentForExtraction,
 } from "@workspace/ai"
 import {
@@ -18,11 +19,14 @@ import {
   ensureJobRun,
   getEmailSyncCursorById,
   getOauthConnectionById,
+  listRecentPaymentInstrumentsForUser,
+  listExtractedSignalsForRawDocumentIds,
   getRawDocumentById,
   getUserSettings,
   hasExtractedSignalsForRawDocument,
   listUserIdsForForecasting,
   listUserIdsForInstrumentRepair,
+  updateExtractedSignal,
   updateEmailSyncCursor,
   updateJobRun,
   updateModelRun,
@@ -44,7 +48,9 @@ import {
 } from "@workspace/integrations"
 import {
   AI_EXTRACTION_QUEUE_NAME,
+  BALANCE_INFERENCE_QUEUE_NAME,
   BACKFILL_IMPORT_QUEUE_NAME,
+  DOCUMENT_INFER_BALANCE_JOB_NAME,
   DOCUMENT_EXTRACT_ROUTE_JOB_NAME,
   DOCUMENT_EXTRACT_STRUCTURED_JOB_NAME,
   DOCUMENT_NORMALIZATION_QUEUE_NAME,
@@ -76,6 +82,7 @@ import {
   SYSTEM_QUEUE_NAME,
   closeWorkflowConnections,
   createWorkerRedisConnection,
+  documentInferBalanceJobPayloadSchema,
   documentExtractRouteJobPayloadSchema,
   documentExtractStructuredJobPayloadSchema,
   documentNormalizeJobPayloadSchema,
@@ -87,6 +94,7 @@ import {
   enqueueEventExtractMerchantObservation,
   enqueueDocumentExtractRoute,
   enqueueDocumentExtractStructured,
+  enqueueDocumentInferBalance,
   enqueueDocumentNormalize,
   enqueueGmailBackfillPage,
   enqueueGmailMessageIngest,
@@ -130,6 +138,7 @@ import {
 import {
   inferAccountsAndPromoteBalancesForEvent,
   inferAccountsAndPromoteBalancesForRawDocument,
+  inferAccountsAndPromoteStandaloneBalanceEvidence,
   refreshForecastForUser,
 } from "./forecast"
 import {
@@ -452,6 +461,41 @@ async function enqueueTrackedDocumentExtractStructured(input: {
     routeLabel: input.routeLabel,
     routeConfidence: input.routeConfidence,
     routeReasons: input.routeReasons,
+  })
+}
+
+async function enqueueTrackedDocumentInferBalance(input: {
+  userId: string
+  rawDocumentId: string
+  correlationId: string
+  extractionSource: "deterministic" | "model"
+  extractionJobRunId?: string
+}) {
+  const jobKey = `${DOCUMENT_INFER_BALANCE_JOB_NAME}:${input.rawDocumentId}`
+  const jobRun = await ensureJobRun({
+    queueName: BALANCE_INFERENCE_QUEUE_NAME,
+    jobName: DOCUMENT_INFER_BALANCE_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      rawDocumentId: input.rawDocumentId,
+      source: "worker",
+      extractionSource: input.extractionSource,
+      extractionJobRunId: input.extractionJobRunId ?? null,
+    },
+  })
+
+  await enqueueDocumentInferBalance({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    rawDocumentId: input.rawDocumentId,
+    source: "worker",
+    extractionSource: input.extractionSource,
+    extractionJobRunId: input.extractionJobRunId,
   })
 }
 
@@ -782,6 +826,130 @@ async function enqueueTrackedSignalReconcile(input: {
   })
 }
 
+async function enqueueTrackedSignalReconcilesForSignals(input: {
+  userId: string
+  rawDocumentId: string
+  signals: Array<{ id: string }>
+}) {
+  await Promise.all(
+    input.signals.map((signal) =>
+      enqueueTrackedSignalReconcile({
+        userId: input.userId,
+        extractedSignalId: signal.id,
+        rawDocumentId: input.rawDocumentId,
+        correlationId: `${input.rawDocumentId}:${signal.id}`,
+      }),
+    ),
+  )
+}
+
+function selectBalanceInferenceTargetSignalIndex(input: {
+  signals: Array<{
+    instrumentLast4Hint: string | null
+    balanceInstrumentLast4Hint: string | null
+    backingAccountLast4Hint: string | null
+  }>
+  balance: {
+    balanceInstrumentLast4Hint: string | null
+    backingAccountLast4Hint: string | null
+  }
+}) {
+  const identifiers = [
+    input.balance.balanceInstrumentLast4Hint,
+    input.balance.backingAccountLast4Hint,
+  ].filter((value): value is string => Boolean(value))
+
+  if (identifiers.length === 0) {
+    return 0
+  }
+
+  const matchedIndex = input.signals.findIndex((signal) =>
+    identifiers.some(
+      (identifier) =>
+        signal.instrumentLast4Hint === identifier ||
+        signal.balanceInstrumentLast4Hint === identifier ||
+        signal.backingAccountLast4Hint === identifier,
+    ),
+  )
+
+  return matchedIndex >= 0 ? matchedIndex : 0
+}
+
+async function applyBalanceInferenceToSignals(input: {
+  signals: Awaited<ReturnType<typeof listExtractedSignalsForRawDocumentIds>>
+  balance: Awaited<ReturnType<typeof inferDocumentBalanceContext>>["object"]
+}) {
+  if (input.signals.length === 0) {
+    return []
+  }
+
+  if (
+    typeof input.balance.availableBalanceMinor !== "number" &&
+    typeof input.balance.availableCreditLimitMinor !== "number"
+  ) {
+    return input.signals
+  }
+
+  const targetIndex = selectBalanceInferenceTargetSignalIndex({
+    signals: input.signals,
+    balance: {
+      balanceInstrumentLast4Hint: input.balance.balanceInstrumentLast4Hint ?? null,
+      backingAccountLast4Hint: input.balance.backingAccountLast4Hint ?? null,
+    },
+  })
+
+  const updatedSignals = [...input.signals]
+  const target = updatedSignals[targetIndex]
+
+  if (!target) {
+    return input.signals
+  }
+
+  const evidenceJson =
+    target.evidenceJson && typeof target.evidenceJson === "object"
+      ? {
+          ...target.evidenceJson,
+          balanceInference: {
+            reason: input.balance.reason ?? null,
+            institutionIssued: input.balance.institutionIssued,
+          },
+        }
+      : {
+          balanceInference: {
+            reason: input.balance.reason ?? null,
+            institutionIssued: input.balance.institutionIssued,
+          },
+        }
+
+  const updated = await updateExtractedSignal(target.id, {
+    issuerNameHint: target.issuerNameHint ?? null,
+    instrumentLast4Hint:
+      target.instrumentLast4Hint ?? input.balance.balanceInstrumentLast4Hint ?? null,
+    availableBalanceMinor:
+      target.availableBalanceMinor ?? input.balance.availableBalanceMinor ?? null,
+    availableCreditLimitMinor:
+      target.availableCreditLimitMinor ?? input.balance.availableCreditLimitMinor ?? null,
+    balanceAsOfDate: target.balanceAsOfDate ?? input.balance.balanceAsOfDate ?? null,
+    balanceInstrumentLast4Hint:
+      target.balanceInstrumentLast4Hint ?? input.balance.balanceInstrumentLast4Hint ?? null,
+    backingAccountLast4Hint:
+      target.backingAccountLast4Hint ?? input.balance.backingAccountLast4Hint ?? null,
+    backingAccountNameHint:
+      target.backingAccountNameHint ?? input.balance.backingAccountNameHint ?? null,
+    accountRelationshipHint:
+      target.accountRelationshipHint ?? input.balance.accountRelationshipHint ?? null,
+    balanceEvidenceStrength:
+      target.balanceEvidenceStrength ?? input.balance.balanceEvidenceStrength ?? null,
+    evidenceJson,
+  })
+
+  if (updated) {
+    updatedSignals[targetIndex] = updated
+  }
+
+  return updatedSignals
+}
+
 async function enqueueTrackedForecastRefresh(input: {
   userId: string
   correlationId: string
@@ -868,7 +1036,7 @@ async function persistExtractedSignals(input: {
   attachmentIds: string[]
   signals: WorkerExtractedSignal[]
 }) {
-  const createdSignals = await createExtractedSignals(
+  return createExtractedSignals(
     input.signals.map((signal) => ({
       userId: input.userId,
       rawDocumentId: input.rawDocumentId,
@@ -917,19 +1085,6 @@ async function persistExtractedSignals(input: {
       status: "pending",
     })),
   )
-
-  await Promise.all(
-    createdSignals.map((signal) =>
-      enqueueTrackedSignalReconcile({
-        userId: input.userId,
-        extractedSignalId: signal.id,
-        rawDocumentId: input.rawDocumentId,
-        correlationId: `${input.rawDocumentId}:${signal.id}`,
-      }),
-    ),
-  )
-
-  return createdSignals
 }
 
 async function processCandidateMessages(input: {
@@ -1489,19 +1644,13 @@ async function handleDocumentNormalize(job: Job) {
       signals: deterministic.signals,
     })
 
-    const balanceInference = await inferAccountsAndPromoteBalancesForRawDocument({
+    await enqueueTrackedDocumentInferBalance({
       userId: payload.userId,
       rawDocumentId: rawDocument.id,
+      correlationId: payload.correlationId,
+      extractionSource: "deterministic",
+      extractionJobRunId: payload.jobRunId,
     })
-
-    if (balanceInference.promotedAnchorIds.length > 0) {
-      await enqueueTrackedForecastRefresh({
-        userId: payload.userId,
-        correlationId: payload.correlationId,
-        source: "worker",
-        reason: "balance_anchor_changed",
-      })
-    }
 
     await markJobSucceeded(job, payload, {
       extractionSource: "deterministic",
@@ -1509,7 +1658,6 @@ async function handleDocumentNormalize(job: Job) {
       parserName: deterministic.parserName,
       rawDocumentId: rawDocument.id,
       attachmentIds,
-      promotedAnchorCount: balanceInference.promotedAnchorIds.length,
     })
 
     return {
@@ -1747,11 +1895,6 @@ async function handleDocumentExtractStructured(job: Job) {
       signals: signalPayload,
     })
 
-    const balanceInference = await inferAccountsAndPromoteBalancesForRawDocument({
-      userId: payload.userId,
-      rawDocumentId: rawDocument.id,
-    })
-
     if (extracted.recovery.mode === "fallback") {
       await createReviewQueueItem({
         userId: payload.userId,
@@ -1771,21 +1914,19 @@ async function handleDocumentExtractStructured(job: Job) {
       })
     }
 
+    await enqueueTrackedDocumentInferBalance({
+      userId: payload.userId,
+      rawDocumentId: rawDocument.id,
+      correlationId: payload.correlationId,
+      extractionSource: "model",
+      extractionJobRunId: payload.jobRunId,
+    })
+
     await markJobSucceeded(job, payload, {
       signalCount: signals.length,
       modelRunId: modelRun.id,
       routeLabel: payload.routeLabel,
-      promotedAnchorCount: balanceInference.promotedAnchorIds.length,
     })
-
-    if (balanceInference.promotedAnchorIds.length > 0) {
-      await enqueueTrackedForecastRefresh({
-        userId: payload.userId,
-        correlationId: payload.correlationId,
-        source: "worker",
-        reason: "balance_anchor_changed",
-      })
-    }
 
     return {
       signalCount: signals.length,
@@ -1796,6 +1937,154 @@ async function handleDocumentExtractStructured(job: Job) {
       errorMessage: error instanceof Error ? error.message : "Unknown extraction failure",
     })
     throw error
+  }
+}
+
+function hasBalanceInferencePayload(
+  result: Awaited<ReturnType<typeof inferDocumentBalanceContext>>["object"],
+) {
+  return (
+    typeof result.availableBalanceMinor === "number" ||
+    typeof result.availableCreditLimitMinor === "number" ||
+    Boolean(result.balanceInstrumentLast4Hint) ||
+    Boolean(result.backingAccountLast4Hint)
+  )
+}
+
+async function handleDocumentInferBalance(job: Job) {
+  const payload = documentInferBalanceJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const rawDocument = await getRawDocumentById(payload.rawDocumentId)
+
+  if (!rawDocument) {
+    throw new Error(`Missing raw document ${payload.rawDocumentId}`)
+  }
+
+  const normalizedDocument = await buildNormalizedExtractionDocument(rawDocument)
+  const signals = await listExtractedSignalsForRawDocumentIds([rawDocument.id])
+  const knownInstruments = await listRecentPaymentInstrumentsForUser(payload.userId)
+  const modelRun = await createModelRun({
+    userId: payload.userId,
+    rawDocumentId: rawDocument.id,
+    taskType: "balance_inference",
+    provider: "ai-gateway",
+    modelName: aiModels.financeBalanceExtractor,
+    promptVersion: aiPromptVersions.financeBalanceExtractor,
+    status: "running",
+  })
+
+  let balanceInference:
+    | Awaited<ReturnType<typeof inferDocumentBalanceContext>>
+    | undefined
+  let modelError: Error | null = null
+
+  try {
+    balanceInference = await inferDocumentBalanceContext({
+      normalizedDocument,
+      signals: signals.map((signal) => ({
+        signalType: signal.signalType,
+        candidateEventType: signal.candidateEventType ?? null,
+        instrumentLast4Hint: signal.instrumentLast4Hint ?? null,
+        balanceInstrumentLast4Hint: signal.balanceInstrumentLast4Hint ?? null,
+        backingAccountLast4Hint: signal.backingAccountLast4Hint ?? null,
+        amountMinor: signal.amountMinor ?? null,
+        currency: signal.currency ?? null,
+      })),
+      existingInstruments: knownInstruments.map((entry) => ({
+        displayName: entry.instrument.displayName,
+        instrumentType: entry.instrument.instrumentType,
+        maskedIdentifier: entry.instrument.maskedIdentifier ?? null,
+        institutionName: entry.institution?.displayName ?? null,
+      })),
+    })
+
+    await updateModelRun(modelRun.id, {
+      status: "succeeded",
+      provider: balanceInference.metadata.provider,
+      modelName: balanceInference.metadata.modelName,
+      promptVersion: balanceInference.metadata.promptVersion,
+      inputTokens: balanceInference.metadata.inputTokens,
+      outputTokens: balanceInference.metadata.outputTokens,
+      latencyMs: balanceInference.metadata.latencyMs,
+      requestId: balanceInference.metadata.requestId,
+      resultJson: {
+        recovery: balanceInference.recovery,
+        result: balanceInference.object,
+      },
+    })
+  } catch (error) {
+    modelError = error instanceof Error ? error : new Error("Unknown balance inference failure")
+    await updateModelRun(modelRun.id, {
+      status: "failed",
+      errorMessage: modelError.message,
+    })
+  }
+
+  let enrichedSignals = signals
+
+  if (balanceInference && hasBalanceInferencePayload(balanceInference.object) && signals.length > 0) {
+    enrichedSignals = await applyBalanceInferenceToSignals({
+      signals,
+      balance: balanceInference.object,
+    })
+  }
+
+  const balanceOutcome =
+    signals.length > 0
+      ? await inferAccountsAndPromoteBalancesForRawDocument({
+          userId: payload.userId,
+          rawDocumentId: rawDocument.id,
+        })
+      : balanceInference && hasBalanceInferencePayload(balanceInference.object)
+        ? await inferAccountsAndPromoteStandaloneBalanceEvidence({
+            userId: payload.userId,
+            rawDocumentId: rawDocument.id,
+            rawDocumentTimestamp: rawDocument.messageTimestamp,
+            rawDocumentSender: rawDocument.fromAddress,
+            rawDocumentSubject: rawDocument.subject,
+            evidence: balanceInference.object,
+          })
+        : {
+            createdObservationIds: [],
+            promotedAnchorIds: [],
+            linkedInstrumentIds: [],
+            updatedEventIds: [],
+            updatedInstrumentIds: [],
+          }
+
+  if (signals.length > 0) {
+    await enqueueTrackedSignalReconcilesForSignals({
+      userId: payload.userId,
+      rawDocumentId: rawDocument.id,
+      signals: enrichedSignals,
+    })
+  }
+
+  if (balanceOutcome.promotedAnchorIds.length > 0) {
+    await enqueueTrackedForecastRefresh({
+      userId: payload.userId,
+      correlationId: payload.correlationId,
+      source: "worker",
+      reason: "balance_anchor_changed",
+    })
+  }
+
+  await markJobSucceeded(job, payload, {
+    rawDocumentId: rawDocument.id,
+    modelRunId: modelRun.id,
+    signalCount: signals.length,
+    balanceInferenceApplied: balanceInference
+      ? hasBalanceInferencePayload(balanceInference.object)
+      : false,
+    balanceInferenceError: modelError?.message ?? null,
+    observationCount: balanceOutcome.createdObservationIds.length,
+    promotedAnchorCount: balanceOutcome.promotedAnchorIds.length,
+  })
+
+  return {
+    signalCount: signals.length,
+    promotedAnchorCount: balanceOutcome.promotedAnchorIds.length,
   }
 }
 
@@ -2297,6 +2586,22 @@ const aiExtractionWorker = new Worker(
   },
 )
 
+const balanceInferenceWorker = new Worker(
+  BALANCE_INFERENCE_QUEUE_NAME,
+  async (job) => {
+    if (job.name !== DOCUMENT_INFER_BALANCE_JOB_NAME) {
+      throw new Error(`Unsupported job: ${job.name}`)
+    }
+
+    return handleDocumentInferBalance(job)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 2,
+  },
+)
+
 const reconciliationWorker = new Worker(
   RECONCILIATION_QUEUE_NAME,
   async (job) => {
@@ -2420,6 +2725,7 @@ for (const [queueName, worker] of [
   [FX_QUEUE_NAME, fxWorker],
   [DOCUMENT_NORMALIZATION_QUEUE_NAME, documentNormalizationWorker],
   [AI_EXTRACTION_QUEUE_NAME, aiExtractionWorker],
+  [BALANCE_INFERENCE_QUEUE_NAME, balanceInferenceWorker],
   [RECONCILIATION_QUEUE_NAME, reconciliationWorker],
   [RECURRING_DETECTION_QUEUE_NAME, recurringDetectionWorker],
   [FORECASTING_QUEUE_NAME, forecastingWorker],

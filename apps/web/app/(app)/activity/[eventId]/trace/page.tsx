@@ -87,6 +87,26 @@ function asExplanation(value: unknown) {
   return typeof explanation === "string" ? explanation : null
 }
 
+function formatMinorValue(value: number | null | undefined, currency = "INR") {
+  if (typeof value !== "number") {
+    return "null"
+  }
+
+  return `${formatCurrency(value, currency)} (${value})`
+}
+
+function formatJson(value: unknown) {
+  if (value == null) {
+    return "null"
+  }
+
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 export default async function EventTracePage({
   params,
 }: EventTracePageProps) {
@@ -382,6 +402,105 @@ export default async function EventTracePage({
                           </div>
                         </div>
                       )}
+                    </div>
+
+                    <div>
+                      <SectionLabel>Debug</SectionLabel>
+                      <div className="divide-y divide-white/[0.06]">
+                        <InfoRow
+                          label="signal id"
+                          value={entry.extractedSignal?.id ?? "unavailable"}
+                        />
+                        <InfoRow
+                          label="signal type"
+                          value={entry.extractedSignal?.signalType ?? "unavailable"}
+                        />
+                        <InfoRow
+                          label="amount minor"
+                          value={typeof entry.extractedSignal?.amountMinor === "number"
+                            ? `${entry.extractedSignal.amountMinor}`
+                            : "null"}
+                        />
+                        <InfoRow
+                          label="instrument last4"
+                          value={entry.extractedSignal?.instrumentLast4Hint ?? "null"}
+                        />
+                        <InfoRow
+                          label="balance instrument last4"
+                          value={entry.extractedSignal?.balanceInstrumentLast4Hint ?? "null"}
+                        />
+                        <InfoRow
+                          label="backing account last4"
+                          value={entry.extractedSignal?.backingAccountLast4Hint ?? "null"}
+                        />
+                        <InfoRow
+                          label="account relationship"
+                          value={entry.extractedSignal?.accountRelationshipHint ?? "null"}
+                        />
+                        <InfoRow
+                          label="balance evidence"
+                          value={entry.extractedSignal?.balanceEvidenceStrength ?? "null"}
+                        />
+                        <InfoRow
+                          label="available balance"
+                          value={formatMinorValue(
+                            entry.extractedSignal?.availableBalanceMinor,
+                            entry.extractedSignal?.currency ?? trace.event.currency,
+                          )}
+                        />
+                        <InfoRow
+                          label="available credit limit"
+                          value={formatMinorValue(
+                            entry.extractedSignal?.availableCreditLimitMinor,
+                            entry.extractedSignal?.currency ?? trace.event.currency,
+                          )}
+                        />
+                      </div>
+
+                      <div className="mt-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/28">
+                          balance observations
+                        </p>
+                        {entry.balanceObservations.length > 0 ? (
+                          <div className="mt-2 divide-y divide-white/[0.06]">
+                            {entry.balanceObservations.map((balanceRow) => (
+                              <div key={balanceRow.observation.id} className="py-3">
+                                <p className="text-sm text-white">
+                                  {balanceRow.observation.observationKind} ·{" "}
+                                  {formatMinorValue(
+                                    balanceRow.observation.amountMinor,
+                                    balanceRow.observation.currency,
+                                  )}
+                                </p>
+                                <p className="mt-1 text-sm text-white/32">
+                                  {balanceRow.paymentInstrument?.displayName ?? "unlinked instrument"} ·{" "}
+                                  {formatDateTime(balanceRow.observation.observedAt, settings.timeZone)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-sm text-white/36">none</p>
+                        )}
+                      </div>
+
+                      {entry.modelRuns.length > 0 ? (
+                        <div className="mt-4 grid gap-4">
+                          {entry.modelRuns.map((modelRun) => (
+                            <div key={modelRun.id} className="border border-white/8 bg-white/[0.02] p-4">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/28">
+                                {modelRun.taskType}
+                              </p>
+                              <p className="mt-2 text-sm text-white/36">
+                                {modelRun.provider} · {modelRun.modelName}
+                              </p>
+                              <pre className="mt-3 overflow-x-auto border border-white/8 bg-[rgba(255,255,255,0.03)] p-3 text-xs leading-6 whitespace-pre-wrap text-white/62 [overflow-wrap:anywhere]">
+                                {formatJson(modelRun.resultJson)}
+                              </pre>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Model runs */}

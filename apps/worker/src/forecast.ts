@@ -7,6 +7,7 @@ import {
   getBalanceAnchorForInstrument,
   getFinancialEventById,
   getForecastRunByIdentity,
+  getLatestBalanceObservationForInstrument,
   getLatestForecastRunWithSnapshots,
   getOrCreateFinancialInstitution,
   getPaymentInstrumentById,
@@ -33,6 +34,7 @@ import {
   type PaymentInstrumentType,
 } from "@workspace/db"
 import { createLogger } from "@workspace/observability"
+import type { DocumentBalanceInferenceResult } from "@workspace/ai"
 
 const logger = createLogger("worker.forecast")
 
@@ -169,8 +171,31 @@ function extractSenderDisplayName(input: string | null | undefined) {
   return normalized.slice(0, angleIndex).replace(/^"+|"+$/g, "").trim() || normalized
 }
 
+type BalanceBearingSignal = Pick<
+  ExtractedSignalSelect,
+  | "signalType"
+  | "candidateEventType"
+  | "amountMinor"
+  | "currency"
+  | "issuerNameHint"
+  | "instrumentLast4Hint"
+  | "availableBalanceMinor"
+  | "availableCreditLimitMinor"
+  | "balanceAsOfDate"
+  | "balanceInstrumentLast4Hint"
+  | "backingAccountLast4Hint"
+  | "backingAccountNameHint"
+  | "accountRelationshipHint"
+  | "balanceEvidenceStrength"
+  | "channelHint"
+  | "paymentInstrumentHint"
+  | "confidence"
+> & {
+  id: string | null
+}
+
 function inferBalanceEvidenceStrength(input: {
-  rawStrength: ExtractedSignalSelect["balanceEvidenceStrength"]
+  rawStrength: BalanceBearingSignal["balanceEvidenceStrength"]
   confidence: number
 }) {
   if (input.rawStrength) {
@@ -192,12 +217,12 @@ function isStrongBalanceEvidence(strength: ReturnType<typeof inferBalanceEvidenc
   return strength === "explicit" || strength === "strong"
 }
 
-function inferCashInstrumentType(signal: ExtractedSignalSelect): PaymentInstrumentType {
+function inferCashInstrumentType(signal: BalanceBearingSignal): PaymentInstrumentType {
   return signal.channelHint === "wallet" ? "wallet" : "bank_account"
 }
 
 function inferNonCashInstrumentType(input: {
-  signal: ExtractedSignalSelect
+  signal: BalanceBearingSignal
   sender: string | null
   subject: string | null
 }): PaymentInstrumentType {
@@ -245,7 +270,7 @@ function buildInstrumentDisplayName(input: {
 }
 
 function getBalanceObservedAt(input: {
-  signal: ExtractedSignalSelect
+  signal: BalanceBearingSignal
   rawDocumentTimestamp: Date | null
   fallbackTimestamp: Date
 }) {
@@ -364,9 +389,45 @@ async function maybePromoteObservationToAnchor(input: {
   return true
 }
 
+async function maybeSyncCreditLimitToInstrument(input: {
+  userId: string
+  paymentInstrument: PaymentInstrumentSelect
+  observationId: string
+  amountMinor: number
+  evidenceStrength: ReturnType<typeof inferBalanceEvidenceStrength>
+}) {
+  if (!isStrongBalanceEvidence(input.evidenceStrength)) {
+    return false
+  }
+
+  if (["bank_account", "wallet"].includes(input.paymentInstrument.instrumentType)) {
+    return false
+  }
+
+  const latestObservation = await getLatestBalanceObservationForInstrument({
+    userId: input.userId,
+    paymentInstrumentId: input.paymentInstrument.id,
+    observationKind: "available_credit_limit",
+  })
+
+  if (!latestObservation || latestObservation.id !== input.observationId) {
+    return false
+  }
+
+  if (input.paymentInstrument.creditLimitMinor === input.amountMinor) {
+    return false
+  }
+
+  await updatePaymentInstrument(input.paymentInstrument.id, {
+    creditLimitMinor: input.amountMinor,
+  })
+
+  return true
+}
+
 type BalanceInferenceSignalContext = {
   userId: string
-  signal: ExtractedSignalSelect
+  signal: BalanceBearingSignal
   rawDocumentId: string | null
   rawDocumentTimestamp: Date | null
   rawDocumentSender: string | null
@@ -375,6 +436,31 @@ type BalanceInferenceSignalContext = {
   currentPaymentInstrumentId: string | null
   fallbackCurrency: string
   fallbackTimestamp: Date
+}
+
+function buildSyntheticBalanceSignal(
+  input: DocumentBalanceInferenceResult,
+): BalanceBearingSignal {
+  return {
+    id: null,
+    signalType: "generic_finance_signal",
+    candidateEventType: null,
+    amountMinor: null,
+    currency: "INR",
+    issuerNameHint: null,
+    instrumentLast4Hint: input.balanceInstrumentLast4Hint ?? null,
+    availableBalanceMinor: input.availableBalanceMinor ?? null,
+    availableCreditLimitMinor: input.availableCreditLimitMinor ?? null,
+    balanceAsOfDate: input.balanceAsOfDate ?? null,
+    balanceInstrumentLast4Hint: input.balanceInstrumentLast4Hint ?? null,
+    backingAccountLast4Hint: input.backingAccountLast4Hint ?? null,
+    backingAccountNameHint: input.backingAccountNameHint ?? null,
+    accountRelationshipHint: input.accountRelationshipHint ?? null,
+    balanceEvidenceStrength: input.balanceEvidenceStrength ?? null,
+    channelHint: null,
+    paymentInstrumentHint: null,
+    confidence: input.balanceEvidenceStrength === "explicit" ? 0.98 : 0.85,
+  }
 }
 
 async function processBalanceBearingSignal(
@@ -389,6 +475,7 @@ async function processBalanceBearingSignal(
       promotedAnchorIds: [] as string[],
       linkedInstrumentIds: [] as string[],
       updatedEventIds: [] as string[],
+      updatedInstrumentIds: [] as string[],
     }
   }
 
@@ -414,10 +501,15 @@ async function processBalanceBearingSignal(
     input.currentPaymentInstrumentId != null
       ? (await getPaymentInstrumentById(input.currentPaymentInstrumentId))?.instrument ?? null
       : null
+  const inferredTransactingInstrumentType = inferNonCashInstrumentType({
+    signal: input.signal,
+    sender: input.rawDocumentSender,
+    subject: input.rawDocumentSubject,
+  })
   const transactingLast4 =
     normalizeInstrumentMaskedIdentifier(input.signal.instrumentLast4Hint) ??
     normalizeInstrumentMaskedIdentifier(input.signal.balanceInstrumentLast4Hint)
-  const transactingInstrument =
+  let transactingInstrument =
     currentInstrument ??
     (transactingLast4
       ? await getPaymentInstrumentByUserAndLast4({
@@ -425,6 +517,17 @@ async function processBalanceBearingSignal(
           last4: transactingLast4,
         })
       : null)
+
+  if (
+    transactingInstrument &&
+    inferredTransactingInstrumentType !== "unknown" &&
+    transactingInstrument.instrumentType !== inferredTransactingInstrumentType
+  ) {
+    transactingInstrument =
+      (await updatePaymentInstrument(transactingInstrument.id, {
+        instrumentType: inferredTransactingInstrumentType,
+      })) ?? transactingInstrument
+  }
 
   const backingAccountLast4 =
     normalizeInstrumentMaskedIdentifier(input.signal.backingAccountLast4Hint) ??
@@ -452,6 +555,7 @@ async function processBalanceBearingSignal(
   const promotedAnchorIds: string[] = []
   const linkedInstrumentIds: string[] = []
   const updatedEventIds: string[] = []
+  const updatedInstrumentIds: string[] = []
 
   if (
     cashInstrument &&
@@ -551,6 +655,18 @@ async function processBalanceBearingSignal(
       confidence: Number(input.signal.confidence),
     })
     createdObservationIds.push(observation.id)
+
+    if (
+      await maybeSyncCreditLimitToInstrument({
+        userId: input.userId,
+        paymentInstrument: creditLimitTarget,
+        observationId: observation.id,
+        amountMinor: input.signal.availableCreditLimitMinor,
+        evidenceStrength,
+      })
+    ) {
+      updatedInstrumentIds.push(creditLimitTarget.id)
+    }
   }
 
   return {
@@ -558,6 +674,7 @@ async function processBalanceBearingSignal(
     promotedAnchorIds,
     linkedInstrumentIds,
     updatedEventIds,
+    updatedInstrumentIds,
   }
 }
 
@@ -573,6 +690,7 @@ export async function inferAccountsAndPromoteBalancesForRawDocument(input: {
       promotedAnchorIds: [],
       linkedInstrumentIds: [],
       updatedEventIds: [],
+      updatedInstrumentIds: [],
     }
   }
 
@@ -581,6 +699,7 @@ export async function inferAccountsAndPromoteBalancesForRawDocument(input: {
   const promotedAnchorIds: string[] = []
   const linkedInstrumentIds: string[] = []
   const updatedEventIds: string[] = []
+  const updatedInstrumentIds: string[] = []
 
   for (const signal of signals) {
     const outcome = await processBalanceBearingSignal({
@@ -600,6 +719,7 @@ export async function inferAccountsAndPromoteBalancesForRawDocument(input: {
     promotedAnchorIds.push(...outcome.promotedAnchorIds)
     linkedInstrumentIds.push(...outcome.linkedInstrumentIds)
     updatedEventIds.push(...outcome.updatedEventIds)
+    updatedInstrumentIds.push(...outcome.updatedInstrumentIds)
   }
 
   return {
@@ -607,6 +727,7 @@ export async function inferAccountsAndPromoteBalancesForRawDocument(input: {
     promotedAnchorIds: [...new Set(promotedAnchorIds)],
     linkedInstrumentIds: [...new Set(linkedInstrumentIds)],
     updatedEventIds: [...new Set(updatedEventIds)],
+    updatedInstrumentIds: [...new Set(updatedInstrumentIds)],
   }
 }
 
@@ -621,6 +742,7 @@ export async function inferAccountsAndPromoteBalancesForEvent(input: {
       promotedAnchorIds: [],
       linkedInstrumentIds: [],
       updatedEventIds: [],
+      updatedInstrumentIds: [],
     }
   }
 
@@ -629,6 +751,7 @@ export async function inferAccountsAndPromoteBalancesForEvent(input: {
   const promotedAnchorIds: string[] = []
   const linkedInstrumentIds: string[] = []
   const updatedEventIds: string[] = []
+  const updatedInstrumentIds: string[] = []
 
   for (const row of sources) {
     const signal = row.extractedSignal
@@ -653,6 +776,7 @@ export async function inferAccountsAndPromoteBalancesForEvent(input: {
     promotedAnchorIds.push(...outcome.promotedAnchorIds)
     linkedInstrumentIds.push(...outcome.linkedInstrumentIds)
     updatedEventIds.push(...outcome.updatedEventIds)
+    updatedInstrumentIds.push(...outcome.updatedInstrumentIds)
   }
 
   return {
@@ -660,7 +784,30 @@ export async function inferAccountsAndPromoteBalancesForEvent(input: {
     promotedAnchorIds: [...new Set(promotedAnchorIds)],
     linkedInstrumentIds: [...new Set(linkedInstrumentIds)],
     updatedEventIds: [...new Set(updatedEventIds)],
+    updatedInstrumentIds: [...new Set(updatedInstrumentIds)],
   }
+}
+
+export async function inferAccountsAndPromoteStandaloneBalanceEvidence(input: {
+  userId: string
+  rawDocumentId: string
+  rawDocumentTimestamp: Date
+  rawDocumentSender: string | null
+  rawDocumentSubject: string | null
+  evidence: DocumentBalanceInferenceResult
+}) {
+  return processBalanceBearingSignal({
+    userId: input.userId,
+    signal: buildSyntheticBalanceSignal(input.evidence),
+    rawDocumentId: input.rawDocumentId,
+    rawDocumentTimestamp: input.rawDocumentTimestamp,
+    rawDocumentSender: input.rawDocumentSender,
+    rawDocumentSubject: input.rawDocumentSubject,
+    financialEventId: null,
+    currentPaymentInstrumentId: null,
+    fallbackCurrency: "INR",
+    fallbackTimestamp: input.rawDocumentTimestamp,
+  })
 }
 
 export async function refreshForecastForUser(input: {

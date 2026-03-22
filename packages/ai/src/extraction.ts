@@ -133,6 +133,34 @@ export type NormalizedFinanceDocumentInput = {
 
 type ModelRunMetadata = GeneratedObjectMetadata
 
+const balanceRecoverySchema = z.object({
+  containsAvailableBalance: z.boolean().default(false),
+  containsAvailableCreditLimit: z.boolean().default(false),
+  availableBalanceMinor: z.number().int().nonnegative().nullable().optional(),
+  availableCreditLimitMinor: z.number().int().nonnegative().nullable().optional(),
+  balanceAsOfDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+  balanceInstrumentLast4Hint: z.string().max(16).nullable().optional(),
+  backingAccountLast4Hint: z.string().max(16).nullable().optional(),
+  backingAccountNameHint: z.string().max(160).nullable().optional(),
+  accountRelationshipHint: z
+    .enum(["direct_account", "linked_card_account", "unknown"])
+    .nullable()
+    .optional(),
+  balanceEvidenceStrength: z.enum(["explicit", "strong", "weak"]).nullable().optional(),
+  explanation: z.string().max(240).optional(),
+})
+
+const balanceInferenceSchema = balanceRecoverySchema.extend({
+  institutionIssued: z.boolean().default(false),
+  reason: z.string().max(240).optional(),
+})
+
+export type DocumentBalanceInferenceResult = z.infer<typeof balanceInferenceSchema>
+
 function getGatewayProvider() {
   const env = getAiEnv()
 
@@ -171,6 +199,36 @@ function normalizeNumber(value: unknown) {
   if (typeof value === "string") {
     const parsed = Number.parseFloat(value.trim())
     return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+function normalizeMinorAmount(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (Number.isInteger(value)) {
+      return value
+    }
+
+    return Math.round(value * 100)
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    const numeric = Number.parseFloat(trimmed.replace(/,/g, ""))
+    if (!Number.isFinite(numeric)) {
+      return null
+    }
+
+    if (trimmed.includes(".")) {
+      return Math.round(numeric * 100)
+    }
+
+    return Number.isInteger(numeric) ? numeric : Math.round(numeric * 100)
   }
 
   return null
@@ -271,6 +329,219 @@ function normalizeChannelHint(value: unknown): StructuredExtractionSignal["chann
     default:
       return null
   }
+}
+
+function coerceBalanceInferenceResult(raw: unknown): DocumentBalanceInferenceResult | null {
+  if (!raw || typeof raw !== "object") {
+    return null
+  }
+
+  const record = raw as Record<string, unknown>
+  const availableBalanceMinor = normalizeMinorAmount(record.availableBalanceMinor)
+  const availableCreditLimitMinor = normalizeMinorAmount(record.availableCreditLimitMinor)
+
+  return {
+    containsAvailableBalance:
+      normalizeBoolean(record.containsAvailableBalance) ||
+      Number.isInteger(availableBalanceMinor),
+    containsAvailableCreditLimit:
+      normalizeBoolean(record.containsAvailableCreditLimit) ||
+      Number.isInteger(availableCreditLimitMinor),
+    availableBalanceMinor: Number.isInteger(availableBalanceMinor) ? availableBalanceMinor : null,
+    availableCreditLimitMinor: Number.isInteger(availableCreditLimitMinor)
+      ? availableCreditLimitMinor
+      : null,
+    balanceAsOfDate: normalizeEventDate(record.balanceAsOfDate),
+    balanceInstrumentLast4Hint: normalizeString(record.balanceInstrumentLast4Hint, 16),
+    backingAccountLast4Hint: normalizeString(record.backingAccountLast4Hint, 16),
+    backingAccountNameHint: normalizeString(record.backingAccountNameHint, 160),
+    accountRelationshipHint: normalizeAccountRelationshipHint(record.accountRelationshipHint),
+    balanceEvidenceStrength: normalizeBalanceEvidenceStrength(record.balanceEvidenceStrength),
+    institutionIssued: normalizeBoolean(record.institutionIssued),
+    reason: normalizeString(record.reason, 240) ?? undefined,
+    explanation:
+      normalizeString(record.explanation, 240) ??
+      "Recovered balance evidence from schema-mismatch model output.",
+  }
+}
+
+export function mergeBalanceInferenceIntoSignals(input: {
+  signals: StructuredExtractionSignal[]
+  balance: DocumentBalanceInferenceResult
+}) {
+  if (input.signals.length === 0) {
+    return input.signals
+  }
+
+  if (
+    typeof input.balance.availableBalanceMinor !== "number" &&
+    typeof input.balance.availableCreditLimitMinor !== "number"
+  ) {
+    return input.signals
+  }
+
+  let targetIndex = 0
+
+  if (input.balance.balanceInstrumentLast4Hint) {
+    const matchedIndex = input.signals.findIndex(
+      (signal) =>
+        signal.instrumentLast4Hint === input.balance.balanceInstrumentLast4Hint ||
+        signal.balanceInstrumentLast4Hint === input.balance.balanceInstrumentLast4Hint,
+    )
+
+    if (matchedIndex >= 0) {
+      targetIndex = matchedIndex
+    }
+  }
+
+  return input.signals.map((signal, index) => {
+    if (index !== targetIndex) {
+      return signal
+    }
+
+    return {
+      ...signal,
+      availableBalanceMinor:
+        signal.availableBalanceMinor ?? input.balance.availableBalanceMinor ?? null,
+      availableCreditLimitMinor:
+        signal.availableCreditLimitMinor ?? input.balance.availableCreditLimitMinor ?? null,
+      balanceAsOfDate: signal.balanceAsOfDate ?? input.balance.balanceAsOfDate ?? null,
+      balanceInstrumentLast4Hint:
+        signal.balanceInstrumentLast4Hint ?? input.balance.balanceInstrumentLast4Hint ?? null,
+      backingAccountLast4Hint:
+        signal.backingAccountLast4Hint ?? input.balance.backingAccountLast4Hint ?? null,
+      backingAccountNameHint:
+        signal.backingAccountNameHint ?? input.balance.backingAccountNameHint ?? null,
+      accountRelationshipHint:
+        signal.accountRelationshipHint ?? input.balance.accountRelationshipHint ?? null,
+      balanceEvidenceStrength:
+        signal.balanceEvidenceStrength ?? input.balance.balanceEvidenceStrength ?? null,
+      explanation:
+        signal.explanation ??
+        input.balance.explanation ??
+        "Model extracted balance-bearing evidence from the source document.",
+    }
+  })
+}
+
+function buildSignalContext(signals: Array<{
+  signalType: string
+  candidateEventType?: string | null
+  instrumentLast4Hint?: string | null
+  balanceInstrumentLast4Hint?: string | null
+  backingAccountLast4Hint?: string | null
+  amountMinor?: number | null
+  currency?: string | null
+}>) {
+  if (signals.length === 0) {
+    return "No extracted signals exist yet."
+  }
+
+  return signals
+    .map((signal, index) =>
+      [
+        `Signal ${index + 1}:`,
+        `type=${signal.signalType}`,
+        `candidateEventType=${signal.candidateEventType ?? "null"}`,
+        `amountMinor=${signal.amountMinor ?? "null"}`,
+        `currency=${signal.currency ?? "null"}`,
+        `instrumentLast4=${signal.instrumentLast4Hint ?? "null"}`,
+        `balanceInstrumentLast4=${signal.balanceInstrumentLast4Hint ?? "null"}`,
+        `backingAccountLast4=${signal.backingAccountLast4Hint ?? "null"}`,
+      ].join(" "),
+    )
+    .join("\n")
+}
+
+function buildInstrumentContext(
+  instruments: Array<{
+    displayName: string
+    instrumentType: string
+    maskedIdentifier: string | null
+    institutionName: string | null
+  }>,
+) {
+  if (instruments.length === 0) {
+    return "No known instruments for this user."
+  }
+
+  return instruments
+    .map(
+      (instrument, index) =>
+        `Instrument ${index + 1}: ${instrument.displayName} | type=${instrument.instrumentType} | last4=${instrument.maskedIdentifier ?? "null"} | institution=${instrument.institutionName ?? "null"}`,
+    )
+    .join("\n")
+}
+
+export async function inferDocumentBalanceContext(input: {
+  normalizedDocument: NormalizedFinanceDocumentInput
+  signals: Array<{
+    signalType: StructuredExtractionSignal["signalType"]
+    candidateEventType?: StructuredExtractionSignal["candidateEventType"]
+    instrumentLast4Hint?: string | null
+    balanceInstrumentLast4Hint?: string | null
+    backingAccountLast4Hint?: string | null
+    amountMinor?: number | null
+    currency?: string | null
+  }>
+  existingInstruments?: Array<{
+    displayName: string
+    instrumentType: string
+    maskedIdentifier: string | null
+    institutionName: string | null
+  }>
+}) {
+  const gateway = getGatewayProvider()
+  const prompt = [
+    "You extract only account-balance, credit-limit, and card-to-account-linking evidence from a single normalized finance document.",
+    "This is a dedicated post-extraction balance inference step that runs even when the main transaction signal is already obvious.",
+    "Decide whether the document explicitly contains available balance and/or available credit limit.",
+    "Return only what is directly supported by the source text. Do not guess.",
+    "institutionIssued should be true only when the sender/content clearly indicates a bank, card issuer, wallet, or account provider.",
+    "Available balance on a bank account or wallet is cash-balance evidence.",
+    "Available credit limit on a credit card is headroom evidence only, not a cash balance.",
+    "If a card/account ending is shown with the balance or limit, populate balanceInstrumentLast4Hint.",
+    "If a separate backing bank account is explicitly identified, populate backingAccountLast4Hint and backingAccountNameHint.",
+    "accountRelationshipHint should be direct_account when the balance belongs to the account itself, linked_card_account when the card is explicitly tied to a backing account, or unknown otherwise.",
+    "balanceEvidenceStrength should be explicit for clear stated values, strong for clear but slightly indirect evidence, and weak otherwise.",
+    "Return monetary values in minor units. Example: Rs 5943.4 -> 594340, INR 47045.25 -> 4704525.",
+    "Example: 'account 30XX8899 has been debited via Debit Card XX5754 ... available balance is Rs 5943.4' means backingAccountLast4Hint=8899, balanceInstrumentLast4Hint=5754, accountRelationshipHint=linked_card_account, availableBalanceMinor=594340.",
+    "Ignore transaction amount, merchant name, processor, support phone numbers, footer text, and boilerplate unless needed to understand which instrument the balance belongs to.",
+    "",
+    "Existing extracted signals:",
+    buildSignalContext(input.signals),
+    "",
+    "Known user instruments:",
+    buildInstrumentContext(input.existingInstruments ?? []),
+    "",
+    buildBaseContext(input.normalizedDocument),
+  ].join("\n")
+
+  return generateStructuredObject({
+    model: gateway(aiModels.financeBalanceExtractor),
+    schema: balanceInferenceSchema,
+    prompt,
+    provider: providerName,
+    modelName: aiModels.financeBalanceExtractor,
+    promptVersion: aiPromptVersions.financeBalanceExtractor,
+    coerce: (raw) => coerceBalanceInferenceResult(raw),
+    fallback: () => ({
+      containsAvailableBalance: false,
+      containsAvailableCreditLimit: false,
+      availableBalanceMinor: null,
+      availableCreditLimitMinor: null,
+      balanceAsOfDate: null,
+      balanceInstrumentLast4Hint: null,
+      backingAccountLast4Hint: null,
+      backingAccountNameHint: null,
+      accountRelationshipHint: null,
+      balanceEvidenceStrength: null,
+      institutionIssued: false,
+      reason: "The document did not provide clear balance-bearing account evidence.",
+      explanation:
+        "Balance inference could not validate a balance or credit-limit amount.",
+    }),
+  })
 }
 
 function normalizeAccountRelationshipHint(
@@ -477,7 +748,7 @@ function coerceStructuredExtractionResult(
       signalType === "generic_finance_signal"
         ? null
         : normalizeCandidateEventType(record.candidateEventType)
-    const amountMinorValue = normalizeNumber(record.amountMinor)
+    const amountMinorValue = normalizeMinorAmount(record.amountMinor)
 
     return [
       {
@@ -488,14 +759,8 @@ function coerceStructuredExtractionResult(
         eventDate: normalizeEventDate(record.eventDate),
         issuerNameHint: normalizeString(record.issuerNameHint, 160),
         instrumentLast4Hint: normalizeString(record.instrumentLast4Hint, 16),
-        availableBalanceMinor: (() => {
-          const value = normalizeNumber(record.availableBalanceMinor)
-          return Number.isInteger(value) ? value : null
-        })(),
-        availableCreditLimitMinor: (() => {
-          const value = normalizeNumber(record.availableCreditLimitMinor)
-          return Number.isInteger(value) ? value : null
-        })(),
+        availableBalanceMinor: normalizeMinorAmount(record.availableBalanceMinor),
+        availableCreditLimitMinor: normalizeMinorAmount(record.availableCreditLimitMinor),
         balanceAsOfDate: normalizeEventDate(record.balanceAsOfDate),
         balanceInstrumentLast4Hint: normalizeString(record.balanceInstrumentLast4Hint, 16),
         backingAccountLast4Hint: normalizeString(record.backingAccountLast4Hint, 16),
@@ -688,6 +953,8 @@ export async function extractStructuredSignals(input: {
     "accountRelationshipHint should be direct_account when the balance belongs to the main account itself, linked_card_account when a card or UPI instrument is explicitly tied to a backing account, or unknown otherwise.",
     "balanceEvidenceStrength should be explicit for direct clear balance statements, strong for clear but slightly indirect balance evidence, and weak when the balance linkage is incomplete.",
     "Available balance on a bank account or wallet is cash-balance evidence. Available credit limit on a credit card is headroom evidence only.",
+    "Always return monetary amounts in minor units. Example: Rs 5943.4 -> 594340. INR 47,045.25 -> 4704525.",
+    "When the text says an account was debited via a debit card, separate the account last4 from the card last4. Example: 'account 30XX8899 ... via Debit Card XX5754 ... available balance Rs 5943.4' means backingAccountLast4Hint=8899, instrumentLast4Hint=5754, accountRelationshipHint=linked_card_account, availableBalanceMinor=594340.",
     "",
     ...routeSpecificInstructions[input.routeLabel],
     "",
@@ -743,16 +1010,18 @@ export async function extractStructuredSignals(input: {
     }),
   })
 
+  const extraction = result.object
+
   if (result.recovery.mode === "strict") {
     logger.info("Extracted structured finance signals", {
       routeLabel: input.routeLabel,
-      signalCount: result.object.signals.length,
+      signalCount: extraction.signals.length,
       ...result.metadata,
     })
   } else {
     logger.warn("Recovered structured finance signals from degraded model response", {
       routeLabel: input.routeLabel,
-      signalCount: result.object.signals.length,
+      signalCount: extraction.signals.length,
       recoveryMode: result.recovery.mode,
       errorMessage: result.recovery.errorMessage,
       finishReason: result.recovery.finishReason,
@@ -762,7 +1031,7 @@ export async function extractStructuredSignals(input: {
   }
 
   return {
-    extraction: result.object,
+    extraction,
     metadata: result.metadata,
     recovery: result.recovery,
   }

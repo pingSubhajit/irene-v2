@@ -98,6 +98,74 @@ export async function updateModelRun(modelRunId: string, input: UpdateModelRunIn
   return modelRun ?? null
 }
 
+type UpdateExtractedSignalInput = {
+  issuerNameHint?: string | null
+  instrumentLast4Hint?: string | null
+  availableBalanceMinor?: number | null
+  availableCreditLimitMinor?: number | null
+  balanceAsOfDate?: string | null
+  balanceInstrumentLast4Hint?: string | null
+  backingAccountLast4Hint?: string | null
+  backingAccountNameHint?: string | null
+  accountRelationshipHint?: "direct_account" | "linked_card_account" | "unknown" | null
+  balanceEvidenceStrength?: "explicit" | "strong" | "weak" | null
+  confidence?: number
+  evidenceJson?: Record<string, unknown>
+}
+
+export async function updateExtractedSignal(
+  extractedSignalId: string,
+  input: UpdateExtractedSignalInput,
+) {
+  const [signal] = await db
+    .update(extractedSignals)
+    .set({
+      issuerNameHint:
+        input.issuerNameHint === null ? null : (input.issuerNameHint ?? undefined),
+      instrumentLast4Hint:
+        input.instrumentLast4Hint === null
+          ? null
+          : (input.instrumentLast4Hint ?? undefined),
+      availableBalanceMinor:
+        input.availableBalanceMinor === null
+          ? null
+          : (input.availableBalanceMinor ?? undefined),
+      availableCreditLimitMinor:
+        input.availableCreditLimitMinor === null
+          ? null
+          : (input.availableCreditLimitMinor ?? undefined),
+      balanceAsOfDate:
+        input.balanceAsOfDate === null ? null : (input.balanceAsOfDate ?? undefined),
+      balanceInstrumentLast4Hint:
+        input.balanceInstrumentLast4Hint === null
+          ? null
+          : (input.balanceInstrumentLast4Hint ?? undefined),
+      backingAccountLast4Hint:
+        input.backingAccountLast4Hint === null
+          ? null
+          : (input.backingAccountLast4Hint ?? undefined),
+      backingAccountNameHint:
+        input.backingAccountNameHint === null
+          ? null
+          : (input.backingAccountNameHint ?? undefined),
+      accountRelationshipHint:
+        input.accountRelationshipHint === null
+          ? null
+          : (input.accountRelationshipHint ?? undefined),
+      balanceEvidenceStrength:
+        input.balanceEvidenceStrength === null
+          ? null
+          : (input.balanceEvidenceStrength ?? undefined),
+      confidence: input.confidence ?? undefined,
+      evidenceJson: input.evidenceJson ?? undefined,
+      updatedAt: new Date(),
+    })
+    .where(eq(extractedSignals.id, extractedSignalId))
+    .returning()
+
+  return signal ?? null
+}
+
 export async function createExtractedSignals(input: ExtractedSignalInsert[]) {
   if (input.length === 0) {
     return []

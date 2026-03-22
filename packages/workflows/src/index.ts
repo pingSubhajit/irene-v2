@@ -1,6 +1,7 @@
 import { checkRedisHealth as sharedCheckRedisHealth } from "./health"
 
 export * from "./extraction"
+export * from "./balance-inference"
 export * from "./forecasting"
 export * from "./fx"
 export * from "./entity-resolution"

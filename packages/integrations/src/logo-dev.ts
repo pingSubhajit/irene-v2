@@ -115,3 +115,26 @@ export async function searchLogoDotDevBrands(query: string) {
     logoUrl: buildLogoDotDevDomainLogoUrl(result.domain),
   }))
 }
+
+export async function resolveLogoDotDevBrandLogoUrl(
+  brandName: string | null | undefined,
+) {
+  const normalizedBrandName = brandName ? normalizeBrandName(brandName) : null
+
+  if (!normalizedBrandName) {
+    return null
+  }
+
+  try {
+    const results = await searchLogoDotDevBrands(normalizedBrandName)
+    const bestLogoUrl = results.find((result) => result.logoUrl)?.logoUrl ?? null
+
+    if (bestLogoUrl) {
+      return bestLogoUrl
+    }
+  } catch {
+    // Fall back to the direct brand endpoint if search is unavailable.
+  }
+
+  return buildLogoDotDevBrandLogoUrl(normalizedBrandName)
+}
