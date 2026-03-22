@@ -14,6 +14,11 @@ import {
   or,
   sql,
 } from "drizzle-orm"
+import {
+  SYSTEM_CATEGORY_PRESENTATION,
+  type CategoryColorToken,
+  type CategoryIconName,
+} from "@workspace/config"
 
 import { db } from "./client"
 import {
@@ -42,25 +47,146 @@ const SYSTEM_CATEGORY_DEFINITIONS: Array<{
   slug: string
   name: string
   kind: CategoryKind
+  iconName: CategoryIconName
+  colorToken: CategoryColorToken
 }> = [
-  { slug: "income", name: "Income", kind: "income" },
-  { slug: "salary", name: "Salary", kind: "income" },
-  { slug: "shopping", name: "Shopping", kind: "expense" },
-  { slug: "food", name: "Food", kind: "expense" },
-  { slug: "transport", name: "Transport", kind: "expense" },
-  { slug: "subscriptions", name: "Subscriptions", kind: "expense" },
-  { slug: "bills", name: "Bills", kind: "expense" },
-  { slug: "gaming", name: "Gaming", kind: "expense" },
-  { slug: "software", name: "Software", kind: "expense" },
-  { slug: "digital_goods", name: "Digital Goods", kind: "expense" },
-  { slug: "entertainment", name: "Entertainment", kind: "expense" },
-  { slug: "travel", name: "Travel", kind: "expense" },
-  { slug: "utilities", name: "Utilities", kind: "expense" },
-  { slug: "debt", name: "Debt", kind: "debt" },
-  { slug: "transfers", name: "Transfers", kind: "transfer" },
-  { slug: "refunds", name: "Refunds", kind: "refund" },
-  { slug: "uncategorized", name: "Uncategorized", kind: "uncategorized" },
+  {
+    slug: "income",
+    name: "Income",
+    kind: "income",
+    ...SYSTEM_CATEGORY_PRESENTATION.income,
+  },
+  {
+    slug: "salary",
+    name: "Salary",
+    kind: "income",
+    ...SYSTEM_CATEGORY_PRESENTATION.salary,
+  },
+  {
+    slug: "shopping",
+    name: "Shopping",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.shopping,
+  },
+  {
+    slug: "food",
+    name: "Food",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.food,
+  },
+  {
+    slug: "transport",
+    name: "Transport",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.transport,
+  },
+  {
+    slug: "subscriptions",
+    name: "Subscriptions",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.subscriptions,
+  },
+  {
+    slug: "bills",
+    name: "Bills",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.bills,
+  },
+  {
+    slug: "gaming",
+    name: "Gaming",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.gaming,
+  },
+  {
+    slug: "software",
+    name: "Software",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.software,
+  },
+  {
+    slug: "digital_goods",
+    name: "Digital Goods",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.digital_goods,
+  },
+  {
+    slug: "entertainment",
+    name: "Entertainment",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.entertainment,
+  },
+  {
+    slug: "travel",
+    name: "Travel",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.travel,
+  },
+  {
+    slug: "utilities",
+    name: "Utilities",
+    kind: "expense",
+    ...SYSTEM_CATEGORY_PRESENTATION.utilities,
+  },
+  {
+    slug: "debt",
+    name: "Debt",
+    kind: "debt",
+    ...SYSTEM_CATEGORY_PRESENTATION.debt,
+  },
+  {
+    slug: "transfers",
+    name: "Transfers",
+    kind: "transfer",
+    ...SYSTEM_CATEGORY_PRESENTATION.transfers,
+  },
+  {
+    slug: "refunds",
+    name: "Refunds",
+    kind: "refund",
+    ...SYSTEM_CATEGORY_PRESENTATION.refunds,
+  },
+  {
+    slug: "uncategorized",
+    name: "Uncategorized",
+    kind: "uncategorized",
+    ...SYSTEM_CATEGORY_PRESENTATION.uncategorized,
+  },
 ]
+
+export function normalizeCategorySlug(input: string | null | undefined) {
+  if (!input) {
+    return null
+  }
+
+  const normalized = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_")
+
+  return normalized.length > 0 ? normalized.slice(0, 64) : null
+}
+
+export function deriveCategoryKindForEventType(
+  eventType: FinancialEventType
+): CategoryKind {
+  switch (eventType) {
+    case "income":
+      return "income"
+    case "refund":
+      return "refund"
+    case "transfer":
+      return "transfer"
+    case "emi_payment":
+      return "debt"
+    case "purchase":
+    case "subscription_charge":
+    case "bill_payment":
+      return "expense"
+  }
+}
 
 export function normalizeMerchantName(input: string | null | undefined) {
   if (!input) {
@@ -83,7 +209,9 @@ function hashAlias(input: string) {
 function inferMerchantType(alias: string): MerchantType {
   const lowered = alias.toLowerCase()
 
-  if (/\b(bank|credit cards?|debit cards?|instaalert|transaction)\b/.test(lowered)) {
+  if (
+    /\b(bank|credit cards?|debit cards?|instaalert|transaction)\b/.test(lowered)
+  ) {
     return "bank"
   }
 
@@ -91,7 +219,9 @@ function inferMerchantType(alias: string): MerchantType {
     return "employer"
   }
 
-  if (/\b(google play|uber|apple|amazon|netflix|spotify|youtube)\b/.test(lowered)) {
+  if (
+    /\b(google play|uber|apple|amazon|netflix|spotify|youtube)\b/.test(lowered)
+  ) {
     return "platform"
   }
 
@@ -141,7 +271,7 @@ function inferCategorySlug(signal: ExtractedSignalSelect) {
 }
 
 export function getDirectionForEventType(
-  eventType: FinancialEventType,
+  eventType: FinancialEventType
 ): FinancialEventDirection {
   switch (eventType) {
     case "income":
@@ -166,10 +296,30 @@ export async function ensureSystemCategories(userId: string) {
         name: category.name,
         slug: category.slug,
         kind: category.kind,
+        iconName: category.iconName,
+        colorToken: category.colorToken,
         isSystem: true,
-      })),
+      }))
     )
     .onConflictDoNothing()
+
+  await Promise.all(
+    SYSTEM_CATEGORY_DEFINITIONS.map((category) =>
+      db
+        .update(categories)
+        .set({
+          name: category.name,
+          kind: category.kind,
+          iconName: category.iconName,
+          colorToken: category.colorToken,
+          isSystem: true,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(categories.userId, userId), eq(categories.slug, category.slug))
+        )
+    )
+  )
 
   return db
     .select()
@@ -198,7 +348,45 @@ export async function getCategoryById(userId: string, categoryId: string) {
   return category ?? null
 }
 
-export async function resolveCategoryForSignal(userId: string, signal: ExtractedSignalSelect) {
+export async function createCategory(input: {
+  userId: string
+  name: string
+  slug: string
+  kind: CategoryKind
+  iconName: CategoryIconName
+  colorToken: CategoryColorToken
+  parentCategoryId?: string | null
+  isSystem?: boolean
+}) {
+  const created =
+    (
+      await db
+        .insert(categories)
+        .values({
+          userId: input.userId,
+          parentCategoryId: input.parentCategoryId ?? null,
+          name: input.name,
+          slug: input.slug,
+          kind: input.kind,
+          iconName: input.iconName,
+          colorToken: input.colorToken,
+          isSystem: input.isSystem ?? false,
+        })
+        .onConflictDoNothing()
+        .returning()
+    )[0] ?? null
+
+  if (created) {
+    return created
+  }
+
+  return getCategoryBySlug(input.userId, input.slug)
+}
+
+export async function resolveCategoryForSignal(
+  userId: string,
+  signal: ExtractedSignalSelect
+) {
   await ensureSystemCategories(userId)
   return getCategoryBySlug(userId, inferCategorySlug(signal))
 }
@@ -227,7 +415,12 @@ export async function getOrCreateMerchantForAlias(input: {
   const [existing] = await db
     .select()
     .from(merchants)
-    .where(and(eq(merchants.userId, input.userId), eq(merchants.normalizedName, normalizedName)))
+    .where(
+      and(
+        eq(merchants.userId, input.userId),
+        eq(merchants.normalizedName, normalizedName)
+      )
+    )
     .limit(1)
 
   const merchant =
@@ -241,10 +434,13 @@ export async function getOrCreateMerchantForAlias(input: {
           logoUrl: input.logoUrl ?? null,
           normalizedName,
           merchantType: inferMerchantType(input.aliasText),
-          isSubscriptionProne: /\b(subscription|renewal|apple|netflix|spotify)\b/i.test(
-            input.aliasText,
+          isSubscriptionProne:
+            /\b(subscription|renewal|apple|netflix|spotify)\b/i.test(
+              input.aliasText
+            ),
+          isEmiLender: /\b(bank|cards?|emi|installment)\b/i.test(
+            input.aliasText
           ),
-          isEmiLender: /\b(bank|cards?|emi|installment)\b/i.test(input.aliasText),
           lastSeenAt: new Date(),
         })
         .onConflictDoNothing()
@@ -258,7 +454,10 @@ export async function getOrCreateMerchantForAlias(input: {
         .select()
         .from(merchants)
         .where(
-          and(eq(merchants.userId, input.userId), eq(merchants.normalizedName, normalizedName)),
+          and(
+            eq(merchants.userId, input.userId),
+            eq(merchants.normalizedName, normalizedName)
+          )
         )
         .limit(1)
     )[0]
@@ -311,14 +510,13 @@ export async function maybeResolvePaymentInstrument(input: {
 
   const providerName = input.merchantName?.trim() || null
   const loweredProvider = providerName?.toLowerCase() ?? ""
-  const instrumentType: PaymentInstrumentType =
-    /\bupi\b/.test(loweredProvider)
-      ? "upi"
-      : /\bdebit\b/.test(loweredProvider)
-        ? "debit_card"
-        : /\bcredit|card|bank\b/.test(loweredProvider)
-          ? "credit_card"
-          : "unknown"
+  const instrumentType: PaymentInstrumentType = /\bupi\b/.test(loweredProvider)
+    ? "upi"
+    : /\bdebit\b/.test(loweredProvider)
+      ? "debit_card"
+      : /\bcredit|card|bank\b/.test(loweredProvider)
+        ? "credit_card"
+        : "unknown"
   const providerNameCondition = providerName
     ? eq(paymentInstruments.providerName, providerName)
     : isNull(paymentInstruments.providerName)
@@ -331,8 +529,8 @@ export async function maybeResolvePaymentInstrument(input: {
         eq(paymentInstruments.userId, input.userId),
         eq(paymentInstruments.instrumentType, instrumentType),
         providerNameCondition,
-        eq(paymentInstruments.maskedIdentifier, maskedIdentifier),
-      ),
+        eq(paymentInstruments.maskedIdentifier, maskedIdentifier)
+      )
     )
     .limit(1)
 
@@ -369,8 +567,8 @@ export async function maybeResolvePaymentInstrument(input: {
         eq(paymentInstruments.userId, input.userId),
         eq(paymentInstruments.instrumentType, instrumentType),
         providerNameCondition,
-        eq(paymentInstruments.maskedIdentifier, maskedIdentifier),
-      ),
+        eq(paymentInstruments.maskedIdentifier, maskedIdentifier)
+      )
     )
     .limit(1)
 
@@ -389,7 +587,7 @@ export async function getExtractedSignalById(signalId: string) {
 
 export async function updateExtractedSignalStatus(
   signalId: string,
-  status: ExtractedSignalSelect["status"],
+  status: ExtractedSignalSelect["status"]
 ) {
   const [signal] = await db
     .update(extractedSignals)
@@ -403,7 +601,9 @@ export async function updateExtractedSignalStatus(
   return signal ?? null
 }
 
-export async function getFinancialEventSourceByExtractedSignal(signalId: string) {
+export async function getFinancialEventSourceByExtractedSignal(
+  signalId: string
+) {
   const [source] = await db
     .select()
     .from(financialEventSources)
@@ -413,7 +613,9 @@ export async function getFinancialEventSourceByExtractedSignal(signalId: string)
   return source ?? null
 }
 
-export async function getFinancialEventSourceByRawDocument(rawDocumentId: string) {
+export async function getFinancialEventSourceByRawDocument(
+  rawDocumentId: string
+) {
   const [source] = await db
     .select()
     .from(financialEventSources)
@@ -452,8 +654,8 @@ export async function listCandidateFinancialEvents(input: {
         eq(financialEvents.amountMinor, input.amountMinor),
         eq(financialEvents.currency, input.currency),
         gte(financialEvents.eventOccurredAt, input.from),
-        lte(financialEvents.eventOccurredAt, input.to),
-      ),
+        lte(financialEvents.eventOccurredAt, input.to)
+      )
     )
     .orderBy(desc(financialEvents.eventOccurredAt))
 }
@@ -476,8 +678,8 @@ export async function listCandidateFinancialEventsByWindow(input: {
         eq(financialEvents.userId, input.userId),
         inArray(financialEvents.eventType, input.eventTypes),
         gte(financialEvents.eventOccurredAt, input.from),
-        lte(financialEvents.eventOccurredAt, input.to),
-      ),
+        lte(financialEvents.eventOccurredAt, input.to)
+      )
     )
     .orderBy(desc(financialEvents.eventOccurredAt))
 }
@@ -494,7 +696,7 @@ export async function createFinancialEvent(input: FinancialEventInsert) {
 
 export async function updateFinancialEvent(
   eventId: string,
-  input: Partial<FinancialEventInsert>,
+  input: Partial<FinancialEventInsert>
 ) {
   const [event] = await db
     .update(financialEvents)
@@ -531,7 +733,9 @@ export async function createFinancialEventSource(input: {
   return source
 }
 
-export async function refreshFinancialEventSourceCount(financialEventId: string) {
+export async function refreshFinancialEventSourceCount(
+  financialEventId: string
+) {
   const rows = await db
     .select({ id: financialEventSources.id })
     .from(financialEventSources)
@@ -589,7 +793,7 @@ export async function updateReviewQueueItem(
     financialEventId?: string | null
     proposedResolutionJson?: Record<string, unknown>
     resolvedAt?: Date | null
-  },
+  }
 ) {
   const [item] = await db
     .update(reviewQueueItems)
@@ -624,7 +828,11 @@ export async function listReviewQueueItemsForUser(input: {
     .select()
     .from(reviewQueueItems)
     .where(eq(reviewQueueItems.userId, input.userId))
-    .orderBy(asc(reviewQueueItems.status), asc(reviewQueueItems.priority), desc(reviewQueueItems.createdAt))
+    .orderBy(
+      asc(reviewQueueItems.status),
+      asc(reviewQueueItems.priority),
+      desc(reviewQueueItems.createdAt)
+    )
     .limit(input.limit ?? 50)
 
   if (input.status) {
@@ -632,7 +840,10 @@ export async function listReviewQueueItemsForUser(input: {
       .select()
       .from(reviewQueueItems)
       .where(
-        and(eq(reviewQueueItems.userId, input.userId), eq(reviewQueueItems.status, input.status)),
+        and(
+          eq(reviewQueueItems.userId, input.userId),
+          eq(reviewQueueItems.status, input.status)
+        )
       )
       .orderBy(asc(reviewQueueItems.priority), desc(reviewQueueItems.createdAt))
       .limit(input.limit ?? 50)
@@ -641,7 +852,9 @@ export async function listReviewQueueItemsForUser(input: {
   return query
 }
 
-export async function listRecentReviewQueueItemsForRawDocumentIds(rawDocumentIds: string[]) {
+export async function listRecentReviewQueueItemsForRawDocumentIds(
+  rawDocumentIds: string[]
+) {
   if (rawDocumentIds.length === 0) {
     return []
   }
@@ -671,8 +884,10 @@ export async function findOpenReviewQueueItem(input: {
         input.financialEventId
           ? eq(reviewQueueItems.financialEventId, input.financialEventId)
           : undefined,
-        input.rawDocumentId ? eq(reviewQueueItems.rawDocumentId, input.rawDocumentId) : undefined,
-      )!,
+        input.rawDocumentId
+          ? eq(reviewQueueItems.rawDocumentId, input.rawDocumentId)
+          : undefined
+      )!
     )
   }
 
@@ -736,11 +951,15 @@ export async function listLedgerEventsForUser(input: {
   }
 
   if (input.paymentInstrumentIds?.length) {
-    conditions.push(inArray(financialEvents.paymentInstrumentId, input.paymentInstrumentIds))
+    conditions.push(
+      inArray(financialEvents.paymentInstrumentId, input.paymentInstrumentIds)
+    )
   }
 
   if (input.paymentProcessorIds?.length) {
-    conditions.push(inArray(financialEvents.paymentProcessorId, input.paymentProcessorIds))
+    conditions.push(
+      inArray(financialEvents.paymentProcessorId, input.paymentProcessorIds)
+    )
   }
 
   if (typeof input.needsReview === "boolean") {
@@ -763,8 +982,8 @@ export async function listLedgerEventsForUser(input: {
         ilike(financialEvents.notes, pattern),
         existsMerchantMatch(input.query.trim()),
         existsProcessorMatch(input.query.trim()),
-        existsInstrumentMatch(input.query.trim()),
-      )!,
+        existsInstrumentMatch(input.query.trim())
+      )!
     )
   }
 
@@ -773,7 +992,9 @@ export async function listLedgerEventsForUser(input: {
   }
 
   const comparableAmountExpression =
-    input.reportingCurrency && (typeof input.amountMinMinor === "number" || typeof input.amountMaxMinor === "number")
+    input.reportingCurrency &&
+    (typeof input.amountMinMinor === "number" ||
+      typeof input.amountMaxMinor === "number")
       ? sql<number>`case
           when ${financialEvents.currency} = ${input.reportingCurrency}
             then ${financialEvents.amountMinor}
@@ -783,13 +1004,13 @@ export async function listLedgerEventsForUser(input: {
 
   if (comparableAmountExpression && typeof input.amountMinMinor === "number") {
     conditions.push(
-      sql<boolean>`${comparableAmountExpression} is not null and ${comparableAmountExpression} >= ${input.amountMinMinor}`,
+      sql<boolean>`${comparableAmountExpression} is not null and ${comparableAmountExpression} >= ${input.amountMinMinor}`
     )
   }
 
   if (comparableAmountExpression && typeof input.amountMaxMinor === "number") {
     conditions.push(
-      sql<boolean>`${comparableAmountExpression} is not null and ${comparableAmountExpression} <= ${input.amountMaxMinor}`,
+      sql<boolean>`${comparableAmountExpression} is not null and ${comparableAmountExpression} <= ${input.amountMaxMinor}`
     )
   }
 
@@ -806,24 +1027,30 @@ export async function listLedgerEventsForUser(input: {
     .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
     .leftJoin(
       paymentInstruments,
-      eq(financialEvents.paymentInstrumentId, paymentInstruments.id),
+      eq(financialEvents.paymentInstrumentId, paymentInstruments.id)
     )
     .leftJoin(
       paymentProcessors,
-      eq(financialEvents.paymentProcessorId, paymentProcessors.id),
+      eq(financialEvents.paymentProcessorId, paymentProcessors.id)
     )
     .leftJoin(
       financialEventValuations,
       input.reportingCurrency
         ? and(
             eq(financialEventValuations.financialEventId, financialEvents.id),
-            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-            isNull(financialEventValuations.supersededAt),
+            eq(
+              financialEventValuations.targetCurrency,
+              input.reportingCurrency
+            ),
+            isNull(financialEventValuations.supersededAt)
           )
-        : sql`false`,
+        : sql`false`
     )
     .where(and(...conditions))
-    .orderBy(desc(financialEvents.eventOccurredAt), desc(financialEvents.createdAt))
+    .orderBy(
+      desc(financialEvents.eventOccurredAt),
+      desc(financialEvents.createdAt)
+    )
     .limit(input.limit ?? 100)
 }
 
@@ -925,16 +1152,21 @@ export async function listFinancialEventSourcesForEventIds(eventIds: string[]) {
       extractedSignal: extractedSignals,
     })
     .from(financialEventSources)
-    .leftJoin(rawDocuments, eq(financialEventSources.rawDocumentId, rawDocuments.id))
+    .leftJoin(
+      rawDocuments,
+      eq(financialEventSources.rawDocumentId, rawDocuments.id)
+    )
     .leftJoin(
       extractedSignals,
-      eq(financialEventSources.extractedSignalId, extractedSignals.id),
+      eq(financialEventSources.extractedSignalId, extractedSignals.id)
     )
     .where(inArray(financialEventSources.financialEventId, eventIds))
     .orderBy(desc(financialEventSources.createdAt))
 }
 
-export async function listFinancialEventReconciliationContexts(eventIds: string[]) {
+export async function listFinancialEventReconciliationContexts(
+  eventIds: string[]
+) {
   if (eventIds.length === 0) {
     return []
   }
@@ -953,26 +1185,34 @@ export async function listFinancialEventReconciliationContexts(eventIds: string[
     .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
     .leftJoin(
       paymentProcessors,
-      eq(financialEvents.paymentProcessorId, paymentProcessors.id),
+      eq(financialEvents.paymentProcessorId, paymentProcessors.id)
     )
     .leftJoin(
       paymentInstruments,
-      eq(financialEvents.paymentInstrumentId, paymentInstruments.id),
+      eq(financialEvents.paymentInstrumentId, paymentInstruments.id)
     )
     .leftJoin(
       financialEventSources,
-      eq(financialEventSources.financialEventId, financialEvents.id),
+      eq(financialEventSources.financialEventId, financialEvents.id)
     )
-    .leftJoin(rawDocuments, eq(financialEventSources.rawDocumentId, rawDocuments.id))
+    .leftJoin(
+      rawDocuments,
+      eq(financialEventSources.rawDocumentId, rawDocuments.id)
+    )
     .leftJoin(
       extractedSignals,
-      eq(financialEventSources.extractedSignalId, extractedSignals.id),
+      eq(financialEventSources.extractedSignalId, extractedSignals.id)
     )
     .where(inArray(financialEvents.id, eventIds))
-    .orderBy(desc(financialEventSources.createdAt), desc(financialEvents.createdAt))
+    .orderBy(
+      desc(financialEventSources.createdAt),
+      desc(financialEvents.createdAt)
+    )
 }
 
-export async function listFinancialEventSourcesForRawDocumentIds(rawDocumentIds: string[]) {
+export async function listFinancialEventSourcesForRawDocumentIds(
+  rawDocumentIds: string[]
+) {
   if (rawDocumentIds.length === 0) {
     return []
   }
@@ -985,7 +1225,7 @@ export async function listFinancialEventSourcesForRawDocumentIds(rawDocumentIds:
     .from(financialEventSources)
     .leftJoin(
       financialEvents,
-      eq(financialEventSources.financialEventId, financialEvents.id),
+      eq(financialEventSources.financialEventId, financialEvents.id)
     )
     .where(inArray(financialEventSources.rawDocumentId, rawDocumentIds))
     .orderBy(desc(financialEventSources.createdAt))
@@ -995,7 +1235,12 @@ export async function countOpenReviewQueueItemsForUser(userId: string) {
   const rows = await db
     .select({ id: reviewQueueItems.id })
     .from(reviewQueueItems)
-    .where(and(eq(reviewQueueItems.userId, userId), eq(reviewQueueItems.status, "open")))
+    .where(
+      and(
+        eq(reviewQueueItems.userId, userId),
+        eq(reviewQueueItems.status, "open")
+      )
+    )
 
   return rows.length
 }

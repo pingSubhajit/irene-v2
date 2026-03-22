@@ -71,7 +71,7 @@ function resolveEventTypes(values: string[]): FinancialEventType[] {
       "bill_payment",
       "refund",
       "transfer",
-    ].includes(value),
+    ].includes(value)
   )
 }
 
@@ -140,11 +140,17 @@ export default async function ActivityPage({
   const view = asSingleValue(params.view) || "all"
   const sort = resolveSort(asSingleValue(params.sort))
   const selectedCategorySlugs = dedupe(
-    asArrayValue(params.category).filter((value) => value && value !== "all"),
+    asArrayValue(params.category).filter((value) => value && value !== "all")
   )
-  const selectedMerchantIds = dedupe(asArrayValue(params.merchant).filter(Boolean))
-  const selectedInstrumentIds = dedupe(asArrayValue(params.instrument).filter(Boolean))
-  const selectedProcessorIds = dedupe(asArrayValue(params.processor).filter(Boolean))
+  const selectedMerchantIds = dedupe(
+    asArrayValue(params.merchant).filter(Boolean)
+  )
+  const selectedInstrumentIds = dedupe(
+    asArrayValue(params.instrument).filter(Boolean)
+  )
+  const selectedProcessorIds = dedupe(
+    asArrayValue(params.processor).filter(Boolean)
+  )
   const selectedTypes = dedupe(resolveEventTypes(asArrayValue(params.type)))
   const datePreset = resolveDatePreset(asSingleValue(params.datePreset))
   const customDateFrom = asSingleValue(params.dateFrom)
@@ -166,77 +172,83 @@ export default async function ActivityPage({
     ? getDateRangeForPreset(datePreset, settings.timeZone)
     : { dateFrom: null, dateTo: null }
   const dateFrom =
-    presetRange.dateFrom ?? (customDateFrom ? getUtcStartOfUserDay(customDateFrom, settings.timeZone) : null)
+    presetRange.dateFrom ??
+    (customDateFrom
+      ? getUtcStartOfUserDay(customDateFrom, settings.timeZone)
+      : null)
   const dateTo =
-    presetRange.dateTo ?? (customDateTo ? getUtcEndOfUserDay(customDateTo, settings.timeZone) : null)
+    presetRange.dateTo ??
+    (customDateTo ? getUtcEndOfUserDay(customDateTo, settings.timeZone) : null)
 
   const isRecurringView =
     view === "subscriptions" || view === "emis" || view === "income"
 
-  const [events, merchants, paymentProcessors, paymentInstruments, subscriptions, emis, incomeStreams] =
-    await Promise.all([
-      isRecurringView
-        ? Promise.resolve([])
-        : listLedgerEventsForUser({
-            userId: session.user.id,
-            query,
-            direction:
-              view === "outflow" || view === "inflow" ? view : undefined,
-            needsReview: view === "review" ? true : undefined,
-            categoryIds: selectedCategoryIds,
-            merchantIds: selectedMerchantIds,
-            paymentInstrumentIds: selectedInstrumentIds,
-            paymentProcessorIds: selectedProcessorIds,
-            eventTypes: selectedTypes,
-            dateFrom: dateFrom ?? undefined,
-            dateTo: dateTo ?? undefined,
-            reportingCurrency: settings.reportingCurrency,
-            crossCurrency,
-            amountMinMinor: convertMajorAmountToMinor(amountMinMajor),
-            amountMaxMinor: convertMajorAmountToMinor(amountMaxMajor),
-            limit: 160,
-          }),
-      listActivityMerchantsForUser({
-        userId: session.user.id,
-        limit: 200,
-      }),
-      isRecurringView
-        ? Promise.resolve([])
-        : listActivityPaymentProcessorsForUser({
-            userId: session.user.id,
-            limit: 200,
-          }),
-      isRecurringView
-        ? Promise.resolve([])
-        : listActivityPaymentInstrumentsForUser({
-            userId: session.user.id,
-            limit: 200,
-          }),
-      listRecurringObligationsForUser({
-        userId: session.user.id,
-        obligationType: "subscription",
-        merchantIds: selectedMerchantIds,
-        limit: 40,
-      }),
-      listRecurringObligationsForUser({
-        userId: session.user.id,
-        obligationType: "emi",
-        merchantIds: selectedMerchantIds,
-        limit: 40,
-      }),
-      listIncomeStreamsForUser({
-        userId: session.user.id,
-        merchantIds: selectedMerchantIds,
-        limit: 40,
-      }),
-    ])
+  const [
+    events,
+    merchants,
+    paymentProcessors,
+    paymentInstruments,
+    subscriptions,
+    emis,
+    incomeStreams,
+  ] = await Promise.all([
+    isRecurringView
+      ? Promise.resolve([])
+      : listLedgerEventsForUser({
+          userId: session.user.id,
+          query,
+          direction: view === "outflow" || view === "inflow" ? view : undefined,
+          needsReview: view === "review" ? true : undefined,
+          categoryIds: selectedCategoryIds,
+          merchantIds: selectedMerchantIds,
+          paymentInstrumentIds: selectedInstrumentIds,
+          paymentProcessorIds: selectedProcessorIds,
+          eventTypes: selectedTypes,
+          dateFrom: dateFrom ?? undefined,
+          dateTo: dateTo ?? undefined,
+          reportingCurrency: settings.reportingCurrency,
+          crossCurrency,
+          amountMinMinor: convertMajorAmountToMinor(amountMinMajor),
+          amountMaxMinor: convertMajorAmountToMinor(amountMaxMajor),
+          limit: 160,
+        }),
+    listActivityMerchantsForUser({
+      userId: session.user.id,
+      limit: 200,
+    }),
+    isRecurringView
+      ? Promise.resolve([])
+      : listActivityPaymentProcessorsForUser({
+          userId: session.user.id,
+          limit: 200,
+        }),
+    isRecurringView
+      ? Promise.resolve([])
+      : listActivityPaymentInstrumentsForUser({
+          userId: session.user.id,
+          limit: 200,
+        }),
+    listRecurringObligationsForUser({
+      userId: session.user.id,
+      obligationType: "subscription",
+      merchantIds: selectedMerchantIds,
+      limit: 40,
+    }),
+    listRecurringObligationsForUser({
+      userId: session.user.id,
+      obligationType: "emi",
+      merchantIds: selectedMerchantIds,
+      limit: 40,
+    }),
+    listIncomeStreamsForUser({
+      userId: session.user.id,
+      merchantIds: selectedMerchantIds,
+      limit: 40,
+    }),
+  ])
 
   const recurringRows =
-    view === "subscriptions"
-      ? subscriptions
-      : view === "emis"
-        ? emis
-        : []
+    view === "subscriptions" ? subscriptions : view === "emis" ? emis : []
   const filteredRecurringRows = recurringRows.filter(
     ({ obligation, merchant }) => {
       if (!query) return true
@@ -252,7 +264,7 @@ export default async function ActivityPage({
         .toLowerCase()
 
       return haystack.includes(query.toLowerCase())
-    },
+    }
   )
 
   const filteredIncomeStreams = incomeStreams.filter(
@@ -269,12 +281,15 @@ export default async function ActivityPage({
         .toLowerCase()
 
       return haystack.includes(query.toLowerCase())
-    },
+    }
   )
 
   const sortedEvents = [...events].sort((left, right) => {
     if (sort === "oldest") {
-      return left.event.eventOccurredAt.getTime() - right.event.eventOccurredAt.getTime()
+      return (
+        left.event.eventOccurredAt.getTime() -
+        right.event.eventOccurredAt.getTime()
+      )
     }
 
     if (sort === "amount_desc") {
@@ -285,7 +300,10 @@ export default async function ActivityPage({
       return left.event.amountMinor - right.event.amountMinor
     }
 
-    return right.event.eventOccurredAt.getTime() - left.event.eventOccurredAt.getTime()
+    return (
+      right.event.eventOccurredAt.getTime() -
+      left.event.eventOccurredAt.getTime()
+    )
   })
 
   const eventIds = sortedEvents.map(({ event }) => event.id)
@@ -293,8 +311,7 @@ export default async function ActivityPage({
   const sourcesByEventId = new Map<string, typeof sources>()
 
   for (const source of sources) {
-    const existing =
-      sourcesByEventId.get(source.source.financialEventId) ?? []
+    const existing = sourcesByEventId.get(source.source.financialEventId) ?? []
     existing.push(source)
     sourcesByEventId.set(source.source.financialEventId, existing)
   }
@@ -303,7 +320,7 @@ export default async function ActivityPage({
   for (const row of sortedEvents) {
     const key = getUserTimeZoneMonthKey(
       row.event.eventOccurredAt,
-      settings.timeZone,
+      settings.timeZone
     )
     const existing = grouped.get(key) ?? []
     existing.push(row)
@@ -311,7 +328,7 @@ export default async function ActivityPage({
   }
 
   const orderedGroups = [...grouped.entries()].sort((left, right) =>
-    right[0].localeCompare(left[0]),
+    right[0].localeCompare(left[0])
   )
 
   return (
@@ -369,7 +386,7 @@ export default async function ActivityPage({
                   subtitle=""
                   amount={formatCurrency(
                     incomeStream.expectedAmountMinor ?? 0,
-                    incomeStream.currency ?? "INR",
+                    incomeStream.currency ?? "INR"
                   )}
                   cadence={
                     incomeStream.expectedDayOfMonth
@@ -401,7 +418,7 @@ export default async function ActivityPage({
                   subtitle=""
                   amount={formatCurrency(
                     obligation.amountMinor ?? 0,
-                    obligation.currency ?? "INR",
+                    obligation.currency ?? "INR"
                   )}
                   cadence={obligation.cadence}
                   scheduleLabel={
@@ -421,7 +438,7 @@ export default async function ActivityPage({
         ) : orderedGroups.length > 0 ? (
           orderedGroups.map(([monthKey, rows]) => (
             <section key={monthKey}>
-              <p className="mb-1 mt-8 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-white/28 first:mt-4">
+              <p className="mt-8 mb-1 text-[0.68rem] font-semibold tracking-[0.22em] text-white/28 uppercase first:mt-4">
                 {formatMonthGroup(monthKey)}
               </p>
               <div className="divide-y divide-white/[0.06]">
@@ -442,25 +459,20 @@ export default async function ActivityPage({
                         "Unmapped event"
                       }
                       merchantLogoUrl={merchant?.logoUrl ?? null}
-                      amount={formatCurrency(
-                        event.amountMinor,
-                        event.currency,
-                      )}
+                      amount={formatCurrency(event.amountMinor, event.currency)}
                       dateLabel={event.eventOccurredAt.toISOString()}
-                      category={category?.name ?? "Uncategorized"}
+                      categoryName={category?.name ?? "Uncategorized"}
+                      categoryIconName={category?.iconName ?? null}
+                      categoryColorToken={category?.colorToken ?? null}
                       direction={event.direction}
                       eventType={event.eventType}
                       needsReview={event.needsReview}
                       processor={paymentProcessor?.displayName ?? null}
-                      paymentInstrument={
-                        paymentInstrument?.displayName ?? null
-                      }
-                      traceCount={
-                        (sourcesByEventId.get(event.id) ?? []).length
-                      }
+                      paymentInstrument={paymentInstrument?.displayName ?? null}
+                      traceCount={(sourcesByEventId.get(event.id) ?? []).length}
                       timeZone={settings.timeZone}
                     />
-                  ),
+                  )
                 )}
               </div>
             </section>

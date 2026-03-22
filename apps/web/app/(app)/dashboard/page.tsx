@@ -67,10 +67,13 @@ export default async function DashboardPage() {
   const session = await requireSession()
   const settings = await getUserSettings(session.user.id)
   const monthStart = startOfCurrentMonth()
-  const valuationCoverage = await ensureUserFinancialEventValuationCoverage(session.user.id, {
-    dateFrom: monthStart,
-    limit: 240,
-  })
+  const valuationCoverage = await ensureUserFinancialEventValuationCoverage(
+    session.user.id,
+    {
+      dateFrom: monthStart,
+      limit: 240,
+    }
+  )
   const reportingCurrency = valuationCoverage.reportingCurrency
 
   const [
@@ -109,7 +112,8 @@ export default async function DashboardPage() {
   ])
 
   const recentEventIds = recentEvents.map(({ event }) => event.id)
-  const recentSources = await listFinancialEventSourcesForEventIds(recentEventIds)
+  const recentSources =
+    await listFinancialEventSourcesForEventIds(recentEventIds)
   const sourcesByEventId = new Map<string, typeof recentSources>()
 
   for (const source of recentSources) {
@@ -138,7 +142,7 @@ export default async function DashboardPage() {
       monthSpendMinor += reportingAmountMinor
       const day = getUserTimeZoneDayOfMonth(
         event.eventOccurredAt,
-        settings.timeZone,
+        settings.timeZone
       )
       const dailySpend = dailySpendMap.get(day) ?? {
         amountMinor: 0,
@@ -150,7 +154,7 @@ export default async function DashboardPage() {
       if (category?.name) {
         categoryTotals.set(
           category.name,
-          (categoryTotals.get(category.name) ?? 0) + reportingAmountMinor,
+          (categoryTotals.get(category.name) ?? 0) + reportingAmountMinor
         )
       }
     }
@@ -167,7 +171,9 @@ export default async function DashboardPage() {
   const dailySpend = Array.from({ length: todayDate }, (_, i) => ({
     day: i + 1,
     amount: (dailySpendMap.get(i + 1)?.amountMinor ?? 0) / 100,
-    originalCurrencies: Array.from(dailySpendMap.get(i + 1)?.originalCurrencies ?? []),
+    originalCurrencies: Array.from(
+      dailySpendMap.get(i + 1)?.originalCurrencies ?? []
+    ),
   }))
 
   const netFlowMinor = monthIncomeMinor - monthSpendMinor
@@ -179,7 +185,8 @@ export default async function DashboardPage() {
     ? {
         eyebrow: "Setup blocker",
         title: "connect Gmail",
-        description: "Irene needs your inbox connected before it can keep your money picture current.",
+        description:
+          "Irene needs your inbox connected before it can keep your money picture current.",
         href: "/settings",
         badge: "Action",
         badgeVariant: "warning" as const,
@@ -188,7 +195,8 @@ export default async function DashboardPage() {
       ? {
           eyebrow: "Next step",
           title: "build your feed",
-          description: "Your inbox is connected, but Irene still needs more reconciled activity to paint the month clearly.",
+          description:
+            "Your inbox is connected, but Irene still needs more reconciled activity to paint the month clearly.",
           href: "/settings",
           badge: "Sync",
           badgeVariant: "cream" as const,
@@ -207,7 +215,8 @@ export default async function DashboardPage() {
               this month.
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-white/58">
-              A calm snapshot of what moved, what needs attention, and where your money is clustering right now.
+              A calm snapshot of what moved, what needs attention, and where
+              your money is clustering right now.
             </p>
           </div>
 
@@ -222,7 +231,13 @@ export default async function DashboardPage() {
             }
             income={formatCurrency(monthIncomeMinor, reportingCurrency)}
             netFlow={formatCurrency(netFlowMinor, reportingCurrency)}
-            netFlowDirection={netFlowMinor > 0 ? "positive" : netFlowMinor < 0 ? "negative" : "zero"}
+            netFlowDirection={
+              netFlowMinor > 0
+                ? "positive"
+                : netFlowMinor < 0
+                  ? "negative"
+                  : "zero"
+            }
             refunds={formatCurrency(monthRefundMinor, reportingCurrency)}
             dailySpend={dailySpend}
             reportingCurrency={reportingCurrency}
@@ -260,7 +275,9 @@ export default async function DashboardPage() {
           <ActionTile
             href="/review"
             eyebrow="Attention rail"
-            title={openReviewCount > 0 ? `${openReviewCount} items` : "review clear"}
+            title={
+              openReviewCount > 0 ? `${openReviewCount} items` : "review clear"
+            }
             description={
               openReviewCount > 0
                 ? "A few transactions still need your decision before Irene treats them as truth."
@@ -286,9 +303,15 @@ export default async function DashboardPage() {
             eyebrow="Recurring layer"
             title={`${recurringCounts.subscriptions} subscriptions · ${recurringCounts.emis} EMIs`}
             description={`${incomeStreamCounts.active} active income streams and ${recurringCounts.suspected + incomeStreamCounts.suspected} suspected patterns are now shaping next-step finance views.`}
-            badge={recurringCounts.suspected + incomeStreamCounts.suspected > 0 ? "Suspected" : "Stable"}
+            badge={
+              recurringCounts.suspected + incomeStreamCounts.suspected > 0
+                ? "Suspected"
+                : "Stable"
+            }
             badgeVariant={
-              recurringCounts.suspected + incomeStreamCounts.suspected > 0 ? "warning" : "cream"
+              recurringCounts.suspected + incomeStreamCounts.suspected > 0
+                ? "warning"
+                : "cream"
             }
           />
           {setupBlocker ? (
@@ -323,7 +346,9 @@ export default async function DashboardPage() {
                 >
                   <div>
                     <p className="neo-kicker">Top {index + 1}</p>
-                    <p className="mt-2 text-lg font-semibold text-white">{categoryName}</p>
+                    <p className="mt-2 text-lg font-semibold text-white">
+                      {categoryName}
+                    </p>
                   </div>
                   <p className="text-lg font-semibold text-white">
                     {formatCurrency(amountMinor, reportingCurrency)}
@@ -332,7 +357,8 @@ export default async function DashboardPage() {
               ))
             ) : (
               <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-5 text-sm leading-6 text-white/54">
-                Once reconciled events build up, Irene will show the categories shaping your month here.
+                Once reconciled events build up, Irene will show the categories
+                shaping your month here.
               </div>
             )}
           </div>
@@ -349,26 +375,38 @@ export default async function DashboardPage() {
           </div>
           <div className="mt-6 grid gap-4">
             {recentEvents.length > 0 ? (
-              recentEvents.map(({ event, merchant, category, paymentInstrument }) => (
-                <TransactionCard
-                  key={event.id}
-                  eventId={event.id}
-                  merchant={merchant?.displayName ?? event.description ?? "Unmapped event"}
-                  merchantLogoUrl={merchant?.logoUrl ?? null}
-                  amount={formatCurrency(event.amountMinor, event.currency)}
-                  dateLabel={formatEventDate(event.eventOccurredAt, settings.timeZone)}
-                  category={category?.name ?? "Uncategorized"}
-                  direction={event.direction}
-                  eventType={event.eventType}
-                  needsReview={event.needsReview}
-                  paymentInstrument={paymentInstrument?.displayName ?? null}
-                  traceCount={(sourcesByEventId.get(event.id) ?? []).length}
-                  timeZone={settings.timeZone}
-                />
-              ))
+              recentEvents.map(
+                ({ event, merchant, category, paymentInstrument }) => (
+                  <TransactionCard
+                    key={event.id}
+                    eventId={event.id}
+                    merchant={
+                      merchant?.displayName ??
+                      event.description ??
+                      "Unmapped event"
+                    }
+                    merchantLogoUrl={merchant?.logoUrl ?? null}
+                    amount={formatCurrency(event.amountMinor, event.currency)}
+                    dateLabel={formatEventDate(
+                      event.eventOccurredAt,
+                      settings.timeZone
+                    )}
+                    categoryName={category?.name ?? "Uncategorized"}
+                    categoryIconName={category?.iconName ?? null}
+                    categoryColorToken={category?.colorToken ?? null}
+                    direction={event.direction}
+                    eventType={event.eventType}
+                    needsReview={event.needsReview}
+                    paymentInstrument={paymentInstrument?.displayName ?? null}
+                    traceCount={(sourcesByEventId.get(event.id) ?? []).length}
+                    timeZone={settings.timeZone}
+                  />
+                )
+              )
             ) : (
               <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-5 text-sm leading-6 text-white/54">
-                No canonical activity yet. Connect Gmail or wait for more ingestion to finish reconciling.
+                No canonical activity yet. Connect Gmail or wait for more
+                ingestion to finish reconciling.
               </div>
             )}
           </div>
@@ -393,7 +431,10 @@ export default async function DashboardPage() {
                   eyebrow={obligation.obligationType.replace("_", " ")}
                   title={merchant?.displayName ?? obligation.name}
                   subtitle={`Tracks the pattern Irene sees around this ${obligation.obligationType}.`}
-                  amount={formatCurrency(obligation.amountMinor ?? 0, obligation.currency ?? "INR")}
+                  amount={formatCurrency(
+                    obligation.amountMinor ?? 0,
+                    obligation.currency ?? "INR"
+                  )}
                   cadence={obligation.cadence}
                   scheduleLabel={
                     obligation.nextDueAt
@@ -406,7 +447,8 @@ export default async function DashboardPage() {
               ))
             ) : (
               <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-5 text-sm leading-6 text-white/54">
-                As recurring patterns harden, Irene will surface subscriptions, bills, and EMIs here before forecasting begins.
+                As recurring patterns harden, Irene will surface subscriptions,
+                bills, and EMIs here before forecasting begins.
               </div>
             )}
           </div>
@@ -431,7 +473,7 @@ export default async function DashboardPage() {
                   subtitle="Repeatable inflows Irene now treats as recurring income signals."
                   amount={formatCurrency(
                     incomeStream.expectedAmountMinor ?? 0,
-                    incomeStream.currency ?? "INR",
+                    incomeStream.currency ?? "INR"
                   )}
                   cadence={
                     incomeStream.expectedDayOfMonth
@@ -449,7 +491,8 @@ export default async function DashboardPage() {
               ))
             ) : (
               <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-5 text-sm leading-6 text-white/54">
-                Once repeatable credits are stable enough, Irene will show them here as income streams you can trust.
+                Once repeatable credits are stable enough, Irene will show them
+                here as income streams you can trust.
               </div>
             )}
           </div>

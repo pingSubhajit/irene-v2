@@ -1,5 +1,12 @@
 import { createGateway } from "@ai-sdk/gateway"
 import { z } from "zod"
+import {
+  CATEGORY_COLOR_TOKEN_SCHEMA,
+  CATEGORY_COLOR_TOKEN_VALUES,
+  CATEGORY_ICON_NAME_SCHEMA,
+  CATEGORY_ICON_NAME_VALUES,
+  SYSTEM_CATEGORY_PRESENTATION,
+} from "@workspace/config"
 
 import { getAiEnv } from "@workspace/config/server"
 import { createLogger } from "@workspace/observability"
@@ -59,13 +66,29 @@ export const merchantResolutionResultSchema = z.object({
 })
 
 export const categoryResolutionResultSchema = z.object({
-  categorySlug: categorySlugSchema,
+  decision: z.enum(["link_existing_category", "create_custom_category"]),
+  existingCategorySlug: z.string().max(120).nullable().optional(),
+  customCategoryName: z.string().max(120).nullable().optional(),
+  iconName: CATEGORY_ICON_NAME_SCHEMA.nullable().optional(),
+  colorToken: CATEGORY_COLOR_TOKEN_SCHEMA.nullable().optional(),
   confidence: z.number().min(0).max(1),
   reason: z.string().max(240),
 })
 
-export type MerchantResolutionResult = z.infer<typeof merchantResolutionResultSchema>
-export type CategoryResolutionResult = z.infer<typeof categoryResolutionResultSchema>
+export type MerchantResolutionResult = z.infer<
+  typeof merchantResolutionResultSchema
+>
+export type CategoryResolutionResult = z.infer<
+  typeof categoryResolutionResultSchema
+>
+export type CategoryResolutionCategorySummary = {
+  slug: string
+  name: string
+  kind: string
+  isSystem: boolean
+  iconName: string | null
+  colorToken: string | null
+}
 
 export type MerchantObservationSummary = {
   id: string
@@ -143,7 +166,11 @@ function clampProbability(value: unknown, fallback = 0.5) {
   return fallback
 }
 
-function normalizeStringArray(value: unknown, maxItems: number, maxLength: number) {
+function normalizeStringArray(
+  value: unknown,
+  maxItems: number,
+  maxLength: number
+) {
   if (!Array.isArray(value)) {
     return []
   }
@@ -163,8 +190,8 @@ function normalizeUuidArray(value: unknown, fallback: string[]) {
     .filter((entry): entry is string => typeof entry === "string")
     .filter((entry) =>
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        entry,
-      ),
+        entry
+      )
     )
 
   return ids.length > 0 ? ids.slice(0, 50) : fallback
@@ -172,7 +199,7 @@ function normalizeUuidArray(value: unknown, fallback: string[]) {
 
 function coerceMerchantResolutionResult(
   raw: unknown,
-  fallbackObservationIds: string[],
+  fallbackObservationIds: string[]
 ): MerchantResolutionResult | null {
   if (!raw || typeof raw !== "object") {
     return null
@@ -188,9 +215,13 @@ function coerceMerchantResolutionResult(
     canonicalMerchantName: normalizeString(record.canonicalMerchantName, 160),
     canonicalProcessorName: normalizeString(record.canonicalProcessorName, 160),
     targetMerchantId:
-      typeof record.targetMerchantId === "string" ? record.targetMerchantId : null,
+      typeof record.targetMerchantId === "string"
+        ? record.targetMerchantId
+        : null,
     targetProcessorId:
-      typeof record.targetProcessorId === "string" ? record.targetProcessorId : null,
+      typeof record.targetProcessorId === "string"
+        ? record.targetProcessorId
+        : null,
     displayMerchantName: normalizeString(record.displayMerchantName, 200),
     reason:
       normalizeString(record.reason, 320) ??
@@ -198,37 +229,136 @@ function coerceMerchantResolutionResult(
     ignoredHints: normalizeStringArray(record.ignoredHints, 8, 160),
     supportingObservationIds: normalizeUuidArray(
       record.supportingObservationIds,
-      fallbackObservationIds,
+      fallbackObservationIds
     ),
     categorySlug: categorySlug.success ? categorySlug.data : null,
     categoryConfidence:
-      record.categoryConfidence == null ? null : clampProbability(record.categoryConfidence),
+      record.categoryConfidence == null
+        ? null
+        : clampProbability(record.categoryConfidence),
     categoryReason: normalizeString(record.categoryReason, 240),
   }
 }
 
-function coerceCategoryResolutionResult(raw: unknown): CategoryResolutionResult | null {
+export function coerceCategoryResolutionResult(
+  raw: unknown
+): CategoryResolutionResult | null {
   if (!raw || typeof raw !== "object") {
     return null
   }
 
   const record = raw as Record<string, unknown>
-  const categorySlug = categorySlugSchema.safeParse(record.categorySlug)
+  const decision = normalizeString(record.decision, 64)
+    ?.toLowerCase()
+    .replace(/[\s-]+/g, "_")
+  const confidence = clampProbability(record.confidence)
+  const reason =
+    normalizeString(record.reason, 240) ??
+    "Recovered category resolution from schema-mismatch model output."
 
-  if (!categorySlug.success) {
+  if (decision === "create_custom_category") {
+    const customCategoryName = normalizeString(record.customCategoryName, 120)
+    const iconName = CATEGORY_ICON_NAME_SCHEMA.safeParse(record.iconName)
+    const colorToken = CATEGORY_COLOR_TOKEN_SCHEMA.safeParse(record.colorToken)
+
+    if (!customCategoryName || !iconName.success || !colorToken.success) {
+      return null
+    }
+
+    return {
+      decision: "create_custom_category",
+      existingCategorySlug: null,
+      customCategoryName,
+      iconName: iconName.data,
+      colorToken: colorToken.data,
+      confidence,
+      reason,
+    }
+  }
+
+  const legacyCategorySlug = categorySlugSchema.safeParse(record.categorySlug)
+  const existingCategorySlug =
+    normalizeString(record.existingCategorySlug, 120) ??
+    (legacyCategorySlug.success ? legacyCategorySlug.data : null)
+
+  if (!existingCategorySlug) {
     return null
   }
 
   return {
-    categorySlug: categorySlug.data,
-    confidence: clampProbability(record.confidence),
-    reason:
-      normalizeString(record.reason, 240) ??
-      "Recovered category resolution from schema-mismatch model output.",
+    decision: "link_existing_category",
+    existingCategorySlug,
+    customCategoryName: null,
+    iconName: null,
+    colorToken: null,
+    confidence,
+    reason,
   }
 }
 
-export async function resolveMerchantAndProcessorWithAi(input: MerchantResolutionInput) {
+export function buildCategoryResolutionPrompt(input: {
+  merchantName: string | null
+  processorName: string | null
+  eventType: string
+  description: string | null
+  notes: string | null
+  evidenceSnippets: string[]
+  categories: CategoryResolutionCategorySummary[]
+}) {
+  const existingCategories = input.categories.map((category) => ({
+    slug: category.slug,
+    name: category.name,
+    kind: category.kind,
+    isSystem: category.isSystem,
+  }))
+
+  const systemCategories = input.categories
+    .filter((category) => category.isSystem)
+    .map((category) => ({
+      slug: category.slug,
+      name: category.name,
+      kind: category.kind,
+      presentation:
+        category.slug in SYSTEM_CATEGORY_PRESENTATION
+          ? SYSTEM_CATEGORY_PRESENTATION[
+              category.slug as keyof typeof SYSTEM_CATEGORY_PRESENTATION
+            ]
+          : null,
+    }))
+
+  return [
+    "You choose the best category for a canonical financial event.",
+    "Prefer linking an existing category when it is a good semantic fit.",
+    "Create a custom category only when no existing category fits cleanly.",
+    "Do not infer category from issuer sender text alone.",
+    "If you create a custom category, choose a short user-facing name, one generic iconName from the whitelist, and one colorToken from the whitelist.",
+    "Never use brand or platform icons.",
+    "When linking an existing category, set decision=link_existing_category and populate existingCategorySlug only.",
+    "When creating a custom category, set decision=create_custom_category and populate customCategoryName, iconName, and colorToken.",
+    "A custom category name should be concise, title-cased, and merchant-agnostic.",
+    "Do not create duplicate custom categories when an existing slug already fits.",
+    "",
+    `Allowed iconName values: ${CATEGORY_ICON_NAME_VALUES.join(", ")}`,
+    `Allowed colorToken values: ${CATEGORY_COLOR_TOKEN_VALUES.join(", ")}`,
+    "",
+    "Existing user categories:",
+    JSON.stringify(existingCategories, null, 2),
+    "",
+    "System category presentation defaults:",
+    JSON.stringify(systemCategories, null, 2),
+    "",
+    `Merchant: ${input.merchantName ?? "unknown"}`,
+    `Processor: ${input.processorName ?? "unknown"}`,
+    `Event type: ${input.eventType}`,
+    `Description: ${input.description ?? "none"}`,
+    `Notes: ${input.notes ?? "none"}`,
+    `Evidence snippets: ${JSON.stringify(input.evidenceSnippets)}`,
+  ].join("\n")
+}
+
+export async function resolveMerchantAndProcessorWithAi(
+  input: MerchantResolutionInput
+) {
   const gateway = getGatewayProvider()
 
   const prompt = [
@@ -264,7 +394,11 @@ export async function resolveMerchantAndProcessorWithAi(input: MerchantResolutio
     provider: providerName,
     modelName: aiModels.financeMerchantResolver,
     promptVersion: aiPromptVersions.financeMerchantResolver,
-    coerce: (raw) => coerceMerchantResolutionResult(raw, input.observations.map((obs) => obs.id)),
+    coerce: (raw) =>
+      coerceMerchantResolutionResult(
+        raw,
+        input.observations.map((obs) => obs.id)
+      ),
     fallback: () => ({
       decision: "needs_review" as const,
       confidence: 0.35,
@@ -273,9 +407,12 @@ export async function resolveMerchantAndProcessorWithAi(input: MerchantResolutio
       targetMerchantId: null,
       targetProcessorId: null,
       displayMerchantName: null,
-      reason: "Model output could not be validated. Manual merchant review required.",
+      reason:
+        "Model output could not be validated. Manual merchant review required.",
       ignoredHints: [],
-      supportingObservationIds: input.observations.map((observation) => observation.id),
+      supportingObservationIds: input.observations.map(
+        (observation) => observation.id
+      ),
       categorySlug: null,
       categoryConfidence: null,
       categoryReason: null,
@@ -314,22 +451,10 @@ export async function resolveCategoryWithAi(input: {
   description: string | null
   notes: string | null
   evidenceSnippets: string[]
+  categories: CategoryResolutionCategorySummary[]
 }) {
   const gateway = getGatewayProvider()
-
-  const prompt = [
-    "You choose the best category slug for a canonical financial event.",
-    "Prefer the most specific supported slug when there is strong evidence.",
-    "Do not infer category from issuer sender text alone.",
-    "Supported slugs: income, salary, shopping, food, transport, subscriptions, bills, debt, transfers, refunds, gaming, software, digital_goods, entertainment, travel, utilities, uncategorized.",
-    "",
-    `Merchant: ${input.merchantName ?? "unknown"}`,
-    `Processor: ${input.processorName ?? "unknown"}`,
-    `Event type: ${input.eventType}`,
-    `Description: ${input.description ?? "none"}`,
-    `Notes: ${input.notes ?? "none"}`,
-    `Evidence snippets: ${JSON.stringify(input.evidenceSnippets)}`,
-  ].join("\n")
+  const prompt = buildCategoryResolutionPrompt(input)
 
   const result = await generateStructuredObject({
     model: gateway(aiModels.financeCategoryResolver),
@@ -340,21 +465,30 @@ export async function resolveCategoryWithAi(input: {
     promptVersion: aiPromptVersions.financeCategoryResolver,
     coerce: coerceCategoryResolutionResult,
     fallback: () => ({
-      categorySlug: "uncategorized",
+      decision: "link_existing_category" as const,
+      existingCategorySlug: "uncategorized",
+      customCategoryName: null,
+      iconName: null,
+      colorToken: null,
       confidence: 0.2,
-      reason: "Model output could not be validated. Falling back to uncategorized.",
+      reason:
+        "Model output could not be validated. Falling back to uncategorized.",
     }),
   })
 
   if (result.recovery.mode === "strict") {
     logger.info("Resolved merchant category", {
-      categorySlug: result.object.categorySlug,
+      decision: result.object.decision,
+      existingCategorySlug: result.object.existingCategorySlug,
+      customCategoryName: result.object.customCategoryName,
       confidence: result.object.confidence,
       ...result.metadata,
     })
   } else {
     logger.warn("Recovered category resolution from degraded model response", {
-      categorySlug: result.object.categorySlug,
+      decision: result.object.decision,
+      existingCategorySlug: result.object.existingCategorySlug,
+      customCategoryName: result.object.customCategoryName,
       confidence: result.object.confidence,
       recoveryMode: result.recovery.mode,
       errorMessage: result.recovery.errorMessage,

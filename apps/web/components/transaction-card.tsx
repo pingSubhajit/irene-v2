@@ -1,3 +1,4 @@
+import React from "react"
 import Link from "next/link"
 
 import {
@@ -6,13 +7,15 @@ import {
   RiErrorWarningLine,
   RiSwapLine,
 } from "@remixicon/react"
+import type { CategoryColorToken, CategoryIconName } from "@workspace/config"
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@workspace/ui/components/avatar"
 
-import { formatInUserTimeZone } from "@/lib/date-format"
+import { formatInUserTimeZone } from "../lib/date-format"
+import { CategoryBadge } from "./category-badge"
 
 type TransactionCardProps = {
   eventId: string
@@ -21,7 +24,9 @@ type TransactionCardProps = {
   processor?: string | null
   amount: string
   dateLabel: string
-  category: string
+  categoryName: string
+  categoryIconName?: CategoryIconName | null
+  categoryColorToken?: CategoryColorToken | null
   direction: "inflow" | "outflow" | "neutral"
   eventType: string
   needsReview: boolean
@@ -85,6 +90,9 @@ export function TransactionCard({
   processor,
   amount,
   dateLabel,
+  categoryName,
+  categoryIconName,
+  categoryColorToken,
   direction,
   needsReview,
   traceCount = 0,
@@ -102,9 +110,16 @@ export function TransactionCard({
         )}
       </Avatar>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] font-medium text-white">
-          {merchant}
-        </p>
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="truncate text-[15px] font-medium text-white">
+            {merchant}
+          </p>
+          <CategoryBadge
+            categoryName={categoryName}
+            iconName={categoryIconName}
+            colorToken={categoryColorToken}
+          />
+        </div>
         <div className="mt-0.5 flex items-center gap-1.5">
           <DirectionIcon direction={direction} needsReview={needsReview} />
           <p className="truncate text-sm text-white/32">
@@ -113,7 +128,7 @@ export function TransactionCard({
           </p>
         </div>
       </div>
-      <p className="shrink-0 text-[15px] font-semibold tabular-nums text-white">
+      <p className="shrink-0 text-[15px] font-semibold text-white tabular-nums">
         {amount}
       </p>
     </div>

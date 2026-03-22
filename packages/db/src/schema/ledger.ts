@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core"
+import type { CategoryColorToken, CategoryIconName } from "@workspace/config"
 
 import { users } from "./auth"
 import { extractedSignals } from "./extraction"
@@ -89,9 +90,14 @@ export const merchants = pgTable(
     logoUrl: text("logo_url"),
     normalizedName: text("normalized_name").notNull(),
     defaultCategory: text("default_category"),
-    merchantType: text("merchant_type").$type<MerchantType>().notNull().default("unknown"),
+    merchantType: text("merchant_type")
+      .$type<MerchantType>()
+      .notNull()
+      .default("unknown"),
     countryCode: text("country_code"),
-    isSubscriptionProne: boolean("is_subscription_prone").notNull().default(false),
+    isSubscriptionProne: boolean("is_subscription_prone")
+      .notNull()
+      .default(false),
     isEmiLender: boolean("is_emi_lender").notNull().default(false),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "date" }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
@@ -104,19 +110,19 @@ export const merchants = pgTable(
   (table) => [
     uniqueIndex("merchant_user_normalized_name_unique").on(
       table.userId,
-      table.normalizedName,
+      table.normalizedName
     ),
     index("merchant_user_type_idx").on(table.userId, table.merchantType),
     index("merchant_last_seen_at_idx").on(table.lastSeenAt),
     check(
       "merchant_type_check",
-      sql`${table.merchantType} in ('merchant', 'bank', 'employer', 'platform', 'individual', 'unknown')`,
+      sql`${table.merchantType} in ('merchant', 'bank', 'employer', 'platform', 'individual', 'unknown')`
     ),
     check(
       "merchant_country_code_check",
-      sql`${table.countryCode} IS NULL OR ${table.countryCode} ~ '^[A-Z]{2}$'`,
+      sql`${table.countryCode} IS NULL OR ${table.countryCode} ~ '^[A-Z]{2}$'`
     ),
-  ],
+  ]
 )
 
 export const merchantAliases = pgTable(
@@ -143,14 +149,14 @@ export const merchantAliases = pgTable(
   (table) => [
     uniqueIndex("merchant_alias_merchant_alias_hash_unique").on(
       table.merchantId,
-      table.aliasHash,
+      table.aliasHash
     ),
     index("merchant_alias_hash_idx").on(table.aliasHash),
     check(
       "merchant_alias_confidence_check",
-      sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`,
+      sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`
     ),
-  ],
+  ]
 )
 
 export const paymentInstruments = pgTable(
@@ -162,12 +168,13 @@ export const paymentInstruments = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     financialInstitutionId: uuid("financial_institution_id").references(
       () => financialInstitutions.id,
-      { onDelete: "set null" },
+      { onDelete: "set null" }
     ),
-    backingPaymentInstrumentId: uuid("backing_payment_instrument_id").references(
-      (): AnyPgColumn => paymentInstruments.id,
-      { onDelete: "set null" },
-    ),
+    backingPaymentInstrumentId: uuid(
+      "backing_payment_instrument_id"
+    ).references((): AnyPgColumn => paymentInstruments.id, {
+      onDelete: "set null",
+    }),
     instrumentType: text("instrument_type")
       .$type<PaymentInstrumentType>()
       .notNull(),
@@ -178,7 +185,10 @@ export const paymentInstruments = pgTable(
     paymentDueDay: integer("payment_due_day"),
     creditLimitMinor: bigint("credit_limit_minor", { mode: "number" }),
     currency: text("currency").notNull(),
-    status: text("status").$type<PaymentInstrumentStatus>().notNull().default("active"),
+    status: text("status")
+      .$type<PaymentInstrumentStatus>()
+      .notNull()
+      .default("active"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),
@@ -190,44 +200,46 @@ export const paymentInstruments = pgTable(
     index("payment_instrument_user_type_status_idx").on(
       table.userId,
       table.instrumentType,
-      table.status,
+      table.status
     ),
-    index("payment_instrument_backing_instrument_idx").on(table.backingPaymentInstrumentId),
+    index("payment_instrument_backing_instrument_idx").on(
+      table.backingPaymentInstrumentId
+    ),
     uniqueIndex("payment_instrument_user_identity_unique").on(
       table.userId,
       table.financialInstitutionId,
       table.instrumentType,
-      table.maskedIdentifier,
+      table.maskedIdentifier
     ),
     check(
       "payment_instrument_type_check",
-      sql`${table.instrumentType} in ('credit_card', 'debit_card', 'bank_account', 'upi', 'wallet', 'unknown')`,
+      sql`${table.instrumentType} in ('credit_card', 'debit_card', 'bank_account', 'upi', 'wallet', 'unknown')`
     ),
     check(
       "payment_instrument_status_check",
-      sql`${table.status} in ('active', 'inactive')`,
+      sql`${table.status} in ('active', 'inactive')`
     ),
     check(
       "payment_instrument_billing_cycle_day_check",
-      sql`${table.billingCycleDay} IS NULL OR ${table.billingCycleDay} BETWEEN 1 AND 31`,
+      sql`${table.billingCycleDay} IS NULL OR ${table.billingCycleDay} BETWEEN 1 AND 31`
     ),
     check(
       "payment_instrument_payment_due_day_check",
-      sql`${table.paymentDueDay} IS NULL OR ${table.paymentDueDay} BETWEEN 1 AND 31`,
+      sql`${table.paymentDueDay} IS NULL OR ${table.paymentDueDay} BETWEEN 1 AND 31`
     ),
     check(
       "payment_instrument_credit_limit_minor_check",
-      sql`${table.creditLimitMinor} IS NULL OR ${table.creditLimitMinor} >= 0`,
+      sql`${table.creditLimitMinor} IS NULL OR ${table.creditLimitMinor} >= 0`
     ),
     check(
       "payment_instrument_backing_payment_instrument_self_check",
-      sql`${table.backingPaymentInstrumentId} IS NULL OR ${table.backingPaymentInstrumentId} <> ${table.id}`,
+      sql`${table.backingPaymentInstrumentId} IS NULL OR ${table.backingPaymentInstrumentId} <> ${table.id}`
     ),
     check(
       "payment_instrument_currency_check",
-      sql`${table.currency} ~ '^[A-Z]{3}$'`,
+      sql`${table.currency} ~ '^[A-Z]{3}$'`
     ),
-  ],
+  ]
 )
 
 export const categories = pgTable(
@@ -241,6 +253,8 @@ export const categories = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     kind: text("kind").$type<CategoryKind>().notNull(),
+    iconName: text("icon_name").$type<CategoryIconName>().notNull(),
+    colorToken: text("color_token").$type<CategoryColorToken>().notNull(),
     isSystem: boolean("is_system").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
@@ -255,9 +269,9 @@ export const categories = pgTable(
     index("category_parent_idx").on(table.parentCategoryId),
     check(
       "category_kind_check",
-      sql`${table.kind} in ('income', 'expense', 'transfer', 'refund', 'debt', 'uncategorized')`,
+      sql`${table.kind} in ('income', 'expense', 'transfer', 'refund', 'debt', 'uncategorized')`
     ),
-  ],
+  ]
 )
 
 export const financialEvents = pgTable(
@@ -268,7 +282,10 @@ export const financialEvents = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     eventType: text("event_type").$type<FinancialEventType>().notNull(),
-    status: text("status").$type<FinancialEventStatus>().notNull().default("confirmed"),
+    status: text("status")
+      .$type<FinancialEventStatus>()
+      .notNull()
+      .default("confirmed"),
     direction: text("direction").$type<FinancialEventDirection>().notNull(),
     amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
     currency: text("currency").notNull(),
@@ -282,11 +299,11 @@ export const financialEvents = pgTable(
     }),
     paymentInstrumentId: uuid("payment_instrument_id").references(
       () => paymentInstruments.id,
-      { onDelete: "set null" },
+      { onDelete: "set null" }
     ),
     paymentProcessorId: uuid("payment_processor_id").references(
       () => paymentProcessors.id,
-      { onDelete: "set null" },
+      { onDelete: "set null" }
     ),
     categoryId: uuid("category_id").references(() => categories.id, {
       onDelete: "set null",
@@ -302,7 +319,9 @@ export const financialEvents = pgTable(
       .notNull()
       .default(1),
     needsReview: boolean("needs_review").notNull().default(false),
-    isRecurringCandidate: boolean("is_recurring_candidate").notNull().default(false),
+    isRecurringCandidate: boolean("is_recurring_candidate")
+      .notNull()
+      .default(false),
     isTransfer: boolean("is_transfer").notNull().default(false),
     sourceCount: integer("source_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
@@ -315,59 +334,56 @@ export const financialEvents = pgTable(
   (table) => [
     index("financial_event_user_occurred_at_idx").on(
       table.userId,
-      table.eventOccurredAt,
+      table.eventOccurredAt
     ),
     index("financial_event_user_type_occurred_at_idx").on(
       table.userId,
       table.eventType,
-      table.eventOccurredAt,
+      table.eventOccurredAt
     ),
     index("financial_event_merchant_occurred_at_idx").on(
       table.merchantId,
-      table.eventOccurredAt,
+      table.eventOccurredAt
     ),
     index("financial_event_payment_instrument_occurred_at_idx").on(
       table.paymentInstrumentId,
-      table.eventOccurredAt,
+      table.eventOccurredAt
     ),
     index("financial_event_payment_processor_occurred_at_idx").on(
       table.paymentProcessorId,
-      table.eventOccurredAt,
+      table.eventOccurredAt
     ),
     index("financial_event_category_occurred_at_idx").on(
       table.categoryId,
-      table.eventOccurredAt,
+      table.eventOccurredAt
     ),
-    index("financial_event_status_needs_review_idx").on(table.status, table.needsReview),
+    index("financial_event_status_needs_review_idx").on(
+      table.status,
+      table.needsReview
+    ),
     check(
       "financial_event_type_check",
-      sql`${table.eventType} in ('purchase', 'income', 'subscription_charge', 'emi_payment', 'bill_payment', 'refund', 'transfer')`,
+      sql`${table.eventType} in ('purchase', 'income', 'subscription_charge', 'emi_payment', 'bill_payment', 'refund', 'transfer')`
     ),
     check(
       "financial_event_status_check",
-      sql`${table.status} in ('confirmed', 'needs_review', 'ignored', 'reversed')`,
+      sql`${table.status} in ('confirmed', 'needs_review', 'ignored', 'reversed')`
     ),
     check(
       "financial_event_direction_check",
-      sql`${table.direction} in ('inflow', 'outflow', 'neutral')`,
+      sql`${table.direction} in ('inflow', 'outflow', 'neutral')`
     ),
     check(
       "financial_event_confidence_check",
-      sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`,
+      sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`
     ),
-    check(
-      "financial_event_source_count_check",
-      sql`${table.sourceCount} >= 0`,
-    ),
-    check(
-      "financial_event_amount_minor_check",
-      sql`${table.amountMinor} >= 0`,
-    ),
+    check("financial_event_source_count_check", sql`${table.sourceCount} >= 0`),
+    check("financial_event_amount_minor_check", sql`${table.amountMinor} >= 0`),
     check(
       "financial_event_currency_check",
-      sql`${table.currency} ~ '^[A-Z]{3}$'`,
+      sql`${table.currency} ~ '^[A-Z]{3}$'`
     ),
-  ],
+  ]
 )
 
 export const financialEventSources = pgTable(
@@ -380,9 +396,12 @@ export const financialEventSources = pgTable(
     rawDocumentId: uuid("raw_document_id").references(() => rawDocuments.id, {
       onDelete: "set null",
     }),
-    extractedSignalId: uuid("extracted_signal_id").references(() => extractedSignals.id, {
-      onDelete: "set null",
-    }),
+    extractedSignalId: uuid("extracted_signal_id").references(
+      () => extractedSignals.id,
+      {
+        onDelete: "set null",
+      }
+    ),
     linkReason: text("link_reason").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
@@ -391,12 +410,14 @@ export const financialEventSources = pgTable(
   (table) => [
     index("financial_event_source_event_idx").on(table.financialEventId),
     index("financial_event_source_raw_document_idx").on(table.rawDocumentId),
-    index("financial_event_source_extracted_signal_idx").on(table.extractedSignalId),
+    index("financial_event_source_extracted_signal_idx").on(
+      table.extractedSignalId
+    ),
     check(
       "financial_event_source_reference_check",
-      sql`${table.rawDocumentId} IS NOT NULL OR ${table.extractedSignalId} IS NOT NULL`,
+      sql`${table.rawDocumentId} IS NOT NULL OR ${table.extractedSignalId} IS NOT NULL`
     ),
-  ],
+  ]
 )
 
 export const reviewQueueItems = pgTable(
@@ -407,17 +428,26 @@ export const reviewQueueItems = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     itemType: text("item_type").$type<ReviewQueueItemType>().notNull(),
-    status: text("status").$type<ReviewQueueItemStatus>().notNull().default("open"),
+    status: text("status")
+      .$type<ReviewQueueItemStatus>()
+      .notNull()
+      .default("open"),
     priority: integer("priority").notNull().default(3),
     rawDocumentId: uuid("raw_document_id").references(() => rawDocuments.id, {
       onDelete: "set null",
     }),
-    extractedSignalId: uuid("extracted_signal_id").references(() => extractedSignals.id, {
-      onDelete: "set null",
-    }),
-    financialEventId: uuid("financial_event_id").references(() => financialEvents.id, {
-      onDelete: "set null",
-    }),
+    extractedSignalId: uuid("extracted_signal_id").references(
+      () => extractedSignals.id,
+      {
+        onDelete: "set null",
+      }
+    ),
+    financialEventId: uuid("financial_event_id").references(
+      () => financialEvents.id,
+      {
+        onDelete: "set null",
+      }
+    ),
     title: text("title").notNull(),
     explanation: text("explanation").notNull(),
     proposedResolutionJson: jsonb("proposed_resolution_json")
@@ -434,28 +464,28 @@ export const reviewQueueItems = pgTable(
       table.userId,
       table.status,
       table.priority,
-      table.createdAt,
+      table.createdAt
     ),
     index("review_queue_item_raw_document_idx").on(table.rawDocumentId),
     index("review_queue_item_extracted_signal_idx").on(table.extractedSignalId),
     index("review_queue_item_financial_event_idx").on(table.financialEventId),
     check(
       "review_queue_item_type_check",
-      sql`${table.itemType} in ('signal_reconciliation', 'duplicate_match', 'merchant_conflict', 'instrument_conflict', 'payment_instrument_resolution', 'merchant_resolution', 'category_resolution', 'recurring_obligation_ambiguity', 'emi_plan_ambiguity', 'income_stream_ambiguity')`,
+      sql`${table.itemType} in ('signal_reconciliation', 'duplicate_match', 'merchant_conflict', 'instrument_conflict', 'payment_instrument_resolution', 'merchant_resolution', 'category_resolution', 'recurring_obligation_ambiguity', 'emi_plan_ambiguity', 'income_stream_ambiguity')`
     ),
     check(
       "review_queue_item_status_check",
-      sql`${table.status} in ('open', 'resolved', 'ignored')`,
+      sql`${table.status} in ('open', 'resolved', 'ignored')`
     ),
     check(
       "review_queue_item_priority_check",
-      sql`${table.priority} BETWEEN 1 AND 5`,
+      sql`${table.priority} BETWEEN 1 AND 5`
     ),
     check(
       "review_queue_item_reference_check",
-      sql`${table.rawDocumentId} IS NOT NULL OR ${table.extractedSignalId} IS NOT NULL OR ${table.financialEventId} IS NOT NULL`,
+      sql`${table.rawDocumentId} IS NOT NULL OR ${table.extractedSignalId} IS NOT NULL OR ${table.financialEventId} IS NOT NULL`
     ),
-  ],
+  ]
 )
 
 export type MerchantInsert = typeof merchants.$inferInsert
@@ -468,7 +498,9 @@ export type CategoryInsert = typeof categories.$inferInsert
 export type CategorySelect = typeof categories.$inferSelect
 export type FinancialEventInsert = typeof financialEvents.$inferInsert
 export type FinancialEventSelect = typeof financialEvents.$inferSelect
-export type FinancialEventSourceInsert = typeof financialEventSources.$inferInsert
-export type FinancialEventSourceSelect = typeof financialEventSources.$inferSelect
+export type FinancialEventSourceInsert =
+  typeof financialEventSources.$inferInsert
+export type FinancialEventSourceSelect =
+  typeof financialEventSources.$inferSelect
 export type ReviewQueueItemInsert = typeof reviewQueueItems.$inferInsert
 export type ReviewQueueItemSelect = typeof reviewQueueItems.$inferSelect

@@ -1,4 +1,5 @@
 import {
+  createCategory,
   createModelRun,
   createReviewQueueItem,
   createMerchantObservations,
@@ -14,6 +15,7 @@ import {
   listAliasesForMerchantIds,
   listMerchantAliasCandidatesForUser,
   listCandidateMerchants,
+  listCategoriesForUser,
   listCandidatePaymentProcessors,
   listFinancialEventIdsForMerchantRepair,
   listMerchantObservationsByClusterKey,
@@ -29,6 +31,7 @@ import {
   updateModelRun,
   upsertMerchantAliases,
   upsertPaymentProcessorAliases,
+  type FinancialEventType,
   type MerchantObservationSelect,
 } from "@workspace/db"
 import {
@@ -42,6 +45,7 @@ import {
   type MerchantAliasCandidate,
 } from "./merchant-fast-path"
 import { deriveMerchantDisplayName } from "./merchant-name"
+import { selectCategoryResolutionAction } from "./category-resolution"
 
 type ObservationExtractionOutcome = {
   action: "skipped" | "observed"
@@ -92,19 +96,26 @@ function extractSenderDisplayName(input: string | null | undefined) {
   if (!normalized) return null
   const angleIndex = normalized.indexOf("<")
   if (angleIndex === -1) return normalized
-  return normalized.slice(0, angleIndex).replace(/^"+|"+$/g, "").trim() || normalized
+  return (
+    normalized
+      .slice(0, angleIndex)
+      .replace(/^"+|"+$/g, "")
+      .trim() || normalized
+  )
 }
 
 function looksBankEvidence(input: string | null | undefined) {
   const lowered = input?.toLowerCase() ?? ""
   return /\b(bank|credit[_ ]?cards?|debit[_ ]?cards?|instaalert|statement|alerts?|transaction)\b/.test(
-    lowered,
+    lowered
   )
 }
 
 function looksProcessorEvidence(input: string | null | undefined) {
   const lowered = input?.toLowerCase() ?? ""
-  return /\b(paypal|razorpay|amazon pay|google|google pay|apple|cashfree|payu)\b/.test(lowered)
+  return /\b(paypal|razorpay|amazon pay|google|google pay|apple|cashfree|payu)\b/.test(
+    lowered
+  )
 }
 
 function inferObservationSourceKind(input: {
@@ -125,16 +136,28 @@ function inferObservationSourceKind(input: {
     .join(" ")
     .toLowerCase()
 
-  if (looksBankEvidence(input.sender) || /\btransaction|debited|credited|card|account\b/.test(combined)) {
+  if (
+    looksBankEvidence(input.sender) ||
+    /\btransaction|debited|credited|card|account\b/.test(combined)
+  ) {
     return "bank_alert" as const
   }
-  if (/\bstatement|billing cycle|minimum due|total amount due\b/.test(combined)) {
+  if (
+    /\bstatement|billing cycle|minimum due|total amount due\b/.test(combined)
+  ) {
     return "statement" as const
   }
-  if (looksProcessorEvidence(input.processorNameHint) || /\bpaypal|razorpay|amazon pay|google pay\b/.test(combined)) {
+  if (
+    looksProcessorEvidence(input.processorNameHint) ||
+    /\bpaypal|razorpay|amazon pay|google pay\b/.test(combined)
+  ) {
     return "processor_receipt" as const
   }
-  if (/\border id|order confirmed|placed successfully|purchase confirmation\b/.test(combined)) {
+  if (
+    /\border id|order confirmed|placed successfully|purchase confirmation\b/.test(
+      combined
+    )
+  ) {
     return "merchant_order" as const
   }
   if (/\breceipt|invoice|paid to|payment successful\b/.test(combined)) {
@@ -168,7 +191,9 @@ function buildObservationConfidence(sourceKind: string) {
 function summarizeEvidence(observation: MerchantObservationSelect) {
   const evidence = observation.evidenceJson as Record<string, unknown>
   const snippets = Array.isArray(evidence.snippets)
-    ? evidence.snippets.filter((value): value is string => typeof value === "string")
+    ? evidence.snippets.filter(
+        (value): value is string => typeof value === "string"
+      )
     : []
 
   return snippets.slice(0, 3)
@@ -183,7 +208,8 @@ function buildMerchantHintCandidates(input: {
   return [
     getSanitizedMerchantHint({
       merchantNameHint: normalizeWhitespace(input.merchantNameHint) ?? null,
-      merchantDescriptorRaw: normalizeWhitespace(input.merchantDescriptorRaw) ?? null,
+      merchantDescriptorRaw:
+        normalizeWhitespace(input.merchantDescriptorRaw) ?? null,
     }),
     deriveMerchantDisplayName(input.merchantRaw),
     deriveMerchantDisplayName(input.merchantHint),
@@ -191,7 +217,10 @@ function buildMerchantHintCandidates(input: {
     normalizeWhitespace(input.merchantHint),
     normalizeWhitespace(input.merchantRaw),
     normalizeWhitespace(input.merchantDescriptorRaw),
-  ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+  ].filter(
+    (value, index, values): value is string =>
+      Boolean(value) && values.indexOf(value) === index
+  )
 }
 
 function getSanitizedMerchantHint(input: {
@@ -237,7 +266,7 @@ function selectParserFallbackDecision(input: {
     buildMerchantHintCandidates({
       merchantNameHint: observation.merchantNameHint,
       merchantDescriptorRaw: observation.merchantDescriptorRaw,
-    }),
+    })
   )
 
   const matchedExistingMerchant = resolveExistingMerchantFastPath({
@@ -251,14 +280,18 @@ function selectParserFallbackDecision(input: {
       canonicalMerchantName: matchedExistingMerchant.merchantDisplayName,
       targetMerchantId: matchedExistingMerchant.merchantId,
       reason: "linked_existing_merchant_after_llm_failure",
-      supportingObservationIds: input.observations.map((observation) => observation.id),
+      supportingObservationIds: input.observations.map(
+        (observation) => observation.id
+      ),
     }
   }
 
   const fallbackMerchantName =
     merchantHints[0] ??
     input.observations
-      .map((observation) => normalizeWhitespace(observation.merchantDescriptorRaw))
+      .map((observation) =>
+        normalizeWhitespace(observation.merchantDescriptorRaw)
+      )
       .find((value): value is string => Boolean(value)) ??
     null
 
@@ -271,12 +304,14 @@ function selectParserFallbackDecision(input: {
     canonicalMerchantName: fallbackMerchantName,
     targetMerchantId: null,
     reason: "parser_fallback_after_llm_failure",
-    supportingObservationIds: input.observations.map((observation) => observation.id),
+    supportingObservationIds: input.observations.map(
+      (observation) => observation.id
+    ),
   }
 }
 
 export async function extractMerchantObservationsFromEvent(
-  financialEventId: string,
+  financialEventId: string
 ): Promise<ObservationExtractionOutcome> {
   const context = await getFinancialEventMerchantContext(financialEventId)
 
@@ -288,8 +323,8 @@ export async function extractMerchantObservationsFromEvent(
   const existingKeys = new Set(
     existing.map(
       (observation) =>
-        `${observation.rawDocumentId ?? "none"}:${observation.extractedSignalId ?? "none"}:${observation.merchantDescriptorRaw ?? "none"}`,
-    ),
+        `${observation.rawDocumentId ?? "none"}:${observation.extractedSignalId ?? "none"}:${observation.merchantDescriptorRaw ?? "none"}`
+    )
   )
 
   const values = context.sources
@@ -313,7 +348,9 @@ export async function extractMerchantObservationsFromEvent(
         }) ??
         context.merchant?.displayName ??
         null
-      const processorNameHint = normalizeWhitespace(signal?.processorNameCandidate)
+      const processorNameHint = normalizeWhitespace(
+        signal?.processorNameCandidate
+      )
       const key = `${rawDocument?.id ?? "none"}:${signal?.id ?? "none"}:${merchantDescriptorRaw ?? "none"}`
 
       if (existingKeys.has(key)) {
@@ -338,21 +375,29 @@ export async function extractMerchantObservationsFromEvent(
         observationSourceKind: sourceKind,
         issuerHint:
           signal?.issuerNameHint ??
-          (looksBankEvidence(senderDisplayName) || looksBankEvidence(senderEmail)
-            ? senderDisplayName ?? senderEmail
+          (looksBankEvidence(senderDisplayName) ||
+          looksBankEvidence(senderEmail)
+            ? (senderDisplayName ?? senderEmail)
             : null),
         merchantDescriptorRaw,
         merchantNameHint,
         processorNameHint,
         senderAliasHint: senderEmail ?? senderDisplayName,
         channelHint: signal?.channelHint ?? null,
-        confidence: Math.max(signal?.confidence ?? 0, buildObservationConfidence(sourceKind)),
+        confidence: Math.max(
+          signal?.confidence ?? 0,
+          buildObservationConfidence(sourceKind)
+        ),
         evidenceJson: {
           sender,
           subject: rawDocument?.subject ?? null,
           snippet: rawDocument?.snippet ?? null,
           linkReason: source.source.linkReason,
-          snippets: [rawDocument?.subject, rawDocument?.snippet, merchantDescriptorRaw]
+          snippets: [
+            rawDocument?.subject,
+            rawDocument?.snippet,
+            merchantDescriptorRaw,
+          ]
             .filter((value): value is string => Boolean(value))
             .slice(0, 3),
         },
@@ -373,9 +418,9 @@ export async function extractMerchantObservationsFromEvent(
           merchantDescriptorRaw: observation.merchantDescriptorRaw,
           merchantNameHint: observation.merchantNameHint,
           processorNameHint: observation.processorNameHint,
-        }),
-      ),
-    ),
+        })
+      )
+    )
   )
 
   return {
@@ -403,8 +448,12 @@ async function applyMerchantDecision(input: {
     | "create_new_processor"
     | "merge_processors"
 }) {
-  const merchantLogoUrl = await resolveMerchantLogoUrl(input.canonicalMerchantName)
-  let merchant = input.targetMerchantId ? await getMerchantById(input.targetMerchantId) : null
+  const merchantLogoUrl = await resolveMerchantLogoUrl(
+    input.canonicalMerchantName
+  )
+  let merchant = input.targetMerchantId
+    ? await getMerchantById(input.targetMerchantId)
+    : null
 
   if (!merchant && input.canonicalMerchantName) {
     merchant = await getOrCreateMerchantForAlias({
@@ -421,7 +470,8 @@ async function applyMerchantDecision(input: {
       displayName: input.canonicalMerchantName,
       logoUrl: merchantLogoUrl ?? undefined,
       normalizedName:
-        normalizeMerchantResolutionName(input.canonicalMerchantName) ?? merchant.normalizedName,
+        normalizeMerchantResolutionName(input.canonicalMerchantName) ??
+        merchant.normalizedName,
       lastSeenAt: new Date(),
     })
     await upsertMerchantAliases({
@@ -456,7 +506,7 @@ async function applyMerchantDecision(input: {
       paymentProcessorId: processor.id,
       aliases: input.observations.flatMap((observation) => {
         const aliases = [observation.processorNameHint].filter(
-          (value): value is string => Boolean(value),
+          (value): value is string => Boolean(value)
         )
         return aliases.map((aliasText) => ({
           aliasText,
@@ -511,7 +561,7 @@ async function applyMerchantDecision(input: {
     {
       merchantId: merchant?.id ?? null,
       paymentProcessorId: processor?.id ?? null,
-    },
+    }
   )
 
   return {
@@ -533,7 +583,7 @@ export async function resolveMerchantCluster(input: {
   })
 
   const relevantObservations = observations.filter(
-    (observation) => observation.resolutionStatus !== "ignored",
+    (observation) => observation.resolutionStatus !== "ignored"
   )
 
   if (relevantObservations.length === 0) {
@@ -548,13 +598,15 @@ export async function resolveMerchantCluster(input: {
     listRawDocumentsByIds(rawDocumentIds),
   ])
   const rawDocumentById = new Map(
-    relatedRawDocuments.map((rawDocument) => [rawDocument.id, rawDocument] as const),
+    relatedRawDocuments.map(
+      (rawDocument) => [rawDocument.id, rawDocument] as const
+    )
   )
   const fastPathHints = relevantObservations.flatMap((observation) =>
     buildMerchantHintCandidates({
       merchantNameHint: observation.merchantNameHint,
       merchantDescriptorRaw: observation.merchantDescriptorRaw,
-    }),
+    })
   )
   const existingMerchantMatch = resolveExistingMerchantFastPath({
     merchantHints: fastPathHints,
@@ -617,10 +669,21 @@ export async function resolveMerchantCluster(input: {
     const resolved = await resolveMerchantAndProcessorWithAi({
       userId: input.userId,
       sourceReliability: {
-        bankOriginCount: relevantObservations.filter((observation) => observation.observationSourceKind === "bank_alert").length,
-        merchantOriginCount: relevantObservations.filter((observation) => observation.observationSourceKind === "merchant_receipt" || observation.observationSourceKind === "merchant_order").length,
-        processorOriginCount: relevantObservations.filter((observation) => observation.observationSourceKind === "processor_receipt").length,
-        statementOriginCount: relevantObservations.filter((observation) => observation.observationSourceKind === "statement").length,
+        bankOriginCount: relevantObservations.filter(
+          (observation) => observation.observationSourceKind === "bank_alert"
+        ).length,
+        merchantOriginCount: relevantObservations.filter(
+          (observation) =>
+            observation.observationSourceKind === "merchant_receipt" ||
+            observation.observationSourceKind === "merchant_order"
+        ).length,
+        processorOriginCount: relevantObservations.filter(
+          (observation) =>
+            observation.observationSourceKind === "processor_receipt"
+        ).length,
+        statementOriginCount: relevantObservations.filter(
+          (observation) => observation.observationSourceKind === "statement"
+        ).length,
       },
       observations: relevantObservations.map((observation) => ({
         id: observation.id,
@@ -638,13 +701,14 @@ export async function resolveMerchantCluster(input: {
         confidence: Number(observation.confidence),
         evidenceSummary: summarizeEvidence(observation),
         sender:
-          rawDocumentById.get(observation.rawDocumentId ?? "")?.fromAddress ?? null,
+          rawDocumentById.get(observation.rawDocumentId ?? "")?.fromAddress ??
+          null,
         subject:
           rawDocumentById.get(observation.rawDocumentId ?? "")?.subject ?? null,
         snippet:
           rawDocumentById.get(observation.rawDocumentId ?? "")?.snippet ?? null,
         bodyTextExcerpt: truncateText(
-          rawDocumentById.get(observation.rawDocumentId ?? "")?.bodyText,
+          rawDocumentById.get(observation.rawDocumentId ?? "")?.bodyText
         ),
       })),
       candidateMerchants: candidateMerchantRows.map((row) => ({
@@ -659,7 +723,9 @@ export async function resolveMerchantCluster(input: {
       candidateProcessors: candidateProcessors.reduce<
         Array<{ id: string; displayName: string; aliases: string[] }>
       >((accumulator, row) => {
-        const existing = accumulator.find((item) => item.id === row.processor.id)
+        const existing = accumulator.find(
+          (item) => item.id === row.processor.id
+        )
         if (existing) {
           if (row.alias?.aliasText) existing.aliases.push(row.alias.aliasText)
           return accumulator
@@ -694,7 +760,7 @@ export async function resolveMerchantCluster(input: {
     if (decision.confidence < 0.65 || decision.decision === "ignore") {
       await updateMerchantObservationStatus(
         decision.supportingObservationIds,
-        decision.decision === "ignore" ? "ignored" : "needs_review",
+        decision.decision === "ignore" ? "ignored" : "needs_review"
       )
 
       return {
@@ -712,7 +778,10 @@ export async function resolveMerchantCluster(input: {
       })
 
       if (existingReview) {
-        await updateMerchantObservationStatus(decision.supportingObservationIds, "needs_review")
+        await updateMerchantObservationStatus(
+          decision.supportingObservationIds,
+          "needs_review"
+        )
         return {
           action: "review",
           reason: "existing_review",
@@ -739,12 +808,19 @@ export async function resolveMerchantCluster(input: {
           categorySlug: decision.categorySlug ?? null,
           categoryConfidence: decision.categoryConfidence ?? null,
           categoryReason: decision.categoryReason ?? null,
-          matchedMerchantIds: candidateMerchantRows.map((row) => row.merchant.id),
-          matchedProcessorIds: candidateProcessors.map((row) => row.processor.id),
+          matchedMerchantIds: candidateMerchantRows.map(
+            (row) => row.merchant.id
+          ),
+          matchedProcessorIds: candidateProcessors.map(
+            (row) => row.processor.id
+          ),
         },
       })
 
-      await updateMerchantObservationStatus(decision.supportingObservationIds, "needs_review")
+      await updateMerchantObservationStatus(
+        decision.supportingObservationIds,
+        "needs_review"
+      )
       return {
         action: "review",
         reason: decision.reason,
@@ -757,7 +833,7 @@ export async function resolveMerchantCluster(input: {
       userId: input.userId,
       financialEventId: input.financialEventId,
       observations: relevantObservations.filter((observation) =>
-        decision.supportingObservationIds.includes(observation.id),
+        decision.supportingObservationIds.includes(observation.id)
       ),
       canonicalMerchantName: decision.canonicalMerchantName ?? null,
       canonicalProcessorName: decision.canonicalProcessorName ?? null,
@@ -769,7 +845,8 @@ export async function resolveMerchantCluster(input: {
 
     return {
       action:
-        decision.decision === "merge_merchants" || decision.decision === "merge_processors"
+        decision.decision === "merge_merchants" ||
+        decision.decision === "merge_processors"
           ? "merged"
           : decision.decision === "create_new_merchant" ||
               decision.decision === "create_new_processor"
@@ -784,7 +861,10 @@ export async function resolveMerchantCluster(input: {
   } catch (error) {
     await updateModelRun(merchantModelRun.id, {
       status: "failed",
-      errorMessage: error instanceof Error ? error.message : "Unknown merchant resolution failure",
+      errorMessage:
+        error instanceof Error
+          ? error.message
+          : "Unknown merchant resolution failure",
     })
 
     const fallback = selectParserFallbackDecision({
@@ -800,7 +880,7 @@ export async function resolveMerchantCluster(input: {
       userId: input.userId,
       financialEventId: input.financialEventId,
       observations: relevantObservations.filter((observation) =>
-        fallback.supportingObservationIds.includes(observation.id),
+        fallback.supportingObservationIds.includes(observation.id)
       ),
       canonicalMerchantName: fallback.canonicalMerchantName,
       canonicalProcessorName: null,
@@ -835,6 +915,7 @@ export async function resolveEventCategory(input: {
   }
 
   await ensureSystemCategories(input.userId)
+  const categories = await listCategoriesForUser(input.userId)
 
   const categoryModelRun = await createModelRun({
     userId: input.userId,
@@ -853,13 +934,27 @@ export async function resolveEventCategory(input: {
       eventType: context.event.eventType,
       description: context.event.description ?? null,
       notes: context.event.notes ?? null,
-      evidenceSnippets: context.sources.flatMap((source) => {
-        const evidence = source.extractedSignal?.evidenceJson as Record<string, unknown> | undefined
-        const snippets = Array.isArray(evidence?.snippets)
-          ? evidence.snippets.filter((value): value is string => typeof value === "string")
-          : []
-        return snippets
-      }).slice(0, 4),
+      categories: categories.map((category) => ({
+        slug: category.slug,
+        name: category.name,
+        kind: category.kind,
+        isSystem: category.isSystem,
+        iconName: category.iconName ?? null,
+        colorToken: category.colorToken ?? null,
+      })),
+      evidenceSnippets: context.sources
+        .flatMap((source) => {
+          const evidence = source.extractedSignal?.evidenceJson as
+            | Record<string, unknown>
+            | undefined
+          const snippets = Array.isArray(evidence?.snippets)
+            ? evidence.snippets.filter(
+                (value): value is string => typeof value === "string"
+              )
+            : []
+          return snippets
+        })
+        .slice(0, 4),
     })
 
     await updateModelRun(categoryModelRun.id, {
@@ -877,7 +972,24 @@ export async function resolveEventCategory(input: {
       },
     })
 
-    const category = await getCategoryBySlug(input.userId, resolved.category.categorySlug)
+    const action = selectCategoryResolutionAction({
+      decision: resolved.category,
+      existingCategories: categories,
+      eventType: context.event.eventType as FinancialEventType,
+      recoveryMode: resolved.recovery.mode,
+    })
+
+    const category =
+      action.type === "create_custom_category"
+        ? await createCategory({
+            userId: input.userId,
+            name: action.name,
+            slug: action.slug,
+            kind: action.kind,
+            iconName: action.iconName,
+            colorToken: action.colorToken,
+          })
+        : await getCategoryBySlug(input.userId, action.categorySlug)
 
     if (category) {
       await updateFinancialEvent(context.event.id, {
@@ -887,13 +999,16 @@ export async function resolveEventCategory(input: {
 
     return {
       action: "updated" as const,
-      reason: resolved.category.reason,
+      reason: action.reason,
       categoryId: category?.id ?? null,
     }
   } catch (error) {
     await updateModelRun(categoryModelRun.id, {
       status: "failed",
-      errorMessage: error instanceof Error ? error.message : "Unknown category resolution failure",
+      errorMessage:
+        error instanceof Error
+          ? error.message
+          : "Unknown category resolution failure",
     })
     throw error
   }
@@ -905,7 +1020,8 @@ export async function runMerchantRepairBackfill(userId: string) {
   let resolvedEvents = 0
 
   for (const financialEventId of eventIds) {
-    const extracted = await extractMerchantObservationsFromEvent(financialEventId)
+    const extracted =
+      await extractMerchantObservationsFromEvent(financialEventId)
     if (extracted.action === "observed") {
       observedEvents += 1
       for (const clusterKey of extracted.clusterKeys ?? []) {
@@ -915,7 +1031,11 @@ export async function runMerchantRepairBackfill(userId: string) {
           observationClusterKey: clusterKey,
         })
 
-        if (outcome.action === "linked" || outcome.action === "created" || outcome.action === "merged") {
+        if (
+          outcome.action === "linked" ||
+          outcome.action === "created" ||
+          outcome.action === "merged"
+        ) {
           resolvedEvents += 1
           await resolveEventCategory({
             userId,
