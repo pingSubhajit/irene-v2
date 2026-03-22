@@ -733,6 +733,23 @@ export async function createFinancialEventSource(input: {
   return source
 }
 
+export async function reassignFinancialEventSources(input: {
+  fromFinancialEventId: string
+  toFinancialEventId: string
+}) {
+  if (input.fromFinancialEventId === input.toFinancialEventId) {
+    return []
+  }
+
+  return db
+    .update(financialEventSources)
+    .set({
+      financialEventId: input.toFinancialEventId,
+    })
+    .where(eq(financialEventSources.financialEventId, input.fromFinancialEventId))
+    .returning()
+}
+
 export async function refreshFinancialEventSourceCount(
   financialEventId: string
 ) {

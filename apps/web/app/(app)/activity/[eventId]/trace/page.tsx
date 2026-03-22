@@ -245,7 +245,12 @@ export default async function EventTracePage({
       {trace.eventModelRuns.length > 0 && (
         <div className="mt-10">
           <SectionLabel>Event model runs</SectionLabel>
-          <ModelRunList modelRuns={trace.eventModelRuns} />
+          <ModelRunList
+            modelRuns={trace.eventModelRuns.map((modelRun) => ({
+              ...modelRun,
+              retryAction: null,
+            }))}
+          />
         </div>
       )}
 
@@ -411,7 +416,21 @@ export default async function EventTracePage({
                     {entry.modelRuns.length > 0 && (
                       <div>
                         <SectionLabel>Model runs</SectionLabel>
-                        <ModelRunList modelRuns={entry.modelRuns} />
+                        <ModelRunList
+                          modelRuns={entry.modelRuns.map((modelRun) => ({
+                            ...modelRun,
+                            retryAction:
+                              modelRun.status === "failed" &&
+                              modelRun.taskType === "reconciliation_resolution" &&
+                              entry.extractedSignal?.id &&
+                              entry.rawDocument?.id
+                                ? {
+                                    extractedSignalId: entry.extractedSignal.id,
+                                    rawDocumentId: entry.rawDocument.id,
+                                  }
+                                : null,
+                          }))}
+                        />
                       </div>
                     )}
 

@@ -98,6 +98,16 @@ export async function updateModelRun(modelRunId: string, input: UpdateModelRunIn
   return modelRun ?? null
 }
 
+export async function getModelRunById(modelRunId: string) {
+  const [modelRun] = await db
+    .select()
+    .from(modelRuns)
+    .where(eq(modelRuns.id, modelRunId))
+    .limit(1)
+
+  return modelRun ?? null
+}
+
 type UpdateExtractedSignalInput = {
   issuerNameHint?: string | null
   instrumentLast4Hint?: string | null

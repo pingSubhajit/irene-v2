@@ -17,6 +17,7 @@ import {
   listFinancialEventReconciliationContexts,
   normalizeMerchantName,
   refreshFinancialEventSourceCount,
+  reassignFinancialEventSources,
   resolveCategoryForSignal,
   updateModelRun,
   upsertFxRateDaily,
@@ -849,6 +850,239 @@ async function resolveAiReconciliationDecision(input: {
       outcome: { action: "unavailable" },
       modelRunId: modelRun.id,
     }
+  }
+}
+
+export async function retryFailedAiReconciliationResolution(input: {
+  userId: string
+  extractedSignalId: string
+  rawDocumentId: string
+  previousModelRunId: string
+}) {
+  const signal = await getExtractedSignalById(input.extractedSignalId)
+  if (!signal || signal.userId !== input.userId) {
+    throw new Error(`Missing extracted signal ${input.extractedSignalId}`)
+  }
+
+  const rawDocument = await getRawDocumentById(input.rawDocumentId)
+  if (!rawDocument || rawDocument.userId !== input.userId) {
+    throw new Error(`Missing raw document ${input.rawDocumentId}`)
+  }
+
+  const eventType = mapCandidateEventTypeToFinancialEventType(signal.candidateEventType)
+  if (!eventType || signal.signalType === "generic_finance_signal") {
+    return {
+      action: "not_retryable" as const,
+      reason: "signal_has_no_canonical_event_type",
+    }
+  }
+
+  if (signal.amountMinor === null || !signal.currency) {
+    return {
+      action: "not_retryable" as const,
+      reason: "signal_missing_amount_or_currency",
+    }
+  }
+
+  const eventDraft = await buildEventDraft({
+    userId: input.userId,
+    signal,
+    rawDocument,
+    eventType,
+  })
+
+  const existingRawDocumentSource = await getFinancialEventSourceByRawDocument(rawDocument.id)
+  const existingEventId = existingRawDocumentSource?.financialEventId ?? null
+  const windowHours = getEventWindowHours(eventType)
+  const from = new Date(eventDraft.eventOccurredAt.getTime() - windowHours * 60 * 60 * 1000)
+  const to = new Date(eventDraft.eventOccurredAt.getTime() + windowHours * 60 * 60 * 1000)
+
+  const candidates = (
+    await listCandidateFinancialEvents({
+      userId: input.userId,
+      eventType,
+      amountMinor: signal.amountMinor,
+      currency: signal.currency,
+      from,
+      to,
+    })
+  ).filter((candidate) => candidate.id !== existingEventId)
+
+  const exactMatches = pickCandidateMatches(candidates, eventDraft)
+  const duplicateMerchantKey =
+    normalizeMerchantName(eventDraft.description) ??
+    normalizeMerchantName(signal.merchantHint) ??
+    normalizeMerchantName(signal.merchantRaw) ??
+    normalizeMerchantName(signal.merchantDescriptorRaw)
+
+  const obligationEventTypes = ["subscription_charge", "emi_payment", "bill_payment"] as const
+  const needsObligationReview =
+    obligationEventTypes.includes(
+      eventType as (typeof obligationEventTypes)[number],
+    ) && signal.confidence < 0.88
+  const requiresWeakSignalReview =
+    hasWeakMerchantIdentity(signal, rawDocument, signal.amountMinor) ||
+    (eventType === "transfer" && !eventDraft.paymentInstrumentId && !eventDraft.merchantId) ||
+    needsObligationReview ||
+    signal.confidence < 0.8
+
+  let aiShortlist = exactMatches.plausible.slice(0, AI_RECONCILIATION_SHORTLIST_LIMIT)
+
+  if (
+    aiShortlist.length === 0 &&
+    (eventDraft.merchantId || duplicateMerchantKey) &&
+    canUseCrossTypeReconciliation(eventType)
+  ) {
+    const broadCandidates = await listCandidateFinancialEventsByWindow({
+      userId: input.userId,
+      eventTypes: getCompatibleDuplicateEventTypes(eventType),
+      from,
+      to,
+    })
+
+    const relaxedCandidates: FinancialEventSelect[] = []
+
+    for (const candidate of broadCandidates) {
+      if (candidate.id === existingEventId) {
+        continue
+      }
+
+      const candidateMerchantKey = normalizeMerchantName(candidate.description)
+      const sharesMerchantIdentity =
+        (eventDraft.merchantId && candidate.merchantId === eventDraft.merchantId) ||
+        (duplicateMerchantKey && candidateMerchantKey === duplicateMerchantKey)
+
+      if (!sharesMerchantIdentity) {
+        continue
+      }
+
+      if (
+        await amountsLikelyRepresentSameTransaction({
+          signalAmountMinor: signal.amountMinor,
+          signalCurrency: signal.currency,
+          signalOccurredAt: eventDraft.eventOccurredAt,
+          candidateAmountMinor: candidate.amountMinor,
+          candidateCurrency: candidate.currency,
+        })
+      ) {
+        relaxedCandidates.push(candidate)
+      }
+    }
+
+    aiShortlist = relaxedCandidates.slice(0, AI_RECONCILIATION_SHORTLIST_LIMIT)
+  }
+
+  const shouldRunAiReconciliation = aiShortlist.length > 0 || requiresWeakSignalReview
+
+  if (!shouldRunAiReconciliation) {
+    return {
+      action: "not_retryable" as const,
+      reason: "no_ai_reconciliation_needed_for_current_state",
+      existingEventId,
+    }
+  }
+
+  const aiDecision = await resolveAiReconciliationDecision({
+    userId: input.userId,
+    signal,
+    rawDocument,
+    eventDraft,
+    shortlistCandidates: aiShortlist,
+  })
+
+  if (aiDecision.modelRunId && existingEventId) {
+    await updateModelRun(aiDecision.modelRunId, {
+      financialEventId:
+        aiDecision.outcome.action === "merge"
+          ? aiDecision.outcome.financialEventId
+          : existingEventId,
+      resultJson:
+        aiDecision.outcome.action !== "unavailable" ? aiDecision.outcome.resultJson : undefined,
+    })
+  }
+
+  if (
+    aiDecision.outcome.action === "merge" &&
+    existingEventId &&
+    existingEventId !== aiDecision.outcome.financialEventId
+  ) {
+    const targetEvent = await getFinancialEventById(aiDecision.outcome.financialEventId)
+
+    if (!targetEvent) {
+      throw new Error(`Missing financial event ${aiDecision.outcome.financialEventId}`)
+    }
+
+    const canonicalDraft =
+      aiDecision.outcome.canonicalEventType
+        ? {
+            ...eventDraft,
+            eventType: aiDecision.outcome.canonicalEventType,
+            direction: getDirectionForEventType(aiDecision.outcome.canonicalEventType),
+            isTransfer: aiDecision.outcome.canonicalEventType === "transfer",
+          }
+        : eventDraft
+
+    const patch: Partial<EventDraft> = {}
+
+    if (!targetEvent.merchantId && canonicalDraft.merchantId) {
+      patch.merchantId = canonicalDraft.merchantId
+    }
+
+    if (!targetEvent.merchantDescriptorRaw && canonicalDraft.merchantDescriptorRaw) {
+      patch.merchantDescriptorRaw = canonicalDraft.merchantDescriptorRaw
+    }
+
+    if (!targetEvent.paymentInstrumentId && canonicalDraft.paymentInstrumentId) {
+      patch.paymentInstrumentId = canonicalDraft.paymentInstrumentId
+    }
+
+    if (!targetEvent.categoryId && canonicalDraft.categoryId) {
+      patch.categoryId = canonicalDraft.categoryId
+    }
+
+    if (!targetEvent.description && canonicalDraft.description) {
+      patch.description = canonicalDraft.description
+    }
+
+    if (Number(targetEvent.confidence) < Number(canonicalDraft.confidence)) {
+      patch.confidence = canonicalDraft.confidence
+    }
+
+    Object.assign(
+      patch,
+      buildCanonicalMergePatch({
+        existingEvent: targetEvent,
+        eventDraft: canonicalDraft,
+        incomingIsBankSettlement: false,
+        existingHasBankSettlement: false,
+        canonicalEventType: aiDecision.outcome.canonicalEventType,
+      }),
+    )
+
+    if (Object.keys(patch).length > 0) {
+      await updateFinancialEvent(targetEvent.id, patch)
+    }
+
+    await updateExtractedSignalStatus(signal.id, "reconciled")
+
+    await reassignFinancialEventSources({
+      fromFinancialEventId: existingEventId,
+      toFinancialEventId: aiDecision.outcome.financialEventId,
+    })
+    await refreshFinancialEventSourceCount(aiDecision.outcome.financialEventId)
+    await refreshFinancialEventSourceCount(existingEventId)
+    await updateFinancialEvent(existingEventId, {
+      status: "ignored",
+      needsReview: false,
+    })
+  }
+
+  return {
+    action: "retried" as const,
+    previousModelRunId: input.previousModelRunId,
+    newModelRunId: aiDecision.modelRunId,
+    outcomeAction: aiDecision.outcome.action,
+    existingEventId,
   }
 }
 

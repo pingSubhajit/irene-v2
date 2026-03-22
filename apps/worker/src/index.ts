@@ -75,6 +75,7 @@ import {
   MERCHANT_REPAIR_BACKFILL_JOB_NAME,
   MERCHANT_RESOLUTION_QUEUE_NAME,
   MERCHANT_RESOLVE_JOB_NAME,
+  RECONCILIATION_MODEL_RETRY_JOB_NAME,
   RECONCILIATION_QUEUE_NAME,
   QUEUE_PREFIX,
   SIGNAL_RECONCILE_JOB_NAME,
@@ -130,6 +131,7 @@ import {
   obligationRefreshJobPayloadSchema,
   OBLIGATION_REFRESH_JOB_NAME,
   RECURRING_DETECTION_QUEUE_NAME,
+  reconciliationModelRetryJobPayloadSchema,
   reconciliationJobPayloadSchema,
   recurringObligationDetectionJobPayloadSchema,
   systemHealthcheckJobPayloadSchema,
@@ -173,7 +175,10 @@ import {
   refreshIncomeStream,
   refreshRecurringObligation,
 } from "./recurring"
-import { reconcileExtractedSignal } from "./reconciliation"
+import {
+  reconcileExtractedSignal,
+  retryFailedAiReconciliationResolution,
+} from "./reconciliation"
 
 const logger = createLogger("worker")
 
@@ -2152,6 +2157,29 @@ async function handleSignalReconcile(job: Job) {
   return outcome
 }
 
+async function handleReconciliationModelRetry(job: Job) {
+  const payload = reconciliationModelRetryJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  logger.info("Retrying failed reconciliation model run", {
+    modelRunId: payload.modelRunId,
+    extractedSignalId: payload.extractedSignalId,
+    rawDocumentId: payload.rawDocumentId,
+    source: payload.source,
+  })
+
+  const outcome = await retryFailedAiReconciliationResolution({
+    userId: payload.userId,
+    extractedSignalId: payload.extractedSignalId,
+    rawDocumentId: payload.rawDocumentId,
+    previousModelRunId: payload.modelRunId,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+
+  return outcome
+}
+
 async function handleEventExtractInstrumentObservation(job: Job) {
   const payload = eventExtractInstrumentObservationJobPayloadSchema.parse(job.data)
   await markJobRunning(job, payload)
@@ -2605,11 +2633,15 @@ const balanceInferenceWorker = new Worker(
 const reconciliationWorker = new Worker(
   RECONCILIATION_QUEUE_NAME,
   async (job) => {
-    if (job.name !== SIGNAL_RECONCILE_JOB_NAME) {
-      throw new Error(`Unsupported job: ${job.name}`)
+    if (job.name === SIGNAL_RECONCILE_JOB_NAME) {
+      return handleSignalReconcile(job)
     }
 
-    return handleSignalReconcile(job)
+    if (job.name === RECONCILIATION_MODEL_RETRY_JOB_NAME) {
+      return handleReconciliationModelRetry(job)
+    }
+
+    throw new Error(`Unsupported job: ${job.name}`)
   },
   {
     connection: workerConnection,

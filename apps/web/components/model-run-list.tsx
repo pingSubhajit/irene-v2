@@ -1,12 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { useState, useTransition } from "react"
 
 import {
   RiCheckLine,
   RiCloseLine,
   RiFileCopyLine,
   RiLoader4Line,
+  RiRefreshLine,
   RiTimeLine,
 } from "@remixicon/react"
 import { Button } from "@workspace/ui/components/button"
@@ -34,6 +36,10 @@ type ModelRunRow = {
   resultJson?: Record<string, unknown> | null
   requestId: string | null
   createdAt: Date
+  retryAction?: {
+    extractedSignalId: string
+    rawDocumentId: string
+  } | null
 }
 
 type ModelRunListProps = {
@@ -41,8 +47,43 @@ type ModelRunListProps = {
 }
 
 export function ModelRunList({ modelRuns }: ModelRunListProps) {
+  const router = useRouter()
   const [selectedRun, setSelectedRun] = useState<ModelRunRow | null>(null)
   const [copyLabel, setCopyLabel] = useState("Copy details")
+  const [retryLabel, setRetryLabel] = useState("Retry")
+  const [isRetryPending, startRetryTransition] = useTransition()
+
+  const handleRetry = (modelRun: ModelRunRow) => {
+    startRetryTransition(() => {
+      void (async () => {
+        setRetryLabel("Retrying...")
+
+        try {
+          const response = await fetch("/api/model-run/retry", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              modelRunId: modelRun.id,
+              extractedSignalId: modelRun.retryAction?.extractedSignalId,
+              rawDocumentId: modelRun.retryAction?.rawDocumentId,
+            }),
+          })
+
+          if (!response.ok) {
+            setRetryLabel("Retry failed")
+            return
+          }
+
+          setRetryLabel("Retry queued")
+          router.refresh()
+        } catch {
+          setRetryLabel("Retry failed")
+        }
+      })()
+    })
+  }
 
   return (
     <>
@@ -60,6 +101,7 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
                   onClick={() => {
                     setSelectedRun(modelRun)
                     setCopyLabel("Copy details")
+                    setRetryLabel("Retry")
                   }}
                   className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3 text-left transition hover:bg-white/[0.02]"
                 >
@@ -126,6 +168,7 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
           if (!open) {
             setSelectedRun(null)
             setCopyLabel("Copy details")
+            setRetryLabel("Retry")
           }
         }}
       >
@@ -176,6 +219,20 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
                 {copyLabel}
               </Button>
             </div>
+
+            {selectedRun?.status === "failed" && selectedRun.retryAction ? (
+              <div className="mt-4 flex items-center justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isRetryPending}
+                  onClick={() => handleRetry(selectedRun)}
+                >
+                  <RiRefreshLine className="size-3.5" />
+                  {retryLabel}
+                </Button>
+              </div>
+            ) : null}
 
             <pre className="mt-4 max-h-[42svh] overflow-x-auto overflow-y-auto border border-white/8 bg-[rgba(255,255,255,0.03)] p-4 text-sm leading-6 whitespace-pre-wrap text-white/72 [overflow-wrap:anywhere]">
               {formatModelRunDetails(selectedRun)}
