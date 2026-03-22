@@ -1,5 +1,6 @@
 export * from "./finance-relevance"
 export { aiModels, aiPromptVersions } from "./config"
+export * from "./advice"
 export * from "./extraction"
 export * from "./instrument-resolution"
 export * from "./merchant-resolution"

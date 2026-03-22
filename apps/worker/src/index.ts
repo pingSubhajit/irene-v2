@@ -25,6 +25,7 @@ import {
   getRawDocumentById,
   getUserSettings,
   hasExtractedSignalsForRawDocument,
+  listUserIdsForAdvice,
   listUserIdsForForecasting,
   listUserIdsForInstrumentRepair,
   listUserIdsForMemoryLearning,
@@ -49,6 +50,9 @@ import {
   uploadPrivateObject,
 } from "@workspace/integrations"
 import {
+  ADVICE_QUEUE_NAME,
+  ADVICE_REBUILD_USER_JOB_NAME,
+  ADVICE_REFRESH_USER_JOB_NAME,
   AI_EXTRACTION_QUEUE_NAME,
   BALANCE_INFERENCE_QUEUE_NAME,
   BACKFILL_IMPORT_QUEUE_NAME,
@@ -94,10 +98,14 @@ import {
   SYSTEM_QUEUE_NAME,
   closeWorkflowConnections,
   createWorkerRedisConnection,
+  adviceRefreshUserJobPayloadSchema,
+  adviceRebuildUserJobPayloadSchema,
   documentInferBalanceJobPayloadSchema,
   documentExtractRouteJobPayloadSchema,
   documentExtractStructuredJobPayloadSchema,
   documentNormalizeJobPayloadSchema,
+  enqueueAdviceRebuildUser,
+  enqueueAdviceRefreshUser,
   forecastRefreshUserJobPayloadSchema,
   forecastRebuildUserJobPayloadSchema,
   enqueueForecastRefreshUser,
@@ -148,6 +156,7 @@ import {
   systemHealthcheckJobPayloadSchema,
 } from "@workspace/workflows"
 
+import { refreshAdviceForUser } from "./advice"
 import {
   inferAccountsAndPromoteBalancesForEvent,
   inferAccountsAndPromoteBalancesForRawDocument,
@@ -996,6 +1005,66 @@ async function enqueueTrackedForecastRefresh(input: {
   })
 
   await enqueueForecastRefreshUser({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    source: input.source,
+    reason: input.reason,
+  })
+}
+
+async function enqueueTrackedAdviceRefresh(input: {
+  userId: string
+  correlationId: string
+  source: "worker" | "web" | "scheduler" | "startup"
+  reason: "forecast_changed" | "goals_changed" | "manual_refresh"
+}) {
+  const jobKey = `${ADVICE_REFRESH_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: ADVICE_QUEUE_NAME,
+    jobName: ADVICE_REFRESH_USER_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+    },
+  })
+
+  await enqueueAdviceRefreshUser({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    source: input.source,
+    reason: input.reason,
+  })
+}
+
+async function enqueueTrackedAdviceRebuild(input: {
+  userId: string
+  correlationId: string
+  source: "worker" | "web" | "scheduler" | "startup"
+  reason: "nightly_rebuild" | "startup_rebuild" | "manual_rebuild" | "logic_change"
+}) {
+  const jobKey = `${ADVICE_REBUILD_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: ADVICE_QUEUE_NAME,
+    jobName: ADVICE_REBUILD_USER_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+    },
+  })
+
+  await enqueueAdviceRebuildUser({
     correlationId: input.correlationId,
     jobRunId: jobRun.id,
     jobKey,
@@ -2604,6 +2673,13 @@ async function handleForecastRefresh(job: Job) {
     reason: payload.reason,
   })
 
+  await enqueueTrackedAdviceRefresh({
+    userId: payload.userId,
+    correlationId: payload.correlationId,
+    source: "worker",
+    reason: "forecast_changed",
+  })
+
   await markJobSucceeded(job, payload, outcome)
   return outcome
 }
@@ -2613,6 +2689,39 @@ async function handleForecastRebuild(job: Job) {
   await markJobRunning(job, payload)
 
   const outcome = await refreshForecastForUser({
+    userId: payload.userId,
+    reason: payload.reason,
+  })
+
+  await enqueueTrackedAdviceRebuild({
+    userId: payload.userId,
+    correlationId: payload.correlationId,
+    source: "worker",
+    reason: payload.reason,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleAdviceRefresh(job: Job) {
+  const payload = adviceRefreshUserJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await refreshAdviceForUser({
+    userId: payload.userId,
+    reason: payload.reason,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleAdviceRebuild(job: Job) {
+  const payload = adviceRebuildUserJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await refreshAdviceForUser({
     userId: payload.userId,
     reason: payload.reason,
   })
@@ -2902,6 +3011,26 @@ const forecastingWorker = new Worker(
   },
 )
 
+const adviceWorker = new Worker(
+  ADVICE_QUEUE_NAME,
+  async (job) => {
+    if (job.name === ADVICE_REFRESH_USER_JOB_NAME) {
+      return handleAdviceRefresh(job)
+    }
+
+    if (job.name === ADVICE_REBUILD_USER_JOB_NAME) {
+      return handleAdviceRebuild(job)
+    }
+
+    throw new Error(`Unsupported job: ${job.name}`)
+  },
+  {
+    connection: workerConnection,
+    prefix: QUEUE_PREFIX,
+    concurrency: 2,
+  },
+)
+
 const memoryLearningWorker = new Worker(
   MEMORY_LEARNING_QUEUE_NAME,
   async (job) => {
@@ -2989,6 +3118,7 @@ for (const [queueName, worker] of [
   [RECONCILIATION_QUEUE_NAME, reconciliationWorker],
   [RECURRING_DETECTION_QUEUE_NAME, recurringDetectionWorker],
   [FORECASTING_QUEUE_NAME, forecastingWorker],
+  [ADVICE_QUEUE_NAME, adviceWorker],
   [MEMORY_LEARNING_QUEUE_NAME, memoryLearningWorker],
   [ENTITY_RESOLUTION_QUEUE_NAME, entityResolutionWorker],
   [MERCHANT_RESOLUTION_QUEUE_NAME, merchantResolutionWorker],
@@ -3030,6 +3160,7 @@ for (const [queueName, worker] of [
 async function shutdown(signal: string) {
   logger.info("Shutting down worker", { signal })
   clearInterval(forecastNightlyScheduler)
+  clearInterval(adviceNightlyScheduler)
   clearInterval(memoryDecayScheduler)
 
   await Promise.all([
@@ -3042,6 +3173,7 @@ async function shutdown(signal: string) {
     reconciliationWorker.close(),
     recurringDetectionWorker.close(),
     forecastingWorker.close(),
+    adviceWorker.close(),
     memoryLearningWorker.close(),
     entityResolutionWorker.close(),
     merchantResolutionWorker.close(),
@@ -3051,6 +3183,7 @@ async function shutdown(signal: string) {
 }
 
 let lastNightlyForecastRebuildDate: string | null = null
+let lastNightlyAdviceRebuildDate: string | null = null
 let lastMemoryDecayScanDate: string | null = null
 
 async function scheduleNightlyForecastRebuildIfDue() {
@@ -3085,6 +3218,38 @@ const forecastNightlyScheduler = setInterval(() => {
   })
 }, 60 * 60 * 1000)
 
+async function scheduleNightlyAdviceRebuildIfDue() {
+  const today = new Date().toISOString().slice(0, 10)
+  if (lastNightlyAdviceRebuildDate === today) {
+    return
+  }
+
+  lastNightlyAdviceRebuildDate = today
+  const userIds = await listUserIdsForAdvice()
+
+  await Promise.all(
+    userIds.map((userId) =>
+      enqueueTrackedAdviceRebuild({
+        userId,
+        correlationId: `scheduler:${today}:${userId}`,
+        source: "scheduler",
+        reason: "nightly_rebuild",
+      }),
+    ),
+  )
+
+  logger.info("Scheduled nightly advice rebuilds", {
+    date: today,
+    userCount: userIds.length,
+  })
+}
+
+const adviceNightlyScheduler = setInterval(() => {
+  scheduleNightlyAdviceRebuildIfDue().catch((error) => {
+    logger.errorWithCause("Failed to schedule nightly advice rebuilds", error)
+  })
+}, 60 * 60 * 1000)
+
 async function scheduleMemoryDecayScanIfDue() {
   const today = new Date().toISOString().slice(0, 10)
   if (lastMemoryDecayScanDate === today) {
@@ -3107,10 +3272,11 @@ const memoryDecayScheduler = setInterval(() => {
 }, 60 * 60 * 1000)
 
 void (async () => {
-  const [instrumentUserIds, merchantUserIds, forecastUserIds, memoryUserIds] = await Promise.all([
+  const [instrumentUserIds, merchantUserIds, forecastUserIds, adviceUserIds, memoryUserIds] = await Promise.all([
     listUserIdsForInstrumentRepair(),
     listUsersForMerchantRepair(),
     listUserIdsForForecasting(),
+    listUserIdsForAdvice(),
     listUserIdsForMemoryLearning(),
   ])
 
@@ -3146,6 +3312,17 @@ void (async () => {
   )
 
   await Promise.all(
+    adviceUserIds.map((userId) =>
+      enqueueTrackedAdviceRebuild({
+        userId,
+        correlationId: `startup:${userId}`,
+        source: "startup",
+        reason: "startup_rebuild",
+      }),
+    ),
+  )
+
+  await Promise.all(
     memoryUserIds.map((userId) =>
       enqueueTrackedMemoryRebuild({
         userId,
@@ -3163,6 +3340,7 @@ void (async () => {
   })
 
   lastNightlyForecastRebuildDate = new Date().toISOString().slice(0, 10)
+  lastNightlyAdviceRebuildDate = new Date().toISOString().slice(0, 10)
   lastMemoryDecayScanDate = new Date().toISOString().slice(0, 10)
 })().catch((error) => {
   logger.errorWithCause("Failed to schedule startup repair backfills", error)
@@ -3175,6 +3353,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       .catch((error) => {
         logger.errorWithCause("Worker shutdown failed", error, { signal })
         clearInterval(forecastNightlyScheduler)
+        clearInterval(adviceNightlyScheduler)
         clearInterval(memoryDecayScheduler)
         process.exit(1)
       })

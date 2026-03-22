@@ -2,11 +2,13 @@ import { and, desc, eq, inArray, not } from "drizzle-orm"
 
 import { db } from "./client"
 import {
+  adviceItems,
   balanceAnchors,
   balanceObservations,
   documentAttachments,
   emailSyncCursors,
   feedbackEvents,
+  financialGoals,
   forecastRuns,
   forecastSnapshots,
   financialEvents,
@@ -23,6 +25,7 @@ import {
   paymentInstruments,
   paymentProcessorAliases,
   paymentProcessors,
+  goalContributionSnapshots,
   rawDocuments,
   recurringObligations,
   reviewQueueItems,
@@ -479,6 +482,8 @@ export async function resetGmailIngestionForConnection(
       forecastSnapshotRows,
       feedbackRows,
       ,
+      goalRows,
+      ,
     ] = await Promise.all([
       tx.select({ id: reviewQueueItems.id }).from(reviewQueueItems).where(eq(reviewQueueItems.userId, userId)),
       tx
@@ -528,11 +533,23 @@ export async function resetGmailIngestionForConnection(
         .where(eq(forecastRuns.userId, userId)),
       tx.select({ id: feedbackEvents.id }).from(feedbackEvents).where(eq(feedbackEvents.userId, userId)),
       tx.select({ id: memoryFacts.id }).from(memoryFacts).where(eq(memoryFacts.userId, userId)),
+      tx.select({ id: financialGoals.id }).from(financialGoals).where(eq(financialGoals.userId, userId)),
+      tx.select({ id: adviceItems.id }).from(adviceItems).where(eq(adviceItems.userId, userId)),
     ])
 
     await tx.delete(reviewQueueItems).where(eq(reviewQueueItems.userId, userId))
     await tx.delete(incomeStreams).where(eq(incomeStreams.userId, userId))
     await tx.delete(recurringObligations).where(eq(recurringObligations.userId, userId))
+    if (goalRows.length > 0) {
+      await tx.delete(goalContributionSnapshots).where(
+        inArray(
+          goalContributionSnapshots.financialGoalId,
+          goalRows.map((row) => row.id),
+        ),
+      )
+    }
+    await tx.delete(adviceItems).where(eq(adviceItems.userId, userId))
+    await tx.delete(financialGoals).where(eq(financialGoals.userId, userId))
     await tx.delete(balanceAnchors).where(eq(balanceAnchors.userId, userId))
     await tx.delete(balanceObservations).where(eq(balanceObservations.userId, userId))
     await tx.delete(forecastRuns).where(eq(forecastRuns.userId, userId))

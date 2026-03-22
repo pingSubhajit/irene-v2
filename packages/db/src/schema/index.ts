@@ -1,5 +1,21 @@
 export { accounts, authSchema, sessions, users, verifications } from "./auth"
 export {
+  adviceItems,
+  financialGoals,
+  goalContributionSnapshots,
+  type AdviceItemInsert,
+  type AdviceItemPriority,
+  type AdviceItemSelect,
+  type AdviceItemStatus,
+  type AdviceItemTriggerType,
+  type FinancialGoalInsert,
+  type FinancialGoalSelect,
+  type FinancialGoalStatus,
+  type FinancialGoalType,
+  type GoalContributionSnapshotInsert,
+  type GoalContributionSnapshotSelect,
+} from "./advice"
+export {
   memoryFacts,
   type MemoryFactInsert,
   type MemoryFactSelect,
@@ -160,6 +176,11 @@ export {
   type RecurringObligationType,
 } from "./recurring"
 
+import {
+  adviceItems,
+  financialGoals,
+  goalContributionSnapshots,
+} from "./advice"
 import { authSchema } from "./auth"
 import { jobRuns, userSettings } from "./app"
 import { feedbackEvents } from "./feedback"
@@ -201,6 +222,9 @@ import {
 
 export const schema = {
   ...authSchema,
+  adviceItems,
+  financialGoals,
+  goalContributionSnapshots,
   userSettings,
   jobRuns,
   memoryFacts,

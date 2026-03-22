@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 
 import { db } from "./client"
 import {
+  adviceItems,
   balanceObservations,
   documentAttachments,
   emailSyncCursors,
@@ -10,6 +11,7 @@ import {
   financialEventSources,
   financialEvents,
   financialEventValuations,
+  financialGoals,
   financialInstitutionAliases,
   financialInstitutions,
   incomeStreams,
@@ -29,6 +31,7 @@ import {
   userSettings,
   users,
 } from "./schema"
+import { goalContributionSnapshots } from "./schema/advice"
 import { emiPlans } from "./schema/recurring"
 
 type DiagnosticStage = "sync" | "extraction" | "reconciliation"
@@ -139,6 +142,9 @@ export async function resetUserDatabaseState(input: {
       cursorRows,
       jobRunRows,
       feedbackRows,
+      ,
+      goalRows,
+      ,
     ] = await Promise.all([
       tx
         .select({ id: recurringObligations.id })
@@ -213,6 +219,8 @@ export async function resetUserDatabaseState(input: {
         .from(feedbackEvents)
         .where(eq(feedbackEvents.userId, input.userId)),
       tx.select({ id: memoryFacts.id }).from(memoryFacts).where(eq(memoryFacts.userId, input.userId)),
+      tx.select({ id: financialGoals.id }).from(financialGoals).where(eq(financialGoals.userId, input.userId)),
+      tx.select({ id: adviceItems.id }).from(adviceItems).where(eq(adviceItems.userId, input.userId)),
     ])
 
     const recurringIds = recurringRows.map((row) => row.id)
@@ -232,6 +240,16 @@ export async function resetUserDatabaseState(input: {
     await tx
       .delete(recurringObligations)
       .where(eq(recurringObligations.userId, input.userId))
+    if (goalRows.length > 0) {
+      await tx.delete(goalContributionSnapshots).where(
+        inArray(
+          goalContributionSnapshots.financialGoalId,
+          goalRows.map((row) => row.id),
+        ),
+      )
+    }
+    await tx.delete(adviceItems).where(eq(adviceItems.userId, input.userId))
+    await tx.delete(financialGoals).where(eq(financialGoals.userId, input.userId))
 
     if (eventIds.length > 0) {
       await tx

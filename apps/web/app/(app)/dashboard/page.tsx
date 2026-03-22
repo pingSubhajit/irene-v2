@@ -3,14 +3,19 @@ import {
   countOpenReviewQueueItemsForUser,
   countRecurringObligationsByType,
   getUserSettings,
+  listAdviceItemsForUser,
   listDashboardLedgerEventsForUser,
+  listFinancialGoalsForUser,
   listFinancialEventSourcesForEventIds,
+  listLatestGoalContributionSnapshotsForGoalIds,
   listIncomeStreamsForUser,
   listLedgerEventsForUser,
   listRecurringObligationsForUser,
 } from "@workspace/db"
 
 import { ActionTile } from "@/components/action-tile"
+import { AdviceRail } from "@/components/advice-rail"
+import { GoalSnapshotPanel } from "@/components/goal-snapshot-panel"
 import { HeroBalanceCard } from "@/components/hero-balance-card"
 import { RecurringModelCard } from "@/components/recurring-model-card"
 import { SnapshotStatStrip } from "@/components/snapshot-stat-strip"
@@ -63,6 +68,10 @@ function formatShortDate(date: Date | null, timeZone: string) {
   })
 }
 
+function parseDateKey(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00.000Z`)
+}
+
 export default async function DashboardPage() {
   const session = await requireSession()
   const settings = await getUserSettings(session.user.id)
@@ -85,6 +94,8 @@ export default async function DashboardPage() {
     incomeStreamCounts,
     recurringObligations,
     incomeStreams,
+    activeAdvice,
+    activeGoals,
   ] = await Promise.all([
     getGmailIntegrationState(session.user.id),
     countOpenReviewQueueItemsForUser(session.user.id),
@@ -109,7 +120,24 @@ export default async function DashboardPage() {
       userId: session.user.id,
       limit: 3,
     }),
+    listAdviceItemsForUser({
+      userId: session.user.id,
+      statuses: ["active"],
+      limit: 3,
+    }),
+    listFinancialGoalsForUser({
+      userId: session.user.id,
+      statuses: ["active"],
+      limit: 3,
+    }),
   ])
+
+  const goalSnapshotRows = await listLatestGoalContributionSnapshotsForGoalIds(
+    activeGoals.map((row) => row.goal.id),
+  )
+  const goalSnapshotsByGoalId = new Map(
+    goalSnapshotRows.map((row) => [row.snapshot.financialGoalId, row.snapshot]),
+  )
 
   const recentEventIds = recentEvents.map(({ event }) => event.id)
   const recentSources =
@@ -203,6 +231,52 @@ export default async function DashboardPage() {
         }
       : null
 
+  const adviceRailItems = activeAdvice.map(({ adviceItem, merchant, goal }) => ({
+    id: adviceItem.id,
+    title: adviceItem.title,
+    summary: adviceItem.summary,
+    detail: adviceItem.detail,
+    priority: adviceItem.priority,
+    status: adviceItem.status,
+    href:
+      goal?.id
+        ? `/goals/${goal.id}`
+        : adviceItem.triggerType === "review_backlog"
+          ? "/review"
+          : "/activity",
+    merchantName: merchant?.displayName ?? null,
+    goalName: goal?.name ?? null,
+    updatedAtLabel: formatInUserTimeZone(adviceItem.updatedAt, settings.timeZone, {
+      day: "numeric",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    }),
+  }))
+
+  const goalPanelItems = activeGoals.map(({ goal }) => {
+    const snapshot = goalSnapshotsByGoalId.get(goal.id)
+    const projectedAmountMinor =
+      snapshot?.projectedAmountMinor ?? goal.startingAmountMinor ?? 0
+    const gapAmountMinor =
+      snapshot?.gapAmountMinor ??
+      Math.max(goal.targetAmountMinor - projectedAmountMinor, 0)
+    const progressRatio =
+      goal.targetAmountMinor > 0 ? projectedAmountMinor / goal.targetAmountMinor : 0
+
+    return {
+      id: goal.id,
+      name: goal.name,
+      status: goal.status,
+      targetAmountLabel: formatCurrency(goal.targetAmountMinor, goal.currency),
+      projectedAmountLabel: formatCurrency(projectedAmountMinor, goal.currency),
+      gapAmountLabel: formatCurrency(gapAmountMinor, goal.currency),
+      targetDateLabel: formatShortDate(parseDateKey(goal.targetDate), settings.timeZone),
+      progressRatio,
+      riskLabel: gapAmountMinor > goal.targetAmountMinor * 0.25 ? "At risk" : "On track",
+    }
+  })
+
   return (
     <section className="grid gap-6">
       <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
@@ -245,6 +319,8 @@ export default async function DashboardPage() {
             actionLabel="Open activity"
           />
 
+          <AdviceRail items={adviceRailItems} />
+
           <SnapshotStatStrip
             stats={[
               {
@@ -286,6 +362,19 @@ export default async function DashboardPage() {
             badge={openReviewCount > 0 ? "Review" : "Clear"}
             badgeVariant={openReviewCount > 0 ? "warning" : "success"}
           />
+          <ActionTile
+            href="/advice"
+            eyebrow="Advice queue"
+            title={activeAdvice.length > 0 ? `${activeAdvice.length} active` : "no active advice"}
+            description={
+              activeAdvice.length > 0
+                ? "Forecast, goals, and recurring patterns are already surfacing specific next moves."
+                : "No active planning prompts are open right now. Irene will surface new advice when the underlying state changes."
+            }
+            badge={activeAdvice.length > 0 ? "Live" : "Quiet"}
+            badgeVariant={activeAdvice.length > 0 ? "violet" : "cream"}
+          />
+          <GoalSnapshotPanel goals={goalPanelItems} />
           <ActionTile
             href="/settings"
             eyebrow="Inbox state"

@@ -1,4 +1,5 @@
 export * from "./client"
+export * from "./advice"
 export * from "./debug"
 export * from "./extraction"
 export * from "./feedback"
