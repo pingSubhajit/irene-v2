@@ -4,6 +4,7 @@ import { RiArrowLeftLine } from "@remixicon/react"
 import { getMerchantDetailForUser, getUserSettings } from "@workspace/db"
 import { Avatar, AvatarFallback, AvatarImage } from "@workspace/ui/components/avatar"
 
+import { AppEmptyState } from "@/components/app-empty-state"
 import { MerchantTopCategoriesChart } from "@/components/merchant-top-categories-chart"
 import { TransactionCard } from "@/components/transaction-card"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
@@ -405,18 +406,20 @@ export default async function MerchantDetailPage({
               detail.recentTransactions.map((row) => (
                 <TransactionCard
                   key={row.event.id}
-                  eventId={row.event.id}
-                  merchant={row.merchant?.displayName ?? detail.merchant.displayName}
-                  merchantLogoUrl={row.merchant?.logoUrl ?? detail.merchant.logoUrl ?? null}
-                  processor={row.paymentProcessor?.displayName ?? null}
-                  amount={formatCurrency(
-                    row.reportingAmountMinor ?? row.event.amountMinor,
+                eventId={row.event.id}
+                merchant={row.merchant?.displayName ?? detail.merchant.displayName}
+                merchantLogoUrl={row.merchant?.logoUrl ?? detail.merchant.logoUrl ?? null}
+                merchantId={row.merchant?.id ?? row.event.merchantId ?? detail.merchant.id}
+                processor={row.paymentProcessor?.displayName ?? null}
+                amount={formatCurrency(
+                  row.reportingAmountMinor ?? row.event.amountMinor,
                     row.reportingAmountMinor ? settings.reportingCurrency : row.event.currency,
-                  )}
-                  dateLabel={row.event.eventOccurredAt.toISOString()}
-                  categoryName={row.category?.name ?? "Uncategorized"}
-                  categoryIconName={row.category?.iconName}
-                  categoryColorToken={row.category?.colorToken}
+                )}
+                dateLabel={row.event.eventOccurredAt.toISOString()}
+                categoryName={row.category?.name ?? "Uncategorized"}
+                categoryId={row.category?.id ?? row.event.categoryId}
+                categoryIconName={row.category?.iconName}
+                categoryColorToken={row.category?.colorToken}
                   direction={row.event.direction}
                   eventType={row.event.eventType}
                   needsReview={row.event.needsReview}
@@ -426,9 +429,11 @@ export default async function MerchantDetailPage({
                 />
               ))
             ) : (
-              <div className="py-5 text-sm leading-6 text-white/42">
-                No transactions landed for this merchant in the selected period.
-              </div>
+              <AppEmptyState
+                compact
+                title="No transactions in this period"
+                description="No transactions landed for this merchant in this window."
+              />
             )}
           </div>
         </section>

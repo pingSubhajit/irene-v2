@@ -19,6 +19,7 @@ import {
 } from "@workspace/workflows"
 import { Button } from "@workspace/ui/components/button"
 
+import { AppEmptyState } from "@/components/app-empty-state"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { requireSession } from "@/lib/session"
 
@@ -35,9 +36,9 @@ function asSingleValue(value: string | string[] | undefined) {
 function getStatusMessage(value: string | undefined) {
   switch (value) {
     case "replay-queued":
-      return "Recovery replay queued."
+      return "Retry queued."
     case "replay-failed":
-      return "That recovery action could not be replayed."
+      return "That retry could not be started."
     case "forecast-refresh-queued":
       return "Forecast refresh queued."
     case "forecast-rebuild-queued":
@@ -253,7 +254,7 @@ export default async function RecoveryPage({ searchParams }: RecoveryPageProps) 
         />
       </div>
 
-      <SectionHeader>Recoverable failures</SectionHeader>
+      <SectionHeader>Recent failures</SectionHeader>
       <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]">
         {recoverableJobs.length > 0 ? (
           recoverableJobs.map((jobRun) => (
@@ -271,14 +272,20 @@ export default async function RecoveryPage({ searchParams }: RecoveryPageProps) 
                   <input type="hidden" name="jobRunId" value={jobRun.id} />
                   <input type="hidden" name="redirectTo" value="/settings/recovery" />
                   <Button type="submit" variant="outline" size="xs">
-                    Replay
+                    Retry
                   </Button>
                 </form>
               }
             />
           ))
         ) : (
-          <p className="py-4 text-sm text-white/42">No recoverable failures right now.</p>
+          <div className="py-4">
+            <AppEmptyState
+              compact
+              title="Nothing needs recovery"
+              description="Everything looks healthy right now."
+            />
+          </div>
         )}
       </div>
     </section>

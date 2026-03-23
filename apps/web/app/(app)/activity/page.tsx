@@ -11,6 +11,7 @@ import {
 } from "@workspace/db"
 
 import { ActivityToolbar } from "@/components/activity-toolbar"
+import { AppEmptyState } from "@/components/app-empty-state"
 import { RecurringModelCard } from "@/components/recurring-model-card"
 import { TransactionCard } from "@/components/transaction-card"
 import {
@@ -406,7 +407,10 @@ export default async function ActivityPage({
               ))}
             </div>
           ) : (
-            <EmptyState message="no income streams match the current filters." />
+            <EmptyState
+              title="No income streams match"
+              description="Try widening the filters."
+            />
           )
         ) : view === "subscriptions" || view === "emis" ? (
           filteredRecurringRows.length > 0 ? (
@@ -434,7 +438,10 @@ export default async function ActivityPage({
               ))}
             </div>
           ) : (
-            <EmptyState message="no recurring models match the current filters." />
+            <EmptyState
+              title="No recurring models match"
+              description="Nothing matches these filters."
+            />
           )
         ) : orderedGroups.length > 0 ? (
           orderedGroups.map(([monthKey, rows]) => (
@@ -460,9 +467,11 @@ export default async function ActivityPage({
                         "Unmapped event"
                       }
                       merchantLogoUrl={merchant?.logoUrl ?? null}
+                      merchantId={merchant?.id ?? event.merchantId}
                       amount={formatCurrency(event.amountMinor, event.currency)}
                       dateLabel={event.eventOccurredAt.toISOString()}
                       categoryName={category?.name ?? "Uncategorized"}
+                      categoryId={category?.id ?? event.categoryId}
                       categoryIconName={category?.iconName ?? null}
                       categoryColorToken={category?.colorToken ?? null}
                       direction={event.direction}
@@ -479,17 +488,24 @@ export default async function ActivityPage({
             </section>
           ))
         ) : (
-          <EmptyState message="no activity matches the current filters." />
+          <EmptyState
+            title="No activity matches"
+            description="Nothing matches these filters."
+          />
         )}
       </div>
     </section>
   )
 }
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
   return (
-    <div className="py-16 text-center">
-      <p className="text-sm text-white/32">{message}</p>
-    </div>
+    <AppEmptyState compact title={title} description={description} />
   )
 }

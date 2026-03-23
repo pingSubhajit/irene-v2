@@ -251,14 +251,6 @@ export default async function SettingsPage({
         />
       </div>
 
-      {/* Diagnostics */}
-      <SectionHeader>Diagnostics</SectionHeader>
-      <div className="divide-y divide-white/[0.06]">
-        <NavRow href="/settings/logs" label="unified debug log" />
-        <NavRow href="/ops/extraction" label="extraction ops" />
-        <NavRow href="/ops/queues" label="queue ops" />
-      </div>
-
       {/* Data management */}
       <SectionHeader>Data management</SectionHeader>
       <div className="divide-y divide-white/[0.06]">

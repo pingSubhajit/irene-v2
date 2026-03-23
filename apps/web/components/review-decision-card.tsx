@@ -4,7 +4,6 @@ import { useState } from "react"
 
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
-import { Card } from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
 import { Select } from "@workspace/ui/components/select"
 
@@ -66,7 +65,7 @@ export function ReviewDecisionCard({
 
   return (
     <>
-      <Card className="border-white/8 bg-[rgba(18,18,20,0.94)] p-5">
+      <div className="border-y border-white/[0.06] py-5 first:border-t-0">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="neo-kicker">{itemType}</p>
@@ -97,7 +96,7 @@ export function ReviewDecisionCard({
             <Button variant="ghost">Ignore</Button>
           </form>
         </div>
-      </Card>
+      </div>
 
       {advancedOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-4 pb-0 pt-10 backdrop-blur-sm md:items-center md:p-6">
@@ -307,7 +306,7 @@ export function ReviewDecisionCard({
 
 function ContextBlock(props: { title: string; primary: string; secondary: string }) {
   return (
-    <div className="border border-white/8 bg-black/16 p-4">
+    <div className="border border-white/[0.06] bg-[rgba(255,255,255,0.015)] p-4">
       <p className="neo-kicker">{props.title}</p>
       <p className="mt-3 text-base font-semibold text-white">{props.primary}</p>
       <p className="mt-2 text-sm leading-6 text-white/56">{props.secondary}</p>

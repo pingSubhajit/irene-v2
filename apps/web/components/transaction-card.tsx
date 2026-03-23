@@ -24,10 +24,12 @@ type TransactionCardProps = {
   eventId: string
   merchant: string
   merchantLogoUrl?: string | null
+  merchantId?: string | null
   processor?: string | null
   amount: string
   dateLabel: string
   categoryName: string
+  categoryId?: string | null
   categoryIconName?: CategoryIconName | null
   categoryColorToken?: CategoryColorToken | null
   direction: "inflow" | "outflow" | "neutral"
@@ -90,10 +92,12 @@ export function TransactionCard({
   eventId,
   merchant,
   merchantLogoUrl,
+  merchantId,
   processor,
   amount,
   dateLabel,
   categoryName,
+  categoryId,
   categoryIconName,
   categoryColorToken,
   direction,
@@ -101,52 +105,94 @@ export function TransactionCard({
   traceCount = 0,
   timeZone,
 }: TransactionCardProps) {
-  const content = (
-    <div className="flex items-center gap-3.5 py-4">
-      <Avatar className="size-10 shrink-0 rounded-full bg-white/[0.07]">
-        {merchantLogoUrl ? (
-          <AvatarImage src={merchantLogoUrl} alt={merchant} />
-        ) : (
-          <AvatarFallback className="bg-white/[0.07] text-xs font-semibold tracking-wide text-white/50">
-            {getInitials(merchant)}
-          </AvatarFallback>
-        )}
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="truncate text-[15px] font-medium text-white">
-            {merchant}
-          </p>
-          <CategoryBadge
-            categoryName={categoryName}
-            iconName={categoryIconName}
-            colorToken={categoryColorToken}
-          />
-        </div>
-        <div className="mt-0.5 flex items-center gap-1.5">
-          <DirectionIcon direction={direction} needsReview={needsReview} />
-          <p className="truncate text-sm text-white/32">
-            {processor ? `via ${processor} · ` : ""}
-            {formatRowTime(dateLabel, timeZone)}
-          </p>
-        </div>
-      </div>
-      <p className="shrink-0 text-[15px] font-semibold text-white tabular-nums">
-        {amount}
-      </p>
-    </div>
+  const merchantHref = merchantId ? `/activity/merchants/${merchantId}` : null
+  const categoryHref = categoryId ? `/activity/categories/${categoryId}` : null
+
+  const avatar = (
+    <Avatar className="size-10 shrink-0 rounded-full bg-white/[0.07]">
+      {merchantLogoUrl ? (
+        <AvatarImage src={merchantLogoUrl} alt={merchant} />
+      ) : (
+        <AvatarFallback className="bg-white/[0.07] text-xs font-semibold tracking-wide text-white/50">
+          {getInitials(merchant)}
+        </AvatarFallback>
+      )}
+    </Avatar>
   )
 
-  if (traceCount > 0) {
-    return (
-      <Link
-        href={`/activity/${eventId}/trace`}
-        className="block transition hover:bg-white/[0.02]"
-      >
-        {content}
-      </Link>
-    )
-  }
+  return (
+    <div className="group/transaction relative">
+      {traceCount > 0 ? (
+        <Link
+          href={`/activity/${eventId}/trace`}
+          aria-label={`Open ${merchant} transaction`}
+          className="absolute inset-0 z-0 block rounded-[1.25rem] transition hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/16"
+        />
+      ) : null}
 
-  return content
+      <div
+        className={`relative z-10 flex items-center gap-3.5 py-4 ${
+          traceCount > 0 ? "pointer-events-none" : ""
+        }`}
+      >
+        {merchantHref ? (
+          <Link
+            href={merchantHref}
+            aria-label={`Open ${merchant}`}
+            className="pointer-events-auto shrink-0 rounded-full transition hover:opacity-90"
+          >
+            {avatar}
+          </Link>
+        ) : (
+          avatar
+        )}
+
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            {merchantHref ? (
+              <Link
+                href={merchantHref}
+                className="pointer-events-auto truncate text-[15px] font-medium text-white transition hover:text-white/76"
+              >
+                {merchant}
+              </Link>
+            ) : (
+              <p className="truncate text-[15px] font-medium text-white">
+                {merchant}
+              </p>
+            )}
+            {categoryHref ? (
+              <Link
+                href={categoryHref}
+                className="pointer-events-auto inline-flex shrink-0 items-center rounded-full transition hover:bg-white/[0.04]"
+                aria-label={`Open ${categoryName} category`}
+              >
+                <CategoryBadge
+                  categoryName={categoryName}
+                  iconName={categoryIconName}
+                  colorToken={categoryColorToken}
+                />
+              </Link>
+            ) : (
+              <CategoryBadge
+                categoryName={categoryName}
+                iconName={categoryIconName}
+                colorToken={categoryColorToken}
+              />
+            )}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <DirectionIcon direction={direction} needsReview={needsReview} />
+            <p className="truncate text-sm text-white/32">
+              {processor ? `via ${processor} · ` : ""}
+              {formatRowTime(dateLabel, timeZone)}
+            </p>
+          </div>
+        </div>
+        <p className="shrink-0 text-[15px] font-semibold text-white tabular-nums">
+          {amount}
+        </p>
+      </div>
+    </div>
+  )
 }

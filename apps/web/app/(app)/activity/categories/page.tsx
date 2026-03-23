@@ -6,6 +6,7 @@ import {
 } from "@workspace/db"
 import { listDashboardLedgerEventsForUser } from "@workspace/db"
 
+import { AppEmptyState } from "@/components/app-empty-state"
 import { CategoryExplorerTile } from "@/components/category-explorer-tile"
 import { summarizeCategoryActivity } from "@/lib/category-summary"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
@@ -82,10 +83,6 @@ export default async function CategoriesIndexPage() {
       )
     })
 
-  const activeCount = sortedCategories.filter(
-    (category) => category.totalOutflowMinor > 0,
-  ).length
-
   return (
     <section className="grid gap-8">
       <div className="pt-2">
@@ -131,9 +128,12 @@ export default async function CategoriesIndexPage() {
           ))}
         </div>
       ) : (
-        <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-6 text-center text-sm leading-6 text-white/54">
-          Category tiles appear once reconciled activity starts clustering into the month.
-        </div>
+        <AppEmptyState
+          title="No category activity yet"
+          description="Category tiles will appear here once activity settles in."
+          actionHref="/activity"
+          actionLabel="Open activity"
+        />
       )}
     </section>
   )

@@ -16,6 +16,7 @@ import {
 
 import { ActionTile } from "@/components/action-tile"
 import { AdviceHomeCarousel } from "@/components/advice-rail"
+import { AppEmptyState } from "@/components/app-empty-state"
 import { HeroBalanceCard } from "@/components/hero-balance-card"
 import { HomeCategoryStrip } from "@/components/home-category-strip"
 import { SnapshotStatStrip } from "@/components/snapshot-stat-strip"
@@ -120,7 +121,6 @@ export default async function DashboardPage() {
   let monthSpendMinor = 0
   let monthIncomeMinor = 0
   let monthRefundMinor = 0
-  let pendingValuationCount = 0
   const dailySpendMap = new Map<
     number,
     { amountMinor: number; originalCurrencies: Set<string> }
@@ -128,7 +128,6 @@ export default async function DashboardPage() {
 
   for (const { event, reportingAmountMinor } of monthEvents) {
     if (reportingAmountMinor === null) {
-      pendingValuationCount += 1
       continue
     }
 
@@ -356,12 +355,14 @@ export default async function DashboardPage() {
                     "Unmapped event"
                   }
                   merchantLogoUrl={merchant?.logoUrl ?? null}
+                  merchantId={merchant?.id ?? event.merchantId}
                   amount={formatCurrency(event.amountMinor, event.currency)}
                   dateLabel={formatEventDate(
                     event.eventOccurredAt,
                     settings.timeZone
                   )}
                   categoryName={category?.name ?? "Uncategorized"}
+                  categoryId={category?.id ?? event.categoryId}
                   categoryIconName={category?.iconName ?? null}
                   categoryColorToken={category?.colorToken ?? null}
                   direction={event.direction}
@@ -374,10 +375,11 @@ export default async function DashboardPage() {
               )
             )
           ) : (
-            <div className="py-5 text-sm leading-6 text-white/54">
-              No canonical activity yet. Connect Gmail or wait for more
-              ingestion to finish reconciling.
-            </div>
+            <AppEmptyState
+              compact
+              title="No activity on the home feed yet"
+              description="Recent transactions will appear here soon."
+            />
           )}
         </div>
       </section>

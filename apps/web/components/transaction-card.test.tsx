@@ -33,9 +33,11 @@ test("TransactionCard renders category badge and merchant fallback initials", ()
       eventId="evt_123"
       merchant="Acme Labs"
       merchantLogoUrl={null}
+      merchantId="mer_123"
       amount="₹899.00"
       dateLabel="2026-03-22T00:00:00.000Z"
       categoryName="Healthcare"
+      categoryId="cat_123"
       categoryIconName="stethoscope-line"
       categoryColorToken="coral"
       direction="outflow"
@@ -50,4 +52,6 @@ test("TransactionCard renders category badge and merchant fallback initials", ()
   assert.match(html, /Healthcare category/)
   assert.match(html, />AL</)
   assert.match(html, /₹899.00/)
+  assert.match(html, /\/activity\/merchants\/mer_123/)
+  assert.match(html, /\/activity\/categories\/cat_123/)
 })

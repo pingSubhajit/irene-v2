@@ -9,6 +9,7 @@ import {
 } from "@workspace/db"
 import type { CategoryColorToken } from "@workspace/config"
 
+import { AppEmptyState } from "@/components/app-empty-state"
 import { CategoryBadge } from "@/components/category-badge"
 import { CategoryTopMerchantsChart } from "@/components/category-top-merchants-chart"
 import { HomeCategoryStrip } from "@/components/home-category-strip"
@@ -376,17 +377,19 @@ export default async function CategoryDetailPage({
         </div>
       </div>
 
-      {detail.topMerchants.length > 0 && <div className="mt-10 grid min-w-0 gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="min-w-0 px-1 md:px-0">
-          <div className="grid gap-4">
-            <CategoryTopMerchantsChart
-              merchants={detail.topMerchants}
-              currency={settings.reportingCurrency}
-              colorToken={detail.category.colorToken}
-            />
+      {detail.topMerchants.length > 0 ? (
+        <div className="mt-10 grid min-w-0 gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="min-w-0 px-1 md:px-0">
+            <div className="grid gap-4">
+              <CategoryTopMerchantsChart
+                merchants={detail.topMerchants}
+                currency={settings.reportingCurrency}
+                colorToken={detail.category.colorToken}
+              />
+            </div>
           </div>
         </div>
-      </div>}
+      ) : null}
 
       <section className="mt-10 grid gap-3">
         <div className="flex items-center justify-between gap-4">
@@ -414,6 +417,7 @@ export default async function CategoryDetailPage({
                   "Unmapped event"
                 }
                 merchantLogoUrl={row.merchant?.logoUrl ?? null}
+                merchantId={row.merchant?.id ?? row.event.merchantId}
                 processor={row.paymentProcessor?.displayName ?? null}
                 amount={formatCurrency(
                   row.reportingAmountMinor ?? row.event.amountMinor,
@@ -421,6 +425,7 @@ export default async function CategoryDetailPage({
                 )}
                 dateLabel={row.event.eventOccurredAt.toISOString()}
                 categoryName={row.category?.name ?? detail.category.name}
+                categoryId={row.category?.id ?? row.event.categoryId ?? detail.category.id}
                 categoryIconName={row.category?.iconName ?? detail.category.iconName}
                 categoryColorToken={row.category?.colorToken ?? detail.category.colorToken}
                 direction={row.event.direction}
@@ -432,9 +437,11 @@ export default async function CategoryDetailPage({
               />
             ))
           ) : (
-            <div className="py-5 text-sm leading-6 text-white/42">
-              No transactions landed in this category for the selected period.
-            </div>
+            <AppEmptyState
+              compact
+              title="No transactions in this period"
+              description="No transactions landed in this category in this window."
+            />
           )}
         </div>
       </section>

@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { getUserSettings, listMemoryFactsForUser } from "@workspace/db"
 
+import { AppEmptyState } from "@/components/app-empty-state"
 import { MemoryToolbar } from "@/components/memory-toolbar"
 import {
   SettingsFootnote,
@@ -162,9 +163,13 @@ export default async function MemoryPage({ searchParams }: MemoryPageProps) {
 
       <section className="border-t border-white/[0.06] pt-6">
         {visibleFacts.length === 0 ? (
-          <div className="py-6 text-sm leading-relaxed text-white/36">
-            No memory yet. Irene will start filling this area as you edit data, resolve reviews, and teach it patterns you care about.
-          </div>
+          <AppEmptyState
+            compact
+            title="No memory here yet"
+            description="Irene will start filling this area as you teach it."
+            actionHref="/settings/memory/new"
+            actionLabel="Teach Irene"
+          />
         ) : (
           <div className="grid gap-8">
             {activeFacts.length > 0 ? (
@@ -200,11 +205,11 @@ export default async function MemoryPage({ searchParams }: MemoryPageProps) {
             ) : null}
 
             {activeFacts.length === 0 && disabledFacts.length === 0 ? (
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm leading-relaxed text-white/30">
-                  No memory matches the current filters.
-                </p>
-              </div>
+              <AppEmptyState
+                compact
+                title="No memory matches"
+                description="Try loosening the filters."
+              />
             ) : null}
           </div>
         )}

@@ -1,9 +1,6 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import {
-  RiArrowLeftLine,
-  RiArrowRightSLine,
-} from "@remixicon/react"
+import { RiArrowLeftLine } from "@remixicon/react"
 import type { CategoryColorToken } from "@workspace/config"
 import {
   Accordion,
@@ -397,14 +394,14 @@ export default async function EventTracePage({
           value={trace.event.merchantDescriptorRaw ?? "unavailable"}
         />
         <InfoRow
-          label="trace paths"
+          label="source paths"
           value={`${trace.traces.length} ${trace.traces.length === 1 ? "path" : "paths"}`}
         />
       </div>
 
       {trace.eventModelRuns.length > 0 && (
         <div className="mt-10">
-          <SectionLabel>Event model runs</SectionLabel>
+          <SectionLabel>Event processing</SectionLabel>
           <ModelRunList
             modelRuns={trace.eventModelRuns.map((modelRun) => ({
               ...modelRun,
@@ -575,7 +572,7 @@ export default async function EventTracePage({
                     {/* Model runs */}
                     {entry.modelRuns.length > 0 && (
                       <div>
-                        <SectionLabel>Model runs</SectionLabel>
+                        <SectionLabel>Processing steps</SectionLabel>
                         <ModelRunList
                           modelRuns={entry.modelRuns.map((modelRun) => ({
                             ...modelRun,
@@ -635,21 +632,10 @@ export default async function EventTracePage({
       ) : (
         <div className="mt-10 py-12 text-center">
           <p className="text-sm text-white/32">
-            no provenance rows attached to this event yet.
+            no source paths are attached to this transaction yet.
           </p>
         </div>
       )}
-
-      {/* Footer link */}
-      <div className="mt-8 border-t border-white/[0.06] pt-4 pb-8">
-        <Link
-          href="/settings/logs"
-          className="flex items-center justify-between py-3 text-sm text-white/40 transition hover:text-white/60"
-        >
-          <span>debug timeline</span>
-          <RiArrowRightSLine className="size-4" />
-        </Link>
-      </div>
       </div>
     </section>
   )

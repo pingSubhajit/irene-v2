@@ -8,6 +8,7 @@ import {
 } from "@workspace/workflows"
 
 import { AdviceList } from "@/components/advice-rail"
+import { AppEmptyState } from "@/components/app-empty-state"
 import { resolveAdviceContextHref } from "@/lib/advice"
 import { formatInUserTimeZone } from "@/lib/date-format"
 import { requireSession } from "@/lib/session"
@@ -177,9 +178,11 @@ export default async function AdvicePage({ searchParams }: AdvicePageProps) {
             {active.length > 0 ? (
               <AdviceList items={active.map(mapItem)} actionRedirectTo="/advice" />
             ) : (
-              <p className="text-sm leading-6 text-white/42">
-                No active advice right now.
-              </p>
+              <AppEmptyState
+                compact
+                title="No active advice right now"
+                description="New prompts will appear here when needed."
+              />
             )}
           </div>
         </details>
@@ -198,9 +201,11 @@ export default async function AdvicePage({ searchParams }: AdvicePageProps) {
             {closed.length > 0 ? (
               <AdviceList items={closed.map(mapItem)} actionRedirectTo="/advice" />
             ) : (
-              <p className="text-sm leading-6 text-white/42">
-                Nothing dismissed or completed yet.
-              </p>
+              <AppEmptyState
+                compact
+                title="No closed advice yet"
+                description="Dismissed and completed prompts will collect here."
+              />
             )}
           </div>
         </details>
