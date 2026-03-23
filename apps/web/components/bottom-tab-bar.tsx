@@ -18,7 +18,11 @@ const tabs = [
   { href: "/settings", label: "Settings", icon: RiSettings3Line },
 ]
 
-export function BottomTabBar() {
+export function BottomTabBar({
+  reviewAttentionCount = 0,
+}: {
+  reviewAttentionCount?: number
+}) {
   const pathname = usePathname()
 
   return (
@@ -47,12 +51,17 @@ export function BottomTabBar() {
               />
               <span
                 className={cn(
-                  "flex size-10 items-center justify-center border border-transparent transition",
+                  "relative flex size-10 items-center justify-center border border-transparent transition",
                   active &&
                     "border-white/10 bg-white/6 shadow-[0_0_30px_rgba(255,255,255,0.06)]",
                 )}
               >
                 <Icon className="size-5" />
+                {tab.href === "/review" && reviewAttentionCount > 0 ? (
+                  <span className="absolute right-1.5 top-1.5 min-w-[1rem] rounded-full bg-[var(--neo-coral)] px-1 py-[1px] text-center text-[0.5rem] font-semibold leading-none tracking-normal text-black shadow-[0_0_18px_rgba(255,122,92,0.36)]">
+                    {reviewAttentionCount > 9 ? "9+" : reviewAttentionCount}
+                  </span>
+                ) : null}
               </span>
               <span>{tab.label}</span>
             </Link>

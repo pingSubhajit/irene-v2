@@ -6,6 +6,7 @@ type AppShellProps = {
     name: string
     image?: string | null
   }
+  reviewAttentionCount?: number
   children: React.ReactNode
 }
 
@@ -13,7 +14,11 @@ function getGreetingName(name: string) {
   return name.trim().split(/\s+/)[0] || "there"
 }
 
-export function AppShell({ user, children }: AppShellProps) {
+export function AppShell({
+  user,
+  reviewAttentionCount = 0,
+  children,
+}: AppShellProps) {
   const greetingName = getGreetingName(user.name)
 
   return (
@@ -42,7 +47,7 @@ export function AppShell({ user, children }: AppShellProps) {
       <main className="mx-auto max-w-6xl overflow-x-hidden px-4 pb-28 pt-6 md:px-6 md:pb-32 md:pt-8">
         {children}
       </main>
-      <BottomTabBar />
+      <BottomTabBar reviewAttentionCount={reviewAttentionCount} />
     </div>
   )
 }
