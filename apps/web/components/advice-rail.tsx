@@ -9,8 +9,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu"
+import { AdviceHomeCarouselClient } from "@/components/advice-home-carousel"
 
-type AdviceRailItem = {
+export type AdviceRailItem = {
   id: string
   title: string
   summary: string
@@ -23,6 +24,7 @@ type AdviceRailItem = {
   merchantName?: string | null
   goalName?: string | null
   updatedAtLabel: string
+  updatedAtIso?: string
 }
 
 function getPriorityLabel(priority: AdviceRailItem["priority"]) {
@@ -223,7 +225,7 @@ export function AdviceList({
   return (
     <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]">
       {items.map((item) => (
-        <div key={item.id} className="py-5">
+        <div key={item.id} id={`advice-${item.id}`} className="scroll-mt-24 py-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-3">
@@ -285,62 +287,22 @@ export function AdviceList({
 
 export function AdviceHomeCarousel({
   items,
-  actionRedirectTo = "/dashboard",
 }: {
   items: AdviceRailItem[]
-  actionRedirectTo?: string
 }) {
   if (items.length === 0) {
     return null
   }
 
   return (
-    <div className="-mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {items.map((item) => (
-        <Card
-          key={item.id}
-          className="min-w-[18.5rem] flex-[0_0_18.5rem] snap-start border-white/8 bg-[rgba(18,18,20,0.92)] p-5 sm:min-w-[21rem] sm:flex-[0_0_21rem]"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-white/22">
-                {getPriorityLabel(item.priority)}
-              </p>
-              <p className="mt-3 text-[19px] font-medium leading-7 text-white">{item.title}</p>
-            </div>
-            <AdviceOverflowMenu item={item} redirectTo={actionRedirectTo} />
-          </div>
-          <p className="mt-3 text-sm leading-6 text-white/46">{item.summary}</p>
-          <p className="mt-4 text-xs uppercase tracking-[0.28em] text-white/18">
-            {[item.goalName, item.merchantName, item.updatedAtLabel].filter(Boolean).join(" · ")}
-          </p>
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            {item.status === "active" && item.primaryAction ? (
-              <AdviceActionLink
-                action={item.primaryAction}
-                redirectTo={actionRedirectTo}
-                primary
-              />
-            ) : null}
-            {item.status === "active" && item.secondaryAction ? (
-              <AdviceActionLink action={item.secondaryAction} redirectTo={actionRedirectTo} />
-            ) : null}
-            {item.status === "active" ? (
-              <form action="/api/advice" method="post">
-                <input type="hidden" name="action" value="done" />
-                <input type="hidden" name="adviceItemId" value={item.id} />
-                <input type="hidden" name="redirectTo" value={actionRedirectTo} />
-                <button
-                  type="submit"
-                  className="text-sm text-[var(--neo-green)] transition hover:text-white"
-                >
-                  Mark done
-                </button>
-              </form>
-            ) : null}
-          </div>
-        </Card>
-      ))}
-    </div>
+    <AdviceHomeCarouselClient
+      items={items.map((item) => ({
+        id: item.id,
+        href: `/advice#advice-${item.id}`,
+        title: item.title,
+        summary: item.summary,
+        updatedAtIso: item.updatedAtIso ?? null,
+      }))}
+    />
   )
 }

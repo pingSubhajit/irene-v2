@@ -254,6 +254,7 @@ export default async function DashboardPage() {
     secondaryAction: adviceItem.secondaryActionJson,
     merchantName: merchant?.displayName ?? null,
     goalName: goal?.name ?? null,
+    updatedAtIso: adviceItem.updatedAt.toISOString(),
     updatedAtLabel: formatInUserTimeZone(adviceItem.updatedAt, settings.timeZone, {
       day: "numeric",
       month: "short",
@@ -327,29 +328,6 @@ export default async function DashboardPage() {
             actionLabel="Open activity"
           />
 
-          {adviceRailItems.length > 0 ? (
-            <section className="grid gap-4">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="neo-kicker">Advice</p>
-                  <h2 className="mt-3 text-[1.6rem] font-medium text-white">
-                    top next moves
-                  </h2>
-                </div>
-                <Link
-                  href="/advice"
-                  className="text-sm text-white/52 transition hover:text-white"
-                >
-                  Open all
-                </Link>
-              </div>
-              <AdviceHomeCarousel
-                items={adviceRailItems}
-                actionRedirectTo="/dashboard"
-              />
-            </section>
-          ) : null}
-
           <SnapshotStatStrip
             stats={[
               {
@@ -374,6 +352,24 @@ export default async function DashboardPage() {
               },
             ]}
           />
+
+          {adviceRailItems.length > 0 ? (
+            <section className="grid gap-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 text-[0.82rem] uppercase tracking-[0.18em] text-white/36">
+                  <span>Advice</span>
+                  <span>({adviceRailItems.length})</span>
+                </div>
+                <Link
+                  href="/advice"
+                  className="text-sm text-white/52 transition hover:text-white"
+                >
+                  view all
+                </Link>
+              </div>
+              <AdviceHomeCarousel items={adviceRailItems} />
+            </section>
+          ) : null}
         </div>
 
         <div className="grid gap-4 self-start">
