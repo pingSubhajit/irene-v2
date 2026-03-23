@@ -98,38 +98,35 @@ export default async function CategoriesIndexPage() {
         </Link>
       </div>
 
-      <div className="grid gap-3 text-center">
+      <div className="grid text-center">
         <p className="neo-kicker">Category board</p>
         <h1 className="mx-auto max-w-[12ch] font-display text-[3rem] leading-[0.92] text-white md:text-[4.5rem]">
-          everything your month is spending through
+          your cash flow, categorized
         </h1>
-        <p className="mx-auto max-w-2xl text-sm leading-6 text-white/52">
-          A quieter view of the categories Irene is tracking this month, ordered by actual outflow before the quieter corners.
-        </p>
-        <p className="text-[0.82rem] uppercase tracking-[0.18em] text-white/28">
-          {activeCount} active this month
+        <p className="mt-3 mx-auto max-w-2xl text-sm leading-6 text-white/52">
+          All the categories Irene is tracking this month
         </p>
       </div>
 
       {sortedCategories.length > 0 ? (
-        <div className="grid grid-cols-3 gap-x-5 gap-y-8 sm:gap-x-6 sm:gap-y-10">
+        <div className="grid grid-cols-3 justify-items-center gap-x-4 gap-y-9 sm:gap-x-6 sm:gap-y-10">
           {sortedCategories.map((category) => (
-            <div key={category.id} className="grid gap-3">
+            <div key={category.id} className="grid justify-items-center gap-2">
               <CategoryExplorerTile
                 href={`/activity/categories/${category.id}`}
                 label={category.name}
-                amountLabel={
-                  category.totalOutflowMinor > 0
-                    ? formatCurrency(
-                        category.totalOutflowMinor,
-                        settings.reportingCurrency,
-                      )
-                    : null
-                }
                 iconName={category.iconName}
                 colorToken={category.colorToken}
-                variant="grid"
+                variant="rail"
               />
+              {category.totalOutflowMinor > 0 ? (
+                <p className="text-[0.68rem] uppercase tracking-[0.16em] text-white/28">
+                  {formatCurrency(
+                    category.totalOutflowMinor,
+                    settings.reportingCurrency,
+                  )}
+                </p>
+              ) : null}
             </div>
           ))}
         </div>
