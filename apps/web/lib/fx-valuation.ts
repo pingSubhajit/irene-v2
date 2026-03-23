@@ -262,7 +262,7 @@ export async function ensureUserFinancialEventValuationCoverage(
         limit: options?.limit,
       })
     } catch (error) {
-      logger.errorWithCause("Failed to hydrate missing financial event valuations inline", error, {
+      logger.warnWithCause("Failed to hydrate missing financial event valuations inline", error, {
         userId,
         reportingCurrency: settings.reportingCurrency,
       })

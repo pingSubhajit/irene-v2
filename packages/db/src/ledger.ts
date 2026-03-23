@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   gte,
@@ -153,6 +154,610 @@ const SYSTEM_CATEGORY_DEFINITIONS: Array<{
     ...SYSTEM_CATEGORY_PRESENTATION.uncategorized,
   },
 ]
+
+function resolveUserTimeZone(timeZone: string | null | undefined) {
+  return timeZone || "Asia/Kolkata"
+}
+
+function getUserTimeZoneDateParts(
+  value: Date,
+  timeZone: string | null | undefined,
+) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: resolveUserTimeZone(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+
+  const parts = formatter.formatToParts(value)
+  const byType = new Map(parts.map((part) => [part.type, part.value]))
+
+  return {
+    year: byType.get("year") ?? "0000",
+    month: byType.get("month") ?? "01",
+    day: byType.get("day") ?? "01",
+  }
+}
+
+function getUserTimeZoneMonthKey(
+  value: Date,
+  timeZone: string | null | undefined,
+) {
+  const parts = getUserTimeZoneDateParts(value, timeZone)
+  return `${parts.year}-${parts.month}`
+}
+
+function getUserTimeZoneDayOfMonth(
+  value: Date,
+  timeZone: string | null | undefined,
+) {
+  return Number(getUserTimeZoneDateParts(value, timeZone).day)
+}
+
+function getTimeZoneOffsetMilliseconds(
+  value: Date,
+  timeZone: string | null | undefined,
+) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: resolveUserTimeZone(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+  const parts = formatter.formatToParts(value)
+  const byType = new Map(parts.map((part) => [part.type, part.value]))
+  const zonedTimestamp = Date.UTC(
+    Number(byType.get("year") ?? "0"),
+    Number(byType.get("month") ?? "1") - 1,
+    Number(byType.get("day") ?? "1"),
+    Number(byType.get("hour") ?? "0"),
+    Number(byType.get("minute") ?? "0"),
+    Number(byType.get("second") ?? "0"),
+  )
+
+  return zonedTimestamp - value.getTime()
+}
+
+function getUtcDateForTimeZoneParts(input: {
+  timeZone: string | null | undefined
+  year: number
+  month: number
+  day: number
+  hour?: number
+  minute?: number
+  second?: number
+  millisecond?: number
+}) {
+  const utcGuess = Date.UTC(
+    input.year,
+    input.month - 1,
+    input.day,
+    input.hour ?? 0,
+    input.minute ?? 0,
+    input.second ?? 0,
+    input.millisecond ?? 0,
+  )
+  const offset = getTimeZoneOffsetMilliseconds(new Date(utcGuess), input.timeZone)
+
+  return new Date(utcGuess - offset)
+}
+
+function getUtcStartOfUserDay(
+  localDate: string,
+  timeZone: string | null | undefined,
+) {
+  const match = localDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+
+  if (!match) {
+    return null
+  }
+
+  const [, year, month, day] = match
+  return getUtcDateForTimeZoneParts({
+    timeZone,
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: 0,
+    minute: 0,
+    second: 0,
+    millisecond: 0,
+  })
+}
+
+function getUtcEndOfUserDay(
+  localDate: string,
+  timeZone: string | null | undefined,
+) {
+  const match = localDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+
+  if (!match) {
+    return null
+  }
+
+  const [, year, month, day] = match
+  return getUtcDateForTimeZoneParts({
+    timeZone,
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: 23,
+    minute: 59,
+    second: 59,
+    millisecond: 999,
+  })
+}
+
+function getComparableAmountExpression(reportingCurrency?: string) {
+  if (!reportingCurrency) {
+    return sql<number>`${financialEvents.amountMinor}`
+  }
+
+  return sql<number>`case
+    when ${financialEvents.currency} = ${reportingCurrency}
+      then ${financialEvents.amountMinor}
+    else ${financialEventValuations.normalizedAmountMinor}
+  end`
+}
+
+function buildMonthDateRange(
+  monthKey: string,
+  timeZone: string | null | undefined,
+) {
+  const match = monthKey.match(/^(\d{4})-(\d{2})$/)
+
+  if (!match) {
+    return null
+  }
+
+  const [, year, month] = match
+  const numericYear = Number(year)
+  const numericMonth = Number(month)
+  const lastDay = new Date(Date.UTC(numericYear, numericMonth, 0)).getUTCDate()
+
+  return {
+    dateFrom: getUtcStartOfUserDay(`${year}-${month}-01`, timeZone),
+    dateTo: getUtcEndOfUserDay(
+      `${year}-${month}-${String(lastDay).padStart(2, "0")}`,
+      timeZone,
+    ),
+  }
+}
+
+function buildWeekBucketsForMonth(input: {
+  monthKey: string
+  timeZone: string | null | undefined
+}) {
+  const match = input.monthKey.match(/^(\d{4})-(\d{2})$/)
+
+  if (!match) {
+    return []
+  }
+
+  const [, year, month] = match
+  const numericYear = Number(year)
+  const numericMonth = Number(month)
+  const lastDay = new Date(Date.UTC(numericYear, numericMonth, 0)).getUTCDate()
+  const weekRanges = [
+    { week: 1 as const, startDay: 1, endDay: Math.min(7, lastDay) },
+    { week: 2 as const, startDay: 8, endDay: Math.min(14, lastDay) },
+    { week: 3 as const, startDay: 15, endDay: Math.min(21, lastDay) },
+    { week: 4 as const, startDay: 22, endDay: lastDay },
+  ]
+
+  return weekRanges
+    .filter((range) => range.startDay <= lastDay)
+    .map((range) => {
+      const dateFrom = getUtcStartOfUserDay(
+        `${year}-${month}-${String(range.startDay).padStart(2, "0")}`,
+        input.timeZone,
+      )
+      const dateTo = getUtcEndOfUserDay(
+        `${year}-${month}-${String(range.endDay).padStart(2, "0")}`,
+        input.timeZone,
+      )
+
+      return {
+        key: `week-${range.week}`,
+        week: range.week,
+        label: `W${range.week}`,
+        dateFrom,
+        dateTo,
+      }
+    })
+}
+
+type CategoryDetailMerchantRow = {
+  merchantId: string | null
+  merchantName: string
+  merchantLogoUrl: string | null
+  spendMinor: number
+  transactionCount: number
+  shareOfCategorySpend: number
+}
+
+type CategoryDetailTransactionRow = Awaited<
+  ReturnType<typeof db.select>
+> extends never
+  ? never
+  : {
+      event: typeof financialEvents.$inferSelect
+      merchant: typeof merchants.$inferSelect | null
+      category: typeof categories.$inferSelect | null
+      paymentInstrument: typeof paymentInstruments.$inferSelect | null
+      paymentProcessor: typeof paymentProcessors.$inferSelect | null
+      reportingAmountMinor: number | null
+    }
+
+export async function getCategoryDetailForUser(input: {
+  userId: string
+  categoryId: string
+  reportingCurrency: string
+  timeZone: string
+  monthKey?: string | null
+  week?: number | null
+  recentTransactionsLimit?: number
+  topMerchantsLimit?: number
+}) {
+  const category = await getCategoryById(input.userId, input.categoryId)
+
+  if (!category) {
+    return null
+  }
+
+  const outflowBaseConditions = [
+    eq(financialEvents.userId, input.userId),
+    eq(financialEvents.categoryId, input.categoryId),
+    inArray(financialEvents.status, ["confirmed", "needs_review"]),
+    eq(financialEvents.direction, "outflow"),
+    eq(financialEvents.isTransfer, false),
+  ]
+
+  const comparableAmountExpression = getComparableAmountExpression(
+    input.reportingCurrency,
+  )
+
+  const monthBucketRows = await db
+    .select({
+      eventOccurredAt: financialEvents.eventOccurredAt,
+      amountMinor: comparableAmountExpression.mapWith(Number),
+    })
+    .from(financialEvents)
+    .leftJoin(
+      financialEventValuations,
+      and(
+        eq(financialEventValuations.financialEventId, financialEvents.id),
+        eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+        isNull(financialEventValuations.supersededAt),
+      ),
+    )
+    .where(and(...outflowBaseConditions))
+    .orderBy(desc(financialEvents.eventOccurredAt))
+
+  const monthBucketMap = new Map<
+    string,
+    {
+      monthKey: string
+      totalMinor: number
+      transactionCount: number
+    }
+  >()
+
+  for (const row of monthBucketRows) {
+    const monthKey = getUserTimeZoneMonthKey(row.eventOccurredAt, input.timeZone)
+    const existing = monthBucketMap.get(monthKey)
+
+    if (existing) {
+      existing.totalMinor += row.amountMinor ?? 0
+      existing.transactionCount += 1
+      continue
+    }
+
+    monthBucketMap.set(monthKey, {
+      monthKey,
+      totalMinor: row.amountMinor ?? 0,
+      transactionCount: 1,
+    })
+  }
+
+  const normalizedMonthBuckets = [...monthBucketMap.values()]
+    .sort((left, right) => right.monthKey.localeCompare(left.monthKey))
+    .slice(0, 4)
+    .map((bucket) => ({
+      ...bucket,
+      key: bucket.monthKey,
+      label: bucket.monthKey,
+    }))
+
+  const mode = normalizedMonthBuckets.length >= 4 ? "month" : "week"
+  const currentMonthKey = getUserTimeZoneMonthKey(new Date(), input.timeZone)
+
+  let selectedMonthKey: string | null = null
+  let selectedWeek: 1 | 2 | 3 | 4 | null = null
+  let periodDateFrom: Date | null = null
+  let periodDateTo: Date | null = null
+  let weekBuckets: Array<{
+    key: string
+    week: 1 | 2 | 3 | 4
+    label: string
+    dateFrom: Date | null
+    dateTo: Date | null
+    totalMinor: number
+    transactionCount: number
+  }> = []
+
+  if (mode === "month") {
+    selectedMonthKey =
+      input.monthKey &&
+      normalizedMonthBuckets.some((bucket) => bucket.monthKey === input.monthKey)
+        ? input.monthKey
+        : (normalizedMonthBuckets[0]?.monthKey ?? null)
+
+    const monthRange = selectedMonthKey
+      ? buildMonthDateRange(selectedMonthKey, input.timeZone)
+      : null
+
+    periodDateFrom = monthRange?.dateFrom ?? null
+    periodDateTo = monthRange?.dateTo ?? null
+  } else {
+    selectedMonthKey = currentMonthKey
+    const currentMonthRange = buildMonthDateRange(currentMonthKey, input.timeZone)
+    const currentMonthOutflowRows = currentMonthRange?.dateFrom && currentMonthRange.dateTo
+      ? await db
+          .select({
+            eventOccurredAt: financialEvents.eventOccurredAt,
+            amountMinor: comparableAmountExpression.mapWith(Number),
+          })
+          .from(financialEvents)
+          .leftJoin(
+            financialEventValuations,
+            and(
+              eq(financialEventValuations.financialEventId, financialEvents.id),
+              eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+              isNull(financialEventValuations.supersededAt),
+            ),
+          )
+          .where(
+            and(
+              ...outflowBaseConditions,
+              gte(financialEvents.eventOccurredAt, currentMonthRange.dateFrom),
+              lte(financialEvents.eventOccurredAt, currentMonthRange.dateTo),
+            ),
+          )
+      : []
+
+    weekBuckets = buildWeekBucketsForMonth({
+      monthKey: currentMonthKey,
+      timeZone: input.timeZone,
+    }).map((bucket) => {
+      const rows = currentMonthOutflowRows.filter((row) => {
+        const day = getUserTimeZoneDayOfMonth(row.eventOccurredAt, input.timeZone)
+
+        if (bucket.week === 1) return day >= 1 && day <= 7
+        if (bucket.week === 2) return day >= 8 && day <= 14
+        if (bucket.week === 3) return day >= 15 && day <= 21
+        return day >= 22
+      })
+
+      return {
+        ...bucket,
+        totalMinor: rows.reduce((sum, row) => sum + (row.amountMinor ?? 0), 0),
+        transactionCount: rows.length,
+      }
+    })
+
+    const preferredWeek =
+      input.week && weekBuckets.some((bucket) => bucket.week === input.week)
+        ? input.week
+        : null
+    const currentWeek = (() => {
+      const day = getUserTimeZoneDayOfMonth(new Date(), input.timeZone)
+      if (day <= 7) return 1
+      if (day <= 14) return 2
+      if (day <= 21) return 3
+      return 4
+    })()
+    const currentWeekWithActivity = weekBuckets.find(
+      (bucket) => bucket.week === currentWeek && bucket.transactionCount > 0,
+    )
+    const latestWeekWithActivity = [...weekBuckets]
+      .reverse()
+      .find((bucket) => bucket.transactionCount > 0)
+    const resolvedWeek =
+      preferredWeek ??
+      currentWeekWithActivity?.week ??
+      latestWeekWithActivity?.week ??
+      weekBuckets[0]?.week ??
+      1
+
+    selectedWeek = resolvedWeek as 1 | 2 | 3 | 4
+    const selectedBucket = weekBuckets.find((bucket) => bucket.week === resolvedWeek) ?? null
+    periodDateFrom = selectedBucket?.dateFrom ?? null
+    periodDateTo = selectedBucket?.dateTo ?? null
+  }
+
+  if (!periodDateFrom || !periodDateTo) {
+    return {
+      category,
+      mode,
+      monthBuckets: normalizedMonthBuckets,
+      selectedMonthKey,
+      selectedWeek,
+      weekBuckets,
+      summary: {
+        totalOutflowMinor: 0,
+        transactionCount: 0,
+        averageTransactionMinor: 0,
+        shareOfTotalOutflow: 0,
+        topMerchantName: null,
+      },
+      topMerchants: [] as CategoryDetailMerchantRow[],
+      recentTransactions: [] as CategoryDetailTransactionRow[],
+    }
+  }
+
+  const periodConditions = [
+    eq(financialEvents.userId, input.userId),
+    eq(financialEvents.categoryId, input.categoryId),
+    inArray(financialEvents.status, ["confirmed", "needs_review"]),
+    gte(financialEvents.eventOccurredAt, periodDateFrom),
+    lte(financialEvents.eventOccurredAt, periodDateTo),
+  ]
+
+  const outflowPeriodConditions = [
+    ...periodConditions,
+    eq(financialEvents.direction, "outflow"),
+    eq(financialEvents.isTransfer, false),
+  ]
+
+  const [periodSummaryRow, overallPeriodOutflowRow, topMerchantRows, recentTransactions] =
+    await Promise.all([
+      db
+        .select({
+          totalOutflowMinor:
+            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
+          transactionCount: count(financialEvents.id).mapWith(Number),
+        })
+        .from(financialEvents)
+        .leftJoin(
+          financialEventValuations,
+          and(
+            eq(financialEventValuations.financialEventId, financialEvents.id),
+            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+            isNull(financialEventValuations.supersededAt),
+          ),
+        )
+        .where(and(...outflowPeriodConditions))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({
+          totalOutflowMinor:
+            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
+        })
+        .from(financialEvents)
+        .leftJoin(
+          financialEventValuations,
+          and(
+            eq(financialEventValuations.financialEventId, financialEvents.id),
+            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+            isNull(financialEventValuations.supersededAt),
+          ),
+        )
+        .where(
+          and(
+            eq(financialEvents.userId, input.userId),
+            inArray(financialEvents.status, ["confirmed", "needs_review"]),
+            eq(financialEvents.direction, "outflow"),
+            eq(financialEvents.isTransfer, false),
+            gte(financialEvents.eventOccurredAt, periodDateFrom),
+            lte(financialEvents.eventOccurredAt, periodDateTo),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({
+          merchantId: financialEvents.merchantId,
+          merchantName:
+            sql<string>`coalesce(${merchants.displayName}, 'Unmapped merchant')`,
+          merchantLogoUrl: merchants.logoUrl,
+          spendMinor:
+            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
+          transactionCount: count(financialEvents.id).mapWith(Number),
+        })
+        .from(financialEvents)
+        .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
+        .leftJoin(
+          financialEventValuations,
+          and(
+            eq(financialEventValuations.financialEventId, financialEvents.id),
+            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+            isNull(financialEventValuations.supersededAt),
+          ),
+        )
+        .where(and(...outflowPeriodConditions))
+        .groupBy(financialEvents.merchantId, merchants.displayName, merchants.logoUrl)
+        .orderBy(
+          desc(sql`coalesce(sum(${comparableAmountExpression}), 0)`),
+          desc(count(financialEvents.id)),
+        )
+        .limit(input.topMerchantsLimit ?? 5),
+      db
+        .select({
+          event: financialEvents,
+          merchant: merchants,
+          category: categories,
+          paymentInstrument: paymentInstruments,
+          paymentProcessor: paymentProcessors,
+          reportingAmountMinor: comparableAmountExpression.mapWith(Number),
+        })
+        .from(financialEvents)
+        .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
+        .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
+        .leftJoin(
+          paymentInstruments,
+          eq(financialEvents.paymentInstrumentId, paymentInstruments.id),
+        )
+        .leftJoin(
+          paymentProcessors,
+          eq(financialEvents.paymentProcessorId, paymentProcessors.id),
+        )
+        .leftJoin(
+          financialEventValuations,
+          and(
+            eq(financialEventValuations.financialEventId, financialEvents.id),
+            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+            isNull(financialEventValuations.supersededAt),
+          ),
+        )
+        .where(and(...periodConditions))
+        .orderBy(desc(financialEvents.eventOccurredAt), desc(financialEvents.createdAt))
+        .limit(input.recentTransactionsLimit ?? 10),
+    ])
+
+  const totalOutflowMinor = periodSummaryRow?.totalOutflowMinor ?? 0
+  const transactionCount = periodSummaryRow?.transactionCount ?? 0
+  const overallPeriodOutflowMinor = overallPeriodOutflowRow?.totalOutflowMinor ?? 0
+  const averageTransactionMinor =
+    transactionCount > 0 ? Math.round(totalOutflowMinor / transactionCount) : 0
+
+  const topMerchants = topMerchantRows.map((row) => ({
+    merchantId: row.merchantId,
+    merchantName: row.merchantName,
+    merchantLogoUrl: row.merchantLogoUrl,
+    spendMinor: row.spendMinor,
+    transactionCount: row.transactionCount,
+    shareOfCategorySpend:
+      totalOutflowMinor > 0 ? row.spendMinor / totalOutflowMinor : 0,
+  }))
+
+  return {
+    category,
+    mode,
+    monthBuckets: normalizedMonthBuckets,
+    selectedMonthKey,
+    selectedWeek,
+    weekBuckets,
+    summary: {
+      totalOutflowMinor,
+      transactionCount,
+      averageTransactionMinor,
+      shareOfTotalOutflow:
+        overallPeriodOutflowMinor > 0
+          ? totalOutflowMinor / overallPeriodOutflowMinor
+          : 0,
+      topMerchantName: topMerchants[0]?.merchantName ?? null,
+    },
+    topMerchants,
+    recentTransactions,
+  }
+}
 
 export function normalizeCategorySlug(input: string | null | undefined) {
   if (!input) {

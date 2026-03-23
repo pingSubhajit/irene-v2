@@ -18,9 +18,11 @@ import { ActionTile } from "@/components/action-tile"
 import { AdviceHomeCarousel } from "@/components/advice-rail"
 import { GoalSnapshotPanel } from "@/components/goal-snapshot-panel"
 import { HeroBalanceCard } from "@/components/hero-balance-card"
+import { HomeCategoryStrip } from "@/components/home-category-strip"
 import { RecurringModelCard } from "@/components/recurring-model-card"
 import { SnapshotStatStrip } from "@/components/snapshot-stat-strip"
 import { TransactionCard } from "@/components/transaction-card"
+import { summarizeCategoryActivity } from "@/lib/category-summary"
 import {
   formatInUserTimeZone,
   getUserTimeZoneDayOfMonth,
@@ -162,13 +164,12 @@ export default async function DashboardPage() {
   let monthIncomeMinor = 0
   let monthRefundMinor = 0
   let pendingValuationCount = 0
-  const categoryTotals = new Map<string, number>()
   const dailySpendMap = new Map<
     number,
     { amountMinor: number; originalCurrencies: Set<string> }
   >()
 
-  for (const { event, category, reportingAmountMinor } of monthEvents) {
+  for (const { event, reportingAmountMinor } of monthEvents) {
     if (reportingAmountMinor === null) {
       pendingValuationCount += 1
       continue
@@ -187,12 +188,6 @@ export default async function DashboardPage() {
       dailySpend.amountMinor += reportingAmountMinor
       dailySpend.originalCurrencies.add(event.currency)
       dailySpendMap.set(day, dailySpend)
-      if (category?.name) {
-        categoryTotals.set(
-          category.name,
-          (categoryTotals.get(category.name) ?? 0) + reportingAmountMinor
-        )
-      }
     }
 
     if (event.direction === "inflow") {
@@ -213,9 +208,7 @@ export default async function DashboardPage() {
   }))
 
   const netFlowMinor = monthIncomeMinor - monthSpendMinor
-  const topCategories = [...categoryTotals.entries()]
-    .sort((left, right) => right[1] - left[1])
-    .slice(0, 3)
+  const topCategories = summarizeCategoryActivity(monthEvents).slice(0, 6)
 
   const setupBlocker = !gmailState.connection
     ? {
@@ -291,7 +284,6 @@ export default async function DashboardPage() {
       <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
         <div className="grid gap-6">
           <div>
-            <p className="neo-kicker">Home</p>
             <h1 className="mt-4 max-w-[14ch] font-display text-[3rem] leading-[0.92] text-white md:text-[4.2rem]">
               your money,
               <br />
@@ -307,11 +299,6 @@ export default async function DashboardPage() {
             label="Primary snapshot"
             headline="total spend so far"
             amount={formatCurrency(monthSpendMinor, reportingCurrency)}
-            amountCaption={
-              pendingValuationCount > 0
-                ? `${pendingValuationCount} transactions are still being normalized to ${reportingCurrency}.`
-                : `Normalized to ${reportingCurrency} using historical FX on the transaction date.`
-            }
             income={formatCurrency(monthIncomeMinor, reportingCurrency)}
             netFlow={formatCurrency(netFlowMinor, reportingCurrency)}
             netFlowDirection={
@@ -352,6 +339,15 @@ export default async function DashboardPage() {
               },
             ]}
           />
+
+          {topCategories.length > 0 ? (
+            <HomeCategoryStrip
+              items={topCategories}
+              formatAmount={(amountMinor) =>
+                formatCurrency(amountMinor, reportingCurrency)
+              }
+            />
+          ) : null}
 
           {adviceRailItems.length > 0 ? (
             <section className="grid gap-3">
@@ -441,43 +437,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="neo-panel p-5 md:p-6">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="neo-kicker">Category pulse</p>
-              <h2 className="mt-3 font-display text-[2.1rem] leading-none text-white">
-                where money clustered
-              </h2>
-            </div>
-          </div>
-          <div className="mt-6 grid gap-3">
-            {topCategories.length > 0 ? (
-              topCategories.map(([categoryName, amountMinor], index) => (
-                <div
-                  key={categoryName}
-                  className="flex items-center justify-between border border-white/8 bg-[rgba(255,255,255,0.03)] px-4 py-4"
-                >
-                  <div>
-                    <p className="neo-kicker">Top {index + 1}</p>
-                    <p className="mt-2 text-lg font-semibold text-white">
-                      {categoryName}
-                    </p>
-                  </div>
-                  <p className="text-lg font-semibold text-white">
-                    {formatCurrency(amountMinor, reportingCurrency)}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <div className="border border-dashed border-white/10 bg-[rgba(255,255,255,0.02)] p-5 text-sm leading-6 text-white/54">
-                Once reconciled events build up, Irene will show the categories
-                shaping your month here.
-              </div>
-            )}
-          </div>
-        </div>
-
+      <div className="grid gap-4 lg:grid-cols-[1fr]">
         <div className="neo-panel p-5 md:p-6">
           <div className="flex items-end justify-between gap-4">
             <div>

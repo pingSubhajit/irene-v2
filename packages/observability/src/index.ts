@@ -88,6 +88,13 @@ export function createLogger(scope: string, baseContext: LogContext = {}) {
         ...context,
       })
     },
+    warnWithCause(message: string, error: unknown, context?: LogContext) {
+      writeLog("warn", scope, message, {
+        ...baseContext,
+        ...context,
+        error: serializeError(error),
+      })
+    },
     error(message: string, context?: LogContext) {
       writeLog("error", scope, message, {
         ...baseContext,

@@ -1,5 +1,3 @@
-import { RiFlashlightFill } from "@remixicon/react"
-
 import { BottomTabBar } from "@/components/bottom-tab-bar"
 import { ProfileAvatar } from "@/components/profile-avatar"
 
@@ -11,30 +9,37 @@ type AppShellProps = {
   children: React.ReactNode
 }
 
+function getGreetingName(name: string) {
+  return name.trim().split(/\s+/)[0] || "there"
+}
+
 export function AppShell({ user, children }: AppShellProps) {
+  const greetingName = getGreetingName(user.name)
+
   return (
     <div className="min-h-svh bg-transparent text-foreground">
-      <header className="px-4 pt-4 md:px-6">
-        <div className="neo-shell mx-auto flex max-w-6xl items-center justify-between border border-white/8 px-4 py-3 md:px-5">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center border border-white/10 bg-white/4 text-[var(--neo-yellow)]">
-              <RiFlashlightFill className="size-5" />
+      <header className="px-4 pt-3 md:px-6">
+        <div className="mx-auto flex max-w-6xl items-center px-0 py-1 md:py-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="shrink-0 rounded-full border border-white/10 bg-white/5 p-[2px]">
+              <ProfileAvatar
+                name={user.name}
+                image={user.image}
+                className="size-10 rounded-full border-white/0 bg-[#f6d692] text-[#1d1d1f] md:size-11"
+              />
             </div>
-            <div>
-              <p className="neo-kicker text-[0.62rem]">
-                Irene
+            <div className="min-w-0">
+              <p className="text-[0.95rem] leading-none font-medium tracking-[-0.03em] text-white/50 md:text-[1.05rem]">
+                hello,
               </p>
-              <p className="text-sm font-semibold text-white">{user.name}</p>
+              <p className="truncate pt-0.5 text-[1.25rem] leading-none font-semibold tracking-[-0.04em] text-white md:text-[1.45rem]">
+                {greetingName}
+              </p>
             </div>
           </div>
-          <ProfileAvatar
-            name={user.name}
-            image={user.image}
-            className="size-11 rounded-full border-white/12"
-          />
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 pb-28 pt-6 md:px-6 md:pb-32 md:pt-8">
+      <main className="mx-auto max-w-6xl overflow-x-hidden px-4 pb-28 pt-6 md:px-6 md:pb-32 md:pt-8">
         {children}
       </main>
       <BottomTabBar />
