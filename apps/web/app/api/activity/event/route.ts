@@ -6,10 +6,12 @@ import {
   getFinancialEventById,
   getMerchantById,
   getPaymentInstrumentById,
+  getUserSettings,
   type FinancialEventType,
   updateFinancialEvent,
 } from "@workspace/db"
 
+import { parseUserLocalDateTime } from "@/lib/date-format"
 import { recordFeedbackEvent } from "@/lib/feedback"
 import { triggerFinancialEventValuationRefresh } from "@/lib/fx-valuation"
 import { triggerUserForecastRefresh } from "@/lib/forecasting"
@@ -59,6 +61,7 @@ export async function POST(request: Request) {
   const paymentInstrumentId = String(formData.get("paymentInstrumentId") ?? "").trim()
   const eventTypeValue = String(formData.get("eventType") ?? "").trim()
   const amountMinor = parseAmountMinor(formData.get("amount"))
+  const occurredAtInput = String(formData.get("eventOccurredAt") ?? "").trim()
   const description = String(formData.get("description") ?? "").trim()
   const notes = String(formData.get("notes") ?? "").trim()
 
@@ -108,6 +111,15 @@ export async function POST(request: Request) {
     return redirectToTarget(request, redirectTo, "event-invalid")
   }
 
+  const settings = await getUserSettings(session.user.id)
+  const parsedOccurredAt = occurredAtInput
+    ? parseUserLocalDateTime(occurredAtInput, settings.timeZone)
+    : undefined
+
+  if (occurredAtInput && !parsedOccurredAt) {
+    return redirectToTarget(request, redirectTo, "event-invalid")
+  }
+
   const update: Parameters<typeof updateFinancialEvent>[1] = {}
 
   if (merchantId) {
@@ -152,6 +164,10 @@ export async function POST(request: Request) {
     update.amountMinor = amountMinor
   }
 
+  if (occurredAtInput) {
+    update.eventOccurredAt = parsedOccurredAt ?? undefined
+  }
+
   if (formData.has("description")) {
     update.description = description || null
   }
@@ -182,6 +198,7 @@ export async function POST(request: Request) {
       paymentInstrumentId: previousEvent.paymentInstrumentId,
       eventType: previousEvent.eventType,
       direction: previousEvent.direction,
+      eventOccurredAt: previousEvent.eventOccurredAt?.toISOString() ?? null,
       description: previousEvent.description,
       notes: previousEvent.notes,
       status: previousEvent.status,
@@ -193,6 +210,7 @@ export async function POST(request: Request) {
       paymentInstrumentId: updatedEvent.paymentInstrumentId,
       eventType: updatedEvent.eventType,
       direction: updatedEvent.direction,
+      eventOccurredAt: updatedEvent.eventOccurredAt?.toISOString() ?? null,
       description: updatedEvent.description,
       notes: updatedEvent.notes,
       status: updatedEvent.status,

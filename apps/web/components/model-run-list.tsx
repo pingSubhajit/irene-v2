@@ -37,8 +37,9 @@ type ModelRunRow = {
   requestId: string | null
   createdAt: Date
   retryAction?: {
-    extractedSignalId: string
-    rawDocumentId: string
+    extractedSignalId?: string | null
+    rawDocumentId?: string | null
+    financialEventId?: string | null
   } | null
 }
 
@@ -68,6 +69,7 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
               modelRunId: modelRun.id,
               extractedSignalId: modelRun.retryAction?.extractedSignalId,
               rawDocumentId: modelRun.retryAction?.rawDocumentId,
+              financialEventId: modelRun.retryAction?.financialEventId,
             }),
           })
 

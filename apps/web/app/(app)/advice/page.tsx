@@ -1,5 +1,11 @@
 import { RiRefreshLine } from "@remixicon/react"
-import { getUserSettings, listAdviceItemsForUser } from "@workspace/db"
+import { getLatestJobRunForUser, getUserSettings, listAdviceItemsForUser } from "@workspace/db"
+import {
+  ADVICE_QUEUE_NAME,
+  ADVICE_RANK_USER_JOB_NAME,
+  ADVICE_REFRESH_USER_JOB_NAME,
+  ADVICE_REBUILD_USER_JOB_NAME,
+} from "@workspace/workflows"
 
 import { AdviceList } from "@/components/advice-rail"
 import { resolveAdviceContextHref } from "@/lib/advice"
@@ -26,6 +32,12 @@ function getStatusMessage(status: string | null | undefined) {
       return "Advice restored."
     case "refresh-queued":
       return "Advice refresh queued."
+    case "advice-refresh-queued":
+      return "Advice refresh queued."
+    case "advice-rebuild-queued":
+      return "Advice rebuild queued."
+    case "advice-rank-queued":
+      return "Advice ranking queued."
     default:
       return null
   }
@@ -34,18 +46,27 @@ function getStatusMessage(status: string | null | undefined) {
 export default async function AdvicePage({ searchParams }: AdvicePageProps) {
   const session = await requireSession()
   const params = (await searchParams) ?? {}
-  const [rows, settings] = await Promise.all([
+  const [rows, settings, latestAdviceJob] = await Promise.all([
     listAdviceItemsForUser({
       userId: session.user.id,
       statuses: ["active", "dismissed", "done", "expired"],
       limit: 80,
     }),
     getUserSettings(session.user.id),
+    getLatestJobRunForUser({
+      userId: session.user.id,
+      queueName: ADVICE_QUEUE_NAME,
+      jobNames: [ADVICE_REFRESH_USER_JOB_NAME, ADVICE_REBUILD_USER_JOB_NAME, ADVICE_RANK_USER_JOB_NAME],
+    }),
   ])
 
-  const message = getStatusMessage(asSingleValue(params.advice))
+  const message =
+    getStatusMessage(asSingleValue(params.advice)) ??
+    getStatusMessage(asSingleValue(params.recovery))
   const active = rows.filter(({ adviceItem }) => adviceItem.status === "active")
   const closed = rows.filter(({ adviceItem }) => adviceItem.status !== "active")
+  const latestAdviceUpdatedAt = rows[0]?.adviceItem.updatedAt ?? null
+  const adviceStale = !latestAdviceUpdatedAt
 
   const mapItem = (row: (typeof rows)[number]) => ({
     id: row.adviceItem.id,
@@ -105,6 +126,39 @@ export default async function AdvicePage({ searchParams }: AdvicePageProps) {
       {message ? (
         <div className="border-l-2 border-[var(--neo-green)] bg-[rgba(111,247,184,0.04)] px-4 py-3">
           <p className="text-sm leading-relaxed text-white/68">{message}</p>
+        </div>
+      ) : null}
+
+      {latestAdviceJob?.status === "failed" || latestAdviceJob?.status === "dead_lettered" || adviceStale ? (
+        <div className="flex flex-wrap items-center justify-between gap-4 border border-white/[0.06] px-4 py-4">
+          <div>
+            <p className="text-sm text-white">
+              {latestAdviceJob?.status === "failed" || latestAdviceJob?.status === "dead_lettered"
+                ? "Advice needs recovery."
+                : "Advice looks stale."}
+            </p>
+            <p className="mt-1 text-sm text-white/42">
+              {latestAdviceJob?.status === "failed" || latestAdviceJob?.status === "dead_lettered"
+                ? "The latest advice generation did not complete cleanly."
+                : "The current advice set has not been refreshed recently."}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <form action="/api/recovery/advice" method="post">
+              <input type="hidden" name="action" value="refresh" />
+              <input type="hidden" name="redirectTo" value="/advice" />
+              <button className="inline-flex h-9 items-center rounded-full border border-white/[0.1] px-3 text-sm text-white/72 transition hover:bg-white/[0.04] hover:text-white">
+                Retry generation
+              </button>
+            </form>
+            <form action="/api/recovery/advice" method="post">
+              <input type="hidden" name="action" value="rank" />
+              <input type="hidden" name="redirectTo" value="/advice" />
+              <button className="inline-flex h-9 items-center rounded-full border border-white/[0.08] px-3 text-sm text-white/48 transition hover:bg-white/[0.04] hover:text-white">
+                Retry ranking
+              </button>
+            </form>
+          </div>
         </div>
       ) : null}
 

@@ -242,6 +242,15 @@ export default async function SettingsPage({
         />
       </div>
 
+      <SectionHeader>Recovery</SectionHeader>
+      <div className="divide-y divide-white/[0.06]">
+        <NavRow
+          href="/settings/recovery"
+          label="recovery"
+          description="retry failed processing, rebuild stale advice or forecast, and resync recent mail"
+        />
+      </div>
+
       {/* Diagnostics */}
       <SectionHeader>Diagnostics</SectionHeader>
       <div className="divide-y divide-white/[0.06]">

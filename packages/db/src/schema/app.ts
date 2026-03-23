@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm"
 import {
+  type AnyPgColumn,
   bigint,
+  boolean,
   check,
   index,
   integer,
@@ -63,7 +65,12 @@ export const userSettings = pgTable(
   ],
 )
 
-export type JobRunStatus = "queued" | "running" | "succeeded" | "failed"
+export type JobRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "dead_lettered"
 
 export const jobRuns = pgTable(
   "job_run",
@@ -75,9 +82,21 @@ export const jobRuns = pgTable(
     payloadJson: jsonb("payload_json").$type<Record<string, unknown> | null>(),
     status: text("status").$type<JobRunStatus>().notNull(),
     attemptCount: integer("attempt_count").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(1),
+    retryable: boolean("retryable").notNull().default(true),
     startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
     completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
     errorMessage: text("error_message"),
+    lastErrorCode: text("last_error_code"),
+    lastErrorAt: timestamp("last_error_at", { withTimezone: true, mode: "date" }),
+    deadLetteredAt: timestamp("dead_lettered_at", { withTimezone: true, mode: "date" }),
+    replayedFromJobRunId: uuid("replayed_from_job_run_id").references(
+      (): AnyPgColumn => jobRuns.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    recoveryGroupKey: text("recovery_group_key"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),
@@ -90,10 +109,14 @@ export const jobRuns = pgTable(
     ),
     index("job_run_job_name_idx").on(table.jobName),
     index("job_run_job_key_idx").on(table.jobKey),
+    index("job_run_replayed_from_idx").on(table.replayedFromJobRunId),
+    index("job_run_recovery_group_idx").on(table.recoveryGroupKey, table.createdAt),
     check(
       "job_run_status_check",
-      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed')`,
+      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed', 'dead_lettered')`,
     ),
+    check("job_run_attempt_count_check", sql`${table.attemptCount} >= 0`),
+    check("job_run_max_attempts_check", sql`${table.maxAttempts} > 0`),
   ],
 )
 

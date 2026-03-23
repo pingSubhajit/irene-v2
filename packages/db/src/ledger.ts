@@ -38,6 +38,7 @@ import {
   type ExtractedSignalSelect,
   type FinancialEventDirection,
   type FinancialEventInsert,
+  type FinancialEventStatus,
   type FinancialEventType,
   type MerchantType,
   type PaymentInstrumentType,
@@ -1920,6 +1921,7 @@ export async function findOpenReviewQueueItem(input: {
 
 export async function listLedgerEventsForUser(input: {
   userId: string
+  statuses?: FinancialEventStatus[]
   eventType?: FinancialEventType
   eventTypes?: FinancialEventType[]
   categoryId?: string
@@ -1940,7 +1942,7 @@ export async function listLedgerEventsForUser(input: {
 }) {
   const conditions = [
     eq(financialEvents.userId, input.userId),
-    inArray(financialEvents.status, ["confirmed", "needs_review"]),
+    inArray(financialEvents.status, input.statuses ?? ["confirmed", "needs_review"]),
   ]
 
   if (input.eventType) {

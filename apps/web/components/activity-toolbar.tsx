@@ -23,6 +23,7 @@ import {
 const feedOptions = [
   { value: "all", label: "Transactions" },
   { value: "review", label: "Needs review" },
+  { value: "ignored", label: "Ignored" },
   { value: "subscriptions", label: "Subscriptions" },
   { value: "emis", label: "EMIs" },
   { value: "income", label: "Income" },
@@ -122,9 +123,15 @@ function parseViewState(view: string): {
     }
   }
 
-  if (view === "review" || view === "subscriptions" || view === "emis" || view === "income") {
+  if (
+    view === "review" ||
+    view === "ignored" ||
+    view === "subscriptions" ||
+    view === "emis" ||
+    view === "income"
+  ) {
     return {
-      feed: view,
+      feed: view as FeedValue,
       direction: "all",
     }
   }
@@ -136,7 +143,7 @@ function parseViewState(view: string): {
 }
 
 function isCanonicalView(feed: FeedValue) {
-  return feed === "all" || feed === "review"
+  return feed === "all" || feed === "review" || feed === "ignored"
 }
 
 function toggleValue(values: string[], value: string) {

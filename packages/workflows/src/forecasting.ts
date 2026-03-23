@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue, toBullJobId } from "./redis"
+import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const FORECASTING_QUEUE_NAME = "forecasting"
 export const FORECAST_REFRESH_USER_JOB_NAME = "forecast.refresh.user"
@@ -50,7 +50,11 @@ export async function enqueueForecastRefreshUser(payload: ForecastRefreshUserJob
   const parsed = forecastRefreshUserJobPayloadSchema.parse(payload)
 
   return getForecastingQueue().add(FORECAST_REFRESH_USER_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 
@@ -58,7 +62,11 @@ export async function enqueueForecastRebuildUser(payload: ForecastRebuildUserJob
   const parsed = forecastRebuildUserJobPayloadSchema.parse(payload)
 
   return getForecastingQueue().add(FORECAST_REBUILD_USER_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 60_000,
+    }),
   })
 }
 

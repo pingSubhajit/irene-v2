@@ -18,6 +18,7 @@ import {
   listActivityMerchantsForUser,
   listActivityPaymentInstrumentsForUser,
   listCategoriesForUser,
+  listFeedbackEventsForTarget,
   getUserSettings,
 } from "@workspace/db"
 
@@ -131,6 +132,21 @@ function getAccentStyles(colorToken: CategoryColorToken | null | undefined) {
   }
 }
 
+function getCorrectionLabel(correctionType: string) {
+  switch (correctionType) {
+    case "ignore_event":
+      return "ignored"
+    case "restore_event":
+      return "restored"
+    case "merge_merchant":
+      return "merged"
+    case "update_event":
+      return "corrected by you"
+    default:
+      return "updated"
+  }
+}
+
 export default async function EventTracePage({
   params,
   searchParams,
@@ -141,7 +157,7 @@ export default async function EventTracePage({
   const statusParam = Array.isArray(routeSearchParams.status)
     ? routeSearchParams.status[0]
     : routeSearchParams.status
-  const [settings, trace, categories, merchants, paymentInstruments] = await Promise.all([
+  const [settings, trace, categories, merchants, paymentInstruments, feedbackEvents] = await Promise.all([
     getUserSettings(session.user.id),
     getFinancialEventTraceForUser({
       userId: session.user.id,
@@ -155,6 +171,12 @@ export default async function EventTracePage({
     listActivityPaymentInstrumentsForUser({
       userId: session.user.id,
       limit: 300,
+    }),
+    listFeedbackEventsForTarget({
+      userId: session.user.id,
+      targetType: "financial_event",
+      targetId: eventId,
+      limit: 4,
     }),
   ])
 
@@ -194,6 +216,7 @@ export default async function EventTracePage({
   const issuerLine = trace.paymentInstrument?.displayName ?? null
   const secondaryLine = [processorLine, issuerLine].filter(Boolean).join(" · ")
   const statusMessage = getStatusMessage(statusParam)
+  const latestFeedback = feedbackEvents[0] ?? null
 
   return (
     <section className="mx-auto max-w-2xl">
@@ -249,6 +272,7 @@ export default async function EventTracePage({
             id: trace.event.id,
             status: trace.event.status,
             amountMinor: trace.event.amountMinor,
+            eventOccurredAt: trace.event.eventOccurredAt,
             eventType: trace.event.eventType,
             merchantId: trace.event.merchantId,
             categoryId: trace.event.categoryId,
@@ -293,6 +317,25 @@ export default async function EventTracePage({
           }))}
         />
       </div>
+
+      {latestFeedback ? (
+        <div className="mt-4">
+          <div
+            className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm"
+            style={{
+              borderColor: accent.border,
+              background: `linear-gradient(180deg, rgba(255,255,255,0.03), ${accent.soft})`,
+              boxShadow: `0 0 24px ${accent.soft}`,
+            }}
+          >
+            <span
+              className="size-2 rounded-full"
+              style={{ backgroundColor: accent.glow }}
+            />
+            <span className="text-white/78">{getCorrectionLabel(latestFeedback.correctionType)}</span>
+          </div>
+        </div>
+      ) : null}
       {secondaryLine ? (
         <p className="mt-1 text-sm text-white/48">{secondaryLine}</p>
       ) : null}
@@ -538,12 +581,23 @@ export default async function EventTracePage({
                             ...modelRun,
                             retryAction:
                               modelRun.status === "failed" &&
-                              modelRun.taskType === "reconciliation_resolution" &&
-                              entry.extractedSignal?.id &&
-                              entry.rawDocument?.id
+                              (
+                                (modelRun.taskType === "reconciliation_resolution" &&
+                                  entry.extractedSignal?.id &&
+                                  entry.rawDocument?.id) ||
+                                ((modelRun.taskType === "document_extraction" ||
+                                  modelRun.taskType === "balance_inference") &&
+                                  entry.rawDocument?.id) ||
+                                (modelRun.taskType === "category_resolution" &&
+                                  trace.event.id)
+                              )
                                 ? {
-                                    extractedSignalId: entry.extractedSignal.id,
-                                    rawDocumentId: entry.rawDocument.id,
+                                    extractedSignalId: entry.extractedSignal?.id ?? null,
+                                    rawDocumentId: entry.rawDocument?.id ?? null,
+                                    financialEventId:
+                                      modelRun.taskType === "category_resolution"
+                                        ? trace.event.id
+                                        : null,
                                   }
                                 : null,
                           }))}

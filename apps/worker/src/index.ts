@@ -224,12 +224,31 @@ function getAttemptCount(job: Job) {
   return job.attemptsMade + 1
 }
 
+function getMaxAttempts(job: Job) {
+  return Math.max(1, job.opts.attempts ?? 1)
+}
+
+function getRetryable(job: Job) {
+  return getMaxAttempts(job) > 1
+}
+
+function getRecoveryGroupKey(job: Job) {
+  const userId = typeof job.data?.userId === "string" ? job.data.userId : "unknown"
+  return `${job.queueName}:${job.name}:${userId}`
+}
+
 async function markJobRunning(job: Job, payload: TrackedPayload) {
   await updateJobRun(payload.jobRunId, {
     status: "running",
     attemptCount: getAttemptCount(job),
+    maxAttempts: getMaxAttempts(job),
+    retryable: getRetryable(job),
     startedAt: new Date(),
     errorMessage: null,
+    lastErrorCode: null,
+    lastErrorAt: null,
+    deadLetteredAt: null,
+    recoveryGroupKey: getRecoveryGroupKey(job),
   })
 }
 
@@ -241,8 +260,14 @@ async function markJobSucceeded(
   await updateJobRun(payload.jobRunId, {
     status: "succeeded",
     attemptCount: getAttemptCount(job),
+    maxAttempts: getMaxAttempts(job),
+    retryable: getRetryable(job),
     completedAt: new Date(),
     errorMessage: null,
+    lastErrorCode: null,
+    lastErrorAt: null,
+    deadLetteredAt: null,
+    recoveryGroupKey: getRecoveryGroupKey(job),
     payloadJson: resultPayload ? { ...job.data, ...resultPayload } : job.data,
   })
 }
@@ -3202,11 +3227,25 @@ for (const [queueName, worker] of [
     const jobRunId = job?.data?.jobRunId
 
     if (typeof jobRunId === "string") {
+      const attemptCount = job ? getAttemptCount(job) : 1
+      const maxAttempts = job ? getMaxAttempts(job) : 1
+      const isDeadLettered = attemptCount >= maxAttempts
+      const errorCode =
+        typeof (error as Error & { code?: string }).code === "string"
+          ? (error as Error & { code?: string }).code
+          : error.name
+
       await updateJobRun(jobRunId, {
-        status: "failed",
-        attemptCount: job?.attemptsMade ?? 0,
+        status: isDeadLettered ? "dead_lettered" : "failed",
+        attemptCount,
+        maxAttempts,
+        retryable: maxAttempts > 1,
         completedAt: new Date(),
         errorMessage: error.message,
+        lastErrorCode: errorCode,
+        lastErrorAt: new Date(),
+        deadLetteredAt: isDeadLettered ? new Date() : null,
+        recoveryGroupKey: job ? getRecoveryGroupKey(job) : undefined,
         payloadJson: job?.data,
       })
     }

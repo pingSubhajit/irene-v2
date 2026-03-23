@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue, toBullJobId } from "./redis"
+import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const MEMORY_LEARNING_QUEUE_NAME = "memory-learning"
 export const FEEDBACK_PROCESS_JOB_NAME = "feedback.process"
@@ -48,7 +48,11 @@ export async function enqueueFeedbackProcess(payload: FeedbackProcessJobPayload)
   const parsed = feedbackProcessJobPayloadSchema.parse(payload)
 
   return getMemoryLearningQueue().add(FEEDBACK_PROCESS_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 
@@ -56,7 +60,11 @@ export async function enqueueMemoryRebuildUser(payload: MemoryRebuildUserJobPayl
   const parsed = memoryRebuildUserJobPayloadSchema.parse(payload)
 
   return getMemoryLearningQueue().add(MEMORY_REBUILD_USER_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 60_000,
+    }),
   })
 }
 
@@ -64,7 +72,11 @@ export async function enqueueMemoryDecayScan(payload: MemoryDecayScanJobPayload)
   const parsed = memoryDecayScanJobPayloadSchema.parse(payload)
 
   return getMemoryLearningQueue().add(MEMORY_DECAY_SCAN_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 1,
+      backoffMs: 15_000,
+    }),
   })
 }
 

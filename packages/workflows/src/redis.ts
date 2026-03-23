@@ -1,4 +1,4 @@
-import { Queue, type ConnectionOptions } from "bullmq"
+import { Queue, type ConnectionOptions, type JobsOptions } from "bullmq"
 
 import { getRedisEnv } from "@workspace/config/server"
 
@@ -49,6 +49,23 @@ export function createWorkerRedisConnection() {
 
 export function toBullJobId(jobKey: string) {
   return jobKey.replaceAll(":", "__")
+}
+
+export function createTrackedJobOptions(input: {
+  jobId: string
+  attempts?: number
+  backoffMs?: number
+}) {
+  const attempts = input.attempts ?? 3
+
+  return {
+    jobId: input.jobId,
+    attempts,
+    backoff: {
+      type: "exponential",
+      delay: input.backoffMs ?? 15_000,
+    },
+  } satisfies JobsOptions
 }
 
 export function getOrCreateQueue(name: string, key: keyof QueueRegistry) {

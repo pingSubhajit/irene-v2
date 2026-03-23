@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue, toBullJobId } from "./redis"
+import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const ADVICE_QUEUE_NAME = "advice"
 export const ADVICE_REFRESH_USER_JOB_NAME = "advice.refresh.user"
@@ -50,7 +50,11 @@ export async function enqueueAdviceRefreshUser(payload: AdviceRefreshUserJobPayl
   const parsed = adviceRefreshUserJobPayloadSchema.parse(payload)
 
   return getAdviceQueue().add(ADVICE_REFRESH_USER_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 
@@ -58,7 +62,11 @@ export async function enqueueAdviceRebuildUser(payload: AdviceRebuildUserJobPayl
   const parsed = adviceRebuildUserJobPayloadSchema.parse(payload)
 
   return getAdviceQueue().add(ADVICE_REBUILD_USER_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 60_000,
+    }),
   })
 }
 
@@ -66,7 +74,11 @@ export async function enqueueAdviceRankUser(payload: AdviceRankUserJobPayload) {
   const parsed = adviceRankUserJobPayloadSchema.parse(payload)
 
   return getAdviceQueue().add(ADVICE_RANK_USER_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 

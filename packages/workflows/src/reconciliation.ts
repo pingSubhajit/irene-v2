@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue, toBullJobId } from "./redis"
+import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const RECONCILIATION_QUEUE_NAME = "reconciliation"
 export const SIGNAL_RECONCILE_JOB_NAME = "signal.reconcile"
@@ -43,7 +43,11 @@ export async function enqueueSignalReconcile(payload: SignalReconcileJobPayload)
   const parsed = reconciliationJobPayloadSchema.parse(payload)
 
   return getReconciliationQueue().add(SIGNAL_RECONCILE_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 45_000,
+    }),
   })
 }
 
@@ -53,7 +57,11 @@ export async function enqueueReconciliationModelRetry(
   const parsed = reconciliationModelRetryJobPayloadSchema.parse(payload)
 
   return getReconciliationQueue().add(RECONCILIATION_MODEL_RETRY_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 45_000,
+    }),
   })
 }
 

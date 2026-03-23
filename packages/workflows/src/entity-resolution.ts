@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue, toBullJobId } from "./redis"
+import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const ENTITY_RESOLUTION_QUEUE_NAME = "entity-resolution"
 export const EVENT_EXTRACT_INSTRUMENT_OBSERVATION_JOB_NAME =
@@ -50,7 +50,11 @@ export async function enqueueEventExtractInstrumentObservation(
   const parsed = eventExtractInstrumentObservationJobPayloadSchema.parse(payload)
 
   return getEntityResolutionQueue().add(EVENT_EXTRACT_INSTRUMENT_OBSERVATION_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 20_000,
+    }),
   })
 }
 
@@ -58,7 +62,11 @@ export async function enqueueInstrumentResolve(payload: InstrumentResolveJobPayl
   const parsed = instrumentResolveJobPayloadSchema.parse(payload)
 
   return getEntityResolutionQueue().add(INSTRUMENT_RESOLVE_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 
@@ -68,7 +76,11 @@ export async function enqueueInstrumentRepairBackfill(
   const parsed = instrumentRepairBackfillJobPayloadSchema.parse(payload)
 
   return getEntityResolutionQueue().add(INSTRUMENT_REPAIR_BACKFILL_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 1,
+      backoffMs: 30_000,
+    }),
   })
 }
 

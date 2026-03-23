@@ -105,6 +105,32 @@ function getUtcDateForTimeZoneParts(input: {
   return new Date(utcGuess - offset)
 }
 
+export function parseUserLocalDateTime(
+  localDateTime: string,
+  timeZone: string | null | undefined,
+) {
+  const match = localDateTime.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/,
+  )
+
+  if (!match) {
+    return null
+  }
+
+  const [, year, month, day, hour, minute, second] = match
+
+  return getUtcDateForTimeZoneParts({
+    timeZone,
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+    second: Number(second ?? "0"),
+    millisecond: 0,
+  })
+}
+
 export function getUtcStartOfUserDay(
   localDate: string,
   timeZone: string | null | undefined,

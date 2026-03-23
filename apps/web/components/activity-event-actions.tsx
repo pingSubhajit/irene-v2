@@ -24,6 +24,7 @@ type EventActionProps = {
     id: string
     status: "confirmed" | "needs_review" | "ignored" | "reversed"
     amountMinor: number
+    eventOccurredAt: Date
     eventType: string
     merchantId: string | null
     categoryId: string | null
@@ -54,6 +55,16 @@ const rowClassName =
 function formatMajorAmount(amountMinor: number | null | undefined) {
   if (typeof amountMinor !== "number") return ""
   return (amountMinor / 100).toFixed(2)
+}
+
+function toLocalDateTimeValue(value: Date | null | undefined) {
+  if (!value) {
+    return ""
+  }
+
+  const offset = value.getTimezoneOffset()
+  const local = new Date(value.getTime() - offset * 60_000)
+  return local.toISOString().slice(0, 16)
 }
 
 export function ActivityEventActions({
@@ -195,6 +206,14 @@ function EventEditSheet({
                 step="0.01"
                 min="0"
                 defaultValue={formatMajorAmount(event.amountMinor)}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-white">
+              <span>date and time</span>
+              <Input
+                name="eventOccurredAt"
+                type="datetime-local"
+                defaultValue={toLocalDateTimeValue(event.eventOccurredAt)}
               />
             </label>
             <label className="grid gap-2 text-sm font-medium text-white">

@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue, toBullJobId } from "./redis"
+import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const MERCHANT_RESOLUTION_QUEUE_NAME = "merchant-resolution"
 export const EVENT_EXTRACT_MERCHANT_OBSERVATION_JOB_NAME =
@@ -58,14 +58,22 @@ export async function enqueueEventExtractMerchantObservation(
 ) {
   const parsed = eventExtractMerchantObservationJobPayloadSchema.parse(payload)
   return getMerchantResolutionQueue().add(EVENT_EXTRACT_MERCHANT_OBSERVATION_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 20_000,
+    }),
   })
 }
 
 export async function enqueueMerchantResolve(payload: MerchantResolveJobPayload) {
   const parsed = merchantResolveJobPayloadSchema.parse(payload)
   return getMerchantResolutionQueue().add(MERCHANT_RESOLVE_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 
@@ -74,14 +82,22 @@ export async function enqueueMerchantRepairBackfill(
 ) {
   const parsed = merchantRepairBackfillJobPayloadSchema.parse(payload)
   return getMerchantResolutionQueue().add(MERCHANT_REPAIR_BACKFILL_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 1,
+      backoffMs: 30_000,
+    }),
   })
 }
 
 export async function enqueueEventResolveCategory(payload: EventResolveCategoryJobPayload) {
   const parsed = eventResolveCategoryJobPayloadSchema.parse(payload)
   return getMerchantResolutionQueue().add(EVENT_RESOLVE_CATEGORY_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 

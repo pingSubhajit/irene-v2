@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue, toBullJobId } from "./redis"
+import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const DOCUMENT_NORMALIZATION_QUEUE_NAME = "document-normalization"
 export const AI_EXTRACTION_QUEUE_NAME = "ai-extraction"
@@ -65,7 +65,11 @@ export async function enqueueDocumentNormalize(payload: DocumentNormalizeJobPayl
   const parsed = documentNormalizeJobPayloadSchema.parse(payload)
 
   return getDocumentNormalizationQueue().add(DOCUMENT_NORMALIZE_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 20_000,
+    }),
   })
 }
 
@@ -73,7 +77,11 @@ export async function enqueueDocumentExtractRoute(payload: DocumentExtractRouteJ
   const parsed = documentExtractRouteJobPayloadSchema.parse(payload)
 
   return getAiExtractionQueue().add(DOCUMENT_EXTRACT_ROUTE_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 
@@ -83,7 +91,11 @@ export async function enqueueDocumentExtractStructured(
   const parsed = documentExtractStructuredJobPayloadSchema.parse(payload)
 
   return getAiExtractionQueue().add(DOCUMENT_EXTRACT_STRUCTURED_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 

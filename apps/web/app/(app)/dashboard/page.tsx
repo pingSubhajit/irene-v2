@@ -1,12 +1,18 @@
 import {
   countOpenReviewQueueItemsForUser,
   countRecurringObligationsByType,
+  getLatestJobRunForUser,
   getUserSettings,
   listDashboardLedgerEventsForUser,
   listFinancialEventSourcesForEventIds,
   listHomeRankedAdviceItemsForUser,
   listLedgerEventsForUser,
 } from "@workspace/db"
+import {
+  FORECASTING_QUEUE_NAME,
+  FORECAST_REFRESH_USER_JOB_NAME,
+  FORECAST_REBUILD_USER_JOB_NAME,
+} from "@workspace/workflows"
 
 import { ActionTile } from "@/components/action-tile"
 import { AdviceHomeCarousel } from "@/components/advice-rail"
@@ -74,6 +80,7 @@ export default async function DashboardPage() {
     recentEvents,
     recurringCounts,
     rankedAdvice,
+    latestForecastJob,
   ] = await Promise.all([
     getGmailIntegrationState(session.user.id),
     countOpenReviewQueueItemsForUser(session.user.id),
@@ -91,6 +98,11 @@ export default async function DashboardPage() {
     listHomeRankedAdviceItemsForUser({
       userId: session.user.id,
       limit: 3,
+    }),
+    getLatestJobRunForUser({
+      userId: session.user.id,
+      queueName: FORECASTING_QUEUE_NAME,
+      jobNames: [FORECAST_REFRESH_USER_JOB_NAME, FORECAST_REBUILD_USER_JOB_NAME],
     }),
   ])
 
@@ -154,6 +166,8 @@ export default async function DashboardPage() {
 
   const netFlowMinor = monthIncomeMinor - monthSpendMinor
   const topCategories = summarizeCategoryActivity(monthEvents).slice(0, 6)
+  const forecastNeedsRecovery =
+    latestForecastJob?.status === "failed" || latestForecastJob?.status === "dead_lettered"
 
   const setupBlocker = !gmailState.connection
     ? {
@@ -258,6 +272,24 @@ export default async function DashboardPage() {
             },
           ]}
         />
+
+        {forecastNeedsRecovery ? (
+          <div className="flex flex-wrap items-center justify-between gap-4 border border-white/[0.06] px-4 py-4">
+            <div>
+              <p className="text-sm text-white">Forecast needs recovery.</p>
+              <p className="mt-1 text-sm text-white/42">
+                The latest forecast job did not finish cleanly. Rebuild it before relying on downstream advice.
+              </p>
+            </div>
+            <form action="/api/recovery/forecast" method="post">
+              <input type="hidden" name="action" value="rebuild" />
+              <input type="hidden" name="redirectTo" value="/dashboard" />
+              <button className="inline-flex h-9 items-center rounded-full border border-white/[0.1] px-3 text-sm text-white/72 transition hover:bg-white/[0.04] hover:text-white">
+                Rebuild forecast
+              </button>
+            </form>
+          </div>
+        ) : null}
 
         {setupBlocker ? (
           <ActionTile

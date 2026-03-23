@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { getOrCreateQueue, toBullJobId } from "./redis"
+import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const BALANCE_INFERENCE_QUEUE_NAME = "balance-inference"
 export const DOCUMENT_INFER_BALANCE_JOB_NAME = "document.infer.balance"
@@ -35,7 +35,11 @@ export async function enqueueDocumentInferBalance(
   const parsed = documentInferBalanceJobPayloadSchema.parse(payload)
 
   return getBalanceInferenceQueue().add(DOCUMENT_INFER_BALANCE_JOB_NAME, parsed, {
-    jobId: toBullJobId(parsed.jobKey),
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 30_000,
+    }),
   })
 }
 

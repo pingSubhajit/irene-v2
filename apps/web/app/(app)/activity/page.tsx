@@ -196,6 +196,7 @@ export default async function ActivityPage({
       ? Promise.resolve([])
       : listLedgerEventsForUser({
           userId: session.user.id,
+          statuses: view === "ignored" ? ["ignored"] : undefined,
           query,
           direction: view === "outflow" || view === "inflow" ? view : undefined,
           needsReview: view === "review" ? true : undefined,
