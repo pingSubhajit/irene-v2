@@ -48,6 +48,7 @@ import {
   listGmailMessageIds,
   type GmailAttachmentBlob,
   buildFinanceSearchQuery,
+  buildFinanceSearchQuerySince,
   uploadPrivateObject,
 } from "@workspace/integrations"
 import {
@@ -286,6 +287,75 @@ function getLatestHistoryId(current: string | null, candidate: string | null) {
   }
 
   return BigInt(candidate) > BigInt(current) ? candidate : current
+}
+
+function isGmailNotFoundError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "number" &&
+    error.code === 404
+  )
+}
+
+type GmailFallbackAnchor =
+  | {
+      source:
+        | "last_seen_message_at"
+        | "backfill_completed_at"
+        | "last_successful_sync_at"
+        | "bootstrap_window"
+      timestamp: string | null
+    }
+  | null
+
+function resolveIncrementalFallbackAnchor(input: {
+  cursor: {
+    lastSeenMessageAt: Date | null
+    backfillCompletedAt: Date | null
+  }
+  connection: {
+    lastSuccessfulSyncAt: Date | null
+  }
+}) {
+  if (input.cursor.lastSeenMessageAt) {
+    return {
+      anchor: input.cursor.lastSeenMessageAt,
+      fallbackAnchor: {
+        source: "last_seen_message_at",
+        timestamp: input.cursor.lastSeenMessageAt.toISOString(),
+      } satisfies NonNullable<GmailFallbackAnchor>,
+    }
+  }
+
+  if (input.cursor.backfillCompletedAt) {
+    return {
+      anchor: input.cursor.backfillCompletedAt,
+      fallbackAnchor: {
+        source: "backfill_completed_at",
+        timestamp: input.cursor.backfillCompletedAt.toISOString(),
+      } satisfies NonNullable<GmailFallbackAnchor>,
+    }
+  }
+
+  if (input.connection.lastSuccessfulSyncAt) {
+    return {
+      anchor: input.connection.lastSuccessfulSyncAt,
+      fallbackAnchor: {
+        source: "last_successful_sync_at",
+        timestamp: input.connection.lastSuccessfulSyncAt.toISOString(),
+      } satisfies NonNullable<GmailFallbackAnchor>,
+    }
+  }
+
+  return {
+    anchor: null,
+    fallbackAnchor: {
+      source: "bootstrap_window",
+      timestamp: null,
+    } satisfies NonNullable<GmailFallbackAnchor>,
+  }
 }
 
 function createTokenPersister(connectionId: string) {
@@ -1329,13 +1399,33 @@ async function processCandidateMessages(input: {
   let acceptedObligationCount = 0
   let skippedMarketingCount = 0
   let skippedNonFinanceCount = 0
+  let skippedMissingCount = 0
   let latestHistoryId: string | null = null
   let lastSeenMessageAt: Date | null = null
   const currentAttempt = getAttemptCount(input.job)
   const maxAttempts = (input.job.opts.attempts as number | undefined) ?? 3
 
   for (const messageId of input.messageIds) {
-    const metadata = await getGmailMessageMetadata(connection, messageId, onTokenUpdate)
+    let metadata: Awaited<ReturnType<typeof getGmailMessageMetadata>>
+
+    try {
+      metadata = await getGmailMessageMetadata(connection, messageId, onTokenUpdate)
+    } catch (error) {
+      if (!isGmailNotFoundError(error)) {
+        throw error
+      }
+
+      skippedMissingCount += 1
+      logger.warn("Skipping Gmail message after metadata lookup returned not found", {
+        jobId: input.job.id,
+        cursorId: input.cursorId,
+        oauthConnectionId: input.oauthConnectionId,
+        sourceKind: input.sourceKind,
+        messageId,
+      })
+      continue
+    }
+
     latestHistoryId = getLatestHistoryId(latestHistoryId, metadata.historyId)
 
     if (metadata.internalDate) {
@@ -1400,19 +1490,10 @@ async function processCandidateMessages(input: {
     acceptedObligationCount,
     skippedMarketingCount,
     skippedNonFinanceCount,
+    skippedMissingCount,
     lastSeenMessageAt,
     latestHistoryId,
   }
-}
-
-function isHistoryExpiredError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "number" &&
-    error.code === 404
-  )
 }
 
 async function handleSystemJob(job: Job) {
@@ -1540,6 +1621,7 @@ async function handleGmailBackfillPage(job: Job) {
     acceptedObligationCount: processed.acceptedObligationCount,
     skippedMarketingCount: processed.skippedMarketingCount,
     skippedNonFinanceCount: processed.skippedNonFinanceCount,
+    skippedMissingCount: processed.skippedMissingCount,
     nextPageToken: page.nextPageToken ?? null,
   })
 
@@ -1548,6 +1630,7 @@ async function handleGmailBackfillPage(job: Job) {
     acceptedObligationCount: processed.acceptedObligationCount,
     skippedMarketingCount: processed.skippedMarketingCount,
     skippedNonFinanceCount: processed.skippedNonFinanceCount,
+    skippedMissingCount: processed.skippedMissingCount,
     nextPageToken: page.nextPageToken ?? null,
   }
 }
@@ -1573,6 +1656,7 @@ async function handleGmailIncrementalPoll(job: Job) {
   let messageIds: string[] = []
   let latestHistoryId = cursor.providerCursor
   let usedFallback = false
+  let fallbackAnchor: GmailFallbackAnchor = null
 
   if (cursor.providerCursor) {
     try {
@@ -1593,24 +1677,41 @@ async function handleGmailIncrementalPoll(job: Job) {
         nextPageToken = historyPage.nextPageToken
       } while (nextPageToken)
     } catch (error) {
-      if (!isHistoryExpiredError(error)) {
+      if (!isGmailNotFoundError(error)) {
         throw error
       }
 
       usedFallback = true
-      logger.warn("Falling back to recent-window Gmail query after invalid history cursor", {
+      logger.warn(
+        "Falling back to checkpoint-anchored Gmail query after invalid history cursor",
+        {
         cursorId: cursor.id,
         oauthConnectionId: connection.id,
-      })
+        },
+      )
     }
   } else {
     usedFallback = true
   }
 
   if (usedFallback) {
-    const fallbackWindowDays = Math.max(1, Math.ceil(payload.fallbackWindowHours / 24))
-    const recentQuery = buildFinanceSearchQuery(fallbackWindowDays)
+    const fallback = resolveIncrementalFallbackAnchor({
+      cursor,
+      connection,
+    })
+    fallbackAnchor = fallback.fallbackAnchor
+    const recentQuery = fallback.anchor
+      ? buildFinanceSearchQuerySince({
+          since: fallback.anchor,
+        })
+      : buildFinanceSearchQuery(Math.max(1, Math.ceil(payload.fallbackWindowHours / 24)))
     let nextPageToken: string | null | undefined = undefined
+
+    logger.info("Using fallback Gmail query for incremental sync", {
+      cursorId: cursor.id,
+      oauthConnectionId: connection.id,
+      fallbackAnchor,
+    })
 
     do {
       const recentPage = await listGmailMessageIds(
@@ -1653,7 +1754,22 @@ async function handleGmailIncrementalPoll(job: Job) {
     acceptedObligationCount: processed.acceptedObligationCount,
     skippedMarketingCount: processed.skippedMarketingCount,
     skippedNonFinanceCount: processed.skippedNonFinanceCount,
+    skippedMissingCount: processed.skippedMissingCount,
     usedFallback,
+    fallbackAnchor,
+    processedCount: messageIds.length,
+  })
+
+  logger.info("Completed Gmail incremental poll", {
+    cursorId: cursor.id,
+    oauthConnectionId: connection.id,
+    acceptedTransactionalCount: processed.acceptedTransactionalCount,
+    acceptedObligationCount: processed.acceptedObligationCount,
+    skippedMarketingCount: processed.skippedMarketingCount,
+    skippedNonFinanceCount: processed.skippedNonFinanceCount,
+    skippedMissingCount: processed.skippedMissingCount,
+    usedFallback,
+    fallbackAnchor,
     processedCount: messageIds.length,
   })
 
@@ -1662,7 +1778,9 @@ async function handleGmailIncrementalPoll(job: Job) {
     acceptedObligationCount: processed.acceptedObligationCount,
     skippedMarketingCount: processed.skippedMarketingCount,
     skippedNonFinanceCount: processed.skippedNonFinanceCount,
+    skippedMissingCount: processed.skippedMissingCount,
     usedFallback,
+    fallbackAnchor,
     processedCount: messageIds.length,
   }
 }
@@ -1757,7 +1875,32 @@ async function handleGmailMessageIngest(job: Job) {
   }
 
   const onTokenUpdate = createTokenPersister(connection.id)
-  const message = await getGmailMessage(connection, payload.providerMessageId, onTokenUpdate)
+  let message: Awaited<ReturnType<typeof getGmailMessage>>
+
+  try {
+    message = await getGmailMessage(connection, payload.providerMessageId, onTokenUpdate)
+  } catch (error) {
+    if (!isGmailNotFoundError(error)) {
+      throw error
+    }
+
+    logger.warn("Skipping Gmail message ingest after message fetch returned not found", {
+      cursorId: cursor.id,
+      oauthConnectionId: connection.id,
+      providerMessageId: payload.providerMessageId,
+    })
+
+    await markJobSucceeded(job, payload, {
+      skipped: true,
+      reason: "message_not_found",
+    })
+
+    return {
+      skipped: true,
+      reason: "message_not_found",
+    }
+  }
+
   const bodyHtmlStorageKey = await uploadRawHtml({
     userId: payload.userId,
     oauthConnectionId: payload.oauthConnectionId,

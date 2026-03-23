@@ -16,6 +16,9 @@ const GMAIL_SCOPES = [
 const GMAIL_CALLBACK_PATH = "/api/integrations/email/google/callback"
 const GMAIL_USER_ID = "me"
 const METADATA_HEADERS = ["Date", "From", "To", "Subject"]
+const FINANCE_SEARCH_TERMS =
+  "(receipt OR invoice OR payment OR paid OR statement OR bank OR card OR debit OR credit OR transaction OR UPI OR emi OR subscription OR salary OR payroll OR refunded OR refund OR utility)"
+const DEFAULT_FINANCE_SEARCH_OVERLAP_HOURS = 6
 
 type GmailConnectionAuth = {
   accessTokenEncrypted: string
@@ -242,7 +245,18 @@ function buildNormalizedDocumentHash(input: {
 }
 
 export function buildFinanceSearchQuery(windowDays: number) {
-  return `newer_than:${windowDays}d (receipt OR invoice OR payment OR paid OR statement OR bank OR card OR debit OR credit OR transaction OR UPI OR emi OR subscription OR salary OR payroll OR refunded OR refund OR utility)`
+  return `newer_than:${windowDays}d ${FINANCE_SEARCH_TERMS}`
+}
+
+export function buildFinanceSearchQuerySince(input: {
+  since: Date
+  overlapHours?: number
+}) {
+  const overlapHours = Math.max(0, input.overlapHours ?? DEFAULT_FINANCE_SEARCH_OVERLAP_HOURS)
+  const anchor = new Date(input.since.getTime() - overlapHours * 60 * 60 * 1000)
+  const anchorSeconds = Math.max(0, Math.floor(anchor.getTime() / 1000))
+
+  return `after:${anchorSeconds} ${FINANCE_SEARCH_TERMS}`
 }
 
 export async function listGmailMessageIds(
