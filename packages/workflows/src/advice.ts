@@ -5,6 +5,7 @@ import { getOrCreateQueue, toBullJobId } from "./redis"
 export const ADVICE_QUEUE_NAME = "advice"
 export const ADVICE_REFRESH_USER_JOB_NAME = "advice.refresh.user"
 export const ADVICE_REBUILD_USER_JOB_NAME = "advice.rebuild.user"
+export const ADVICE_RANK_USER_JOB_NAME = "advice.rank.user"
 
 const basePayloadSchema = z.object({
   correlationId: z.string().min(1),
@@ -27,12 +28,19 @@ export const adviceRebuildUserJobPayloadSchema = basePayloadSchema.extend({
     .default("nightly_rebuild"),
 })
 
+export const adviceRankUserJobPayloadSchema = basePayloadSchema.extend({
+  reason: z.enum(["hourly_rank", "post_refresh_rank", "manual_rank"]).default(
+    "hourly_rank",
+  ),
+})
+
 export type AdviceRefreshUserJobPayload = z.infer<
   typeof adviceRefreshUserJobPayloadSchema
 >
 export type AdviceRebuildUserJobPayload = z.infer<
   typeof adviceRebuildUserJobPayloadSchema
 >
+export type AdviceRankUserJobPayload = z.infer<typeof adviceRankUserJobPayloadSchema>
 
 export function getAdviceQueue() {
   return getOrCreateQueue(ADVICE_QUEUE_NAME, "advice")
@@ -50,6 +58,14 @@ export async function enqueueAdviceRebuildUser(payload: AdviceRebuildUserJobPayl
   const parsed = adviceRebuildUserJobPayloadSchema.parse(payload)
 
   return getAdviceQueue().add(ADVICE_REBUILD_USER_JOB_NAME, parsed, {
+    jobId: toBullJobId(parsed.jobKey),
+  })
+}
+
+export async function enqueueAdviceRankUser(payload: AdviceRankUserJobPayload) {
+  const parsed = adviceRankUserJobPayloadSchema.parse(payload)
+
+  return getAdviceQueue().add(ADVICE_RANK_USER_JOB_NAME, parsed, {
     jobId: toBullJobId(parsed.jobKey),
   })
 }

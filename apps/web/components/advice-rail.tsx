@@ -1,7 +1,14 @@
 import Link from "next/link"
 
-import { RiArrowRightLine } from "@remixicon/react"
+import { RiMore2Fill } from "@remixicon/react"
+import type { AdviceItemAction } from "@workspace/db"
 import { Card } from "@workspace/ui/components/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu"
 
 type AdviceRailItem = {
   id: string
@@ -10,7 +17,9 @@ type AdviceRailItem = {
   detail: string
   priority: 1 | 2 | 3
   status: string
-  href: string
+  contextHref: string
+  primaryAction?: AdviceItemAction | null
+  secondaryAction?: AdviceItemAction | null
   merchantName?: string | null
   goalName?: string | null
   updatedAtLabel: string
@@ -28,12 +37,111 @@ function getPriorityLabel(priority: AdviceRailItem["priority"]) {
   return "Watch"
 }
 
+function AdviceActionLink({
+  action,
+  redirectTo,
+  primary = false,
+}: {
+  action: AdviceItemAction
+  redirectTo: string
+  primary?: boolean
+}) {
+  if (action.type === "refresh_advice") {
+    return (
+      <form action="/api/advice" method="post">
+        <input type="hidden" name="action" value="refresh" />
+        <input type="hidden" name="redirectTo" value={redirectTo} />
+        <button
+          type="submit"
+          className={
+            primary
+              ? "inline-flex h-8 items-center rounded-full border border-white/[0.1] bg-white px-3 text-xs font-medium text-black transition hover:bg-white/90"
+              : "text-sm text-white/46 transition hover:text-white"
+          }
+        >
+          {action.label}
+        </button>
+      </form>
+    )
+  }
+
+  const href = "href" in action ? action.href : null
+  if (!href) {
+    return null
+  }
+
+  return (
+    <Link
+      href={href}
+      className={
+        primary
+          ? "inline-flex h-8 items-center rounded-full border border-white/[0.1] bg-white px-3 text-xs font-medium text-black transition hover:bg-white/90"
+          : "text-sm text-white/46 transition hover:text-white"
+      }
+    >
+      {action.label}
+    </Link>
+  )
+}
+
+function AdviceOverflowMenu({
+  item,
+  redirectTo,
+}: {
+  item: AdviceRailItem
+  redirectTo: string
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="More advice actions"
+          className="inline-flex size-8 items-center justify-center rounded-full text-white/34 transition hover:bg-white/[0.04] hover:text-white"
+        >
+          <RiMore2Fill className="size-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[12rem]">
+        <DropdownMenuItem asChild>
+          <Link href={item.contextHref}>Open context</Link>
+        </DropdownMenuItem>
+        {item.status === "active" ? (
+          <form action="/api/advice" method="post">
+            <DropdownMenuItem asChild>
+              <button type="submit" className="w-full text-left">
+                Dismiss
+              </button>
+            </DropdownMenuItem>
+            <input type="hidden" name="action" value="dismiss" />
+            <input type="hidden" name="adviceItemId" value={item.id} />
+            <input type="hidden" name="redirectTo" value={redirectTo} />
+          </form>
+        ) : (
+          <form action="/api/advice" method="post">
+            <DropdownMenuItem asChild>
+              <button type="submit" className="w-full text-left">
+                Restore
+              </button>
+            </DropdownMenuItem>
+            <input type="hidden" name="action" value="restore" />
+            <input type="hidden" name="adviceItemId" value={item.id} />
+            <input type="hidden" name="redirectTo" value={redirectTo} />
+          </form>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export function AdviceRail({
   items,
   showOpenAll = true,
+  actionRedirectTo = "/dashboard",
 }: {
   items: AdviceRailItem[]
   showOpenAll?: boolean
+  actionRedirectTo?: string
 }) {
   if (items.length === 0) {
     return null
@@ -71,21 +179,32 @@ export function AdviceRail({
                     {getPriorityLabel(item.priority)}
                   </span>
                 </div>
-                <p className="mt-2 text-[18px] font-medium text-white">{item.title}</p>
+                <div className="mt-2 flex items-start justify-between gap-3">
+                  <p className="text-[18px] font-medium text-white">{item.title}</p>
+                  <AdviceOverflowMenu item={item} redirectTo={actionRedirectTo} />
+                </div>
                 <p className="mt-2 text-sm leading-6 text-white/46">{item.summary}</p>
                 <p className="mt-3 text-xs uppercase tracking-[0.28em] text-white/18">
                   {[item.goalName, item.merchantName, item.updatedAtLabel]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  {item.status === "active" && item.primaryAction ? (
+                    <AdviceActionLink
+                      action={item.primaryAction}
+                      redirectTo={actionRedirectTo}
+                      primary
+                    />
+                  ) : null}
+                  {item.status === "active" && item.secondaryAction ? (
+                    <AdviceActionLink
+                      action={item.secondaryAction}
+                      redirectTo={actionRedirectTo}
+                    />
+                  ) : null}
+                </div>
               </div>
-              <Link
-                href={item.href}
-                className="inline-flex items-center gap-2 text-sm text-white/38 transition hover:text-white"
-              >
-                View
-                <RiArrowRightLine className="size-4" />
-              </Link>
             </div>
           </div>
         ))}
@@ -96,8 +215,10 @@ export function AdviceRail({
 
 export function AdviceList({
   items,
+  actionRedirectTo = "/advice",
 }: {
   items: AdviceRailItem[]
+  actionRedirectTo?: string
 }) {
   return (
     <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]">
@@ -105,7 +226,10 @@ export function AdviceList({
         <div key={item.id} className="py-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
-              <p className="text-[18px] font-medium text-white">{item.title}</p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-[18px] font-medium text-white">{item.title}</p>
+                <AdviceOverflowMenu item={item} redirectTo={actionRedirectTo} />
+              </div>
               <p className="mt-2 text-sm leading-6 text-white/46">{item.summary}</p>
               <p className="mt-3 text-sm leading-6 text-white/32">{item.detail}</p>
               <p className="mt-4 text-xs uppercase tracking-[0.28em] text-white/18">
@@ -114,56 +238,108 @@ export function AdviceList({
                   .join(" · ")}
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <Link
-                  href={item.href}
-                  className="text-sm text-white transition hover:text-white/70"
-                >
-                  Open context
-                </Link>
+                <div className="flex flex-wrap items-center gap-3">
+                  {item.status === "active" && item.primaryAction ? (
+                    <AdviceActionLink
+                      action={item.primaryAction}
+                      redirectTo={actionRedirectTo}
+                      primary
+                    />
+                  ) : null}
+                  {item.status === "active" && !item.primaryAction && item.secondaryAction ? (
+                    <AdviceActionLink
+                      action={item.secondaryAction}
+                      redirectTo={actionRedirectTo}
+                    />
+                  ) : null}
+                </div>
                 <div className="flex flex-wrap items-center justify-end gap-3">
+                  {item.status === "active" && item.primaryAction && item.secondaryAction ? (
+                    <AdviceActionLink
+                      action={item.secondaryAction}
+                      redirectTo={actionRedirectTo}
+                    />
+                  ) : null}
                   {item.status === "active" ? (
-                    <>
-                      <form action="/api/advice" method="post">
-                        <input type="hidden" name="action" value="dismiss" />
-                        <input type="hidden" name="adviceItemId" value={item.id} />
-                        <input type="hidden" name="redirectTo" value="/advice" />
-                        <button
-                          type="submit"
-                          className="text-sm text-white/42 transition hover:text-white"
-                        >
-                          Dismiss
-                        </button>
-                      </form>
-                      <form action="/api/advice" method="post">
-                        <input type="hidden" name="action" value="done" />
-                        <input type="hidden" name="adviceItemId" value={item.id} />
-                        <input type="hidden" name="redirectTo" value="/advice" />
-                        <button
-                          type="submit"
-                          className="text-sm text-[var(--neo-green)] transition hover:text-white"
-                        >
-                          Mark done
-                        </button>
-                      </form>
-                    </>
-                  ) : (
                     <form action="/api/advice" method="post">
-                      <input type="hidden" name="action" value="restore" />
+                      <input type="hidden" name="action" value="done" />
                       <input type="hidden" name="adviceItemId" value={item.id} />
-                      <input type="hidden" name="redirectTo" value="/advice" />
+                      <input type="hidden" name="redirectTo" value={actionRedirectTo} />
                       <button
                         type="submit"
-                        className="text-sm text-white/42 transition hover:text-white"
+                        className="text-sm text-[var(--neo-green)] transition hover:text-white"
                       >
-                        Restore
+                        Mark done
                       </button>
                     </form>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </div>
           </div>
         </div>
+      ))}
+    </div>
+  )
+}
+
+export function AdviceHomeCarousel({
+  items,
+  actionRedirectTo = "/dashboard",
+}: {
+  items: AdviceRailItem[]
+  actionRedirectTo?: string
+}) {
+  if (items.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="-mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {items.map((item) => (
+        <Card
+          key={item.id}
+          className="min-w-[18.5rem] flex-[0_0_18.5rem] snap-start border-white/8 bg-[rgba(18,18,20,0.92)] p-5 sm:min-w-[21rem] sm:flex-[0_0_21rem]"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-white/22">
+                {getPriorityLabel(item.priority)}
+              </p>
+              <p className="mt-3 text-[19px] font-medium leading-7 text-white">{item.title}</p>
+            </div>
+            <AdviceOverflowMenu item={item} redirectTo={actionRedirectTo} />
+          </div>
+          <p className="mt-3 text-sm leading-6 text-white/46">{item.summary}</p>
+          <p className="mt-4 text-xs uppercase tracking-[0.28em] text-white/18">
+            {[item.goalName, item.merchantName, item.updatedAtLabel].filter(Boolean).join(" · ")}
+          </p>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            {item.status === "active" && item.primaryAction ? (
+              <AdviceActionLink
+                action={item.primaryAction}
+                redirectTo={actionRedirectTo}
+                primary
+              />
+            ) : null}
+            {item.status === "active" && item.secondaryAction ? (
+              <AdviceActionLink action={item.secondaryAction} redirectTo={actionRedirectTo} />
+            ) : null}
+            {item.status === "active" ? (
+              <form action="/api/advice" method="post">
+                <input type="hidden" name="action" value="done" />
+                <input type="hidden" name="adviceItemId" value={item.id} />
+                <input type="hidden" name="redirectTo" value={actionRedirectTo} />
+                <button
+                  type="submit"
+                  className="text-sm text-[var(--neo-green)] transition hover:text-white"
+                >
+                  Mark done
+                </button>
+              </form>
+            ) : null}
+          </div>
+        </Card>
       ))}
     </div>
   )

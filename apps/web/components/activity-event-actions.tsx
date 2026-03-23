@@ -73,7 +73,7 @@ export function ActivityEventActions({
           variant="ghost"
           size="icon-sm"
           aria-label="Manage transaction"
-          className="size-10 rounded-none border-transparent text-white/52 hover:border-white/8 hover:bg-white/[0.04] hover:text-white"
+          className="size-10 rounded-lg border-transparent text-white/52 hover:border-white/8 hover:bg-white/[0.04] hover:text-white"
         >
           <RiMore2Fill className="size-5" />
         </Button>

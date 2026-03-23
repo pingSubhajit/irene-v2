@@ -234,6 +234,7 @@ export async function upsertAdviceItem(input: AdviceItemInsert) {
   const preserveDismissed = existing.status === "dismissed"
   const preserveDone = existing.status === "done"
   const nextStatus = preserveDismissed ? "dismissed" : preserveDone ? "done" : "active"
+  const shouldClearHomeRank = nextStatus !== "active"
 
   const [row] = await db
     .update(adviceItems)
@@ -243,6 +244,32 @@ export async function upsertAdviceItem(input: AdviceItemInsert) {
       title: input.title,
       summary: input.summary,
       detail: input.detail,
+      primaryActionJson:
+        input.primaryActionJson === null
+          ? null
+          : (input.primaryActionJson ?? undefined),
+      secondaryActionJson:
+        input.secondaryActionJson === null
+          ? null
+          : (input.secondaryActionJson ?? undefined),
+      homeRankScore:
+        shouldClearHomeRank
+          ? null
+          : input.homeRankScore === null
+            ? null
+            : (input.homeRankScore ?? undefined),
+      homeRankPosition:
+        shouldClearHomeRank
+          ? null
+          : input.homeRankPosition === null
+            ? null
+            : (input.homeRankPosition ?? undefined),
+      rankedAt:
+        shouldClearHomeRank
+          ? null
+          : input.rankedAt === null
+            ? null
+            : (input.rankedAt ?? undefined),
       relatedMerchantId:
         input.relatedMerchantId === null
           ? null
@@ -291,6 +318,19 @@ export async function updateAdviceItem(
       title: input.title ?? undefined,
       summary: input.summary ?? undefined,
       detail: input.detail ?? undefined,
+      primaryActionJson:
+        input.primaryActionJson === null
+          ? null
+          : (input.primaryActionJson ?? undefined),
+      secondaryActionJson:
+        input.secondaryActionJson === null
+          ? null
+          : (input.secondaryActionJson ?? undefined),
+      homeRankScore:
+        input.homeRankScore === null ? null : (input.homeRankScore ?? undefined),
+      homeRankPosition:
+        input.homeRankPosition === null ? null : (input.homeRankPosition ?? undefined),
+      rankedAt: input.rankedAt === null ? null : (input.rankedAt ?? undefined),
       relatedMerchantId:
         input.relatedMerchantId === null
           ? null
@@ -335,6 +375,9 @@ export async function expireMissingAdviceItems(input: {
     .set({
       status: "expired",
       validUntil: new Date(),
+      homeRankScore: null,
+      homeRankPosition: null,
+      rankedAt: null,
       updatedAt: new Date(),
     })
     .where(and(...conditions))
@@ -349,4 +392,87 @@ export async function listUserIdsForAdvice() {
   ])
 
   return [...new Set([...goalRows, ...forecastRows, ...adviceRows].map((row) => row.userId))]
+}
+
+export async function listUserIdsWithActiveAdvice() {
+  const rows = await db
+    .selectDistinct({ userId: adviceItems.userId })
+    .from(adviceItems)
+    .where(eq(adviceItems.status, "active"))
+
+  return rows.map((row) => row.userId)
+}
+
+export async function listHomeRankedAdviceItemsForUser(input: {
+  userId: string
+  limit?: number
+}) {
+  return db
+    .select({
+      adviceItem: adviceItems,
+      merchant: merchants,
+      goal: financialGoals,
+    })
+    .from(adviceItems)
+    .leftJoin(merchants, eq(adviceItems.relatedMerchantId, merchants.id))
+    .leftJoin(financialGoals, eq(adviceItems.relatedFinancialGoalId, financialGoals.id))
+    .where(
+      and(
+        eq(adviceItems.userId, input.userId),
+        eq(adviceItems.status, "active"),
+        sql`${adviceItems.homeRankPosition} IS NOT NULL`,
+      ),
+    )
+    .orderBy(asc(adviceItems.homeRankPosition), desc(adviceItems.rankedAt))
+    .limit(input.limit ?? 3)
+}
+
+export async function clearAdviceHomeRankingForUser(userId: string) {
+  return db
+    .update(adviceItems)
+    .set({
+      homeRankScore: null,
+      homeRankPosition: null,
+      rankedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(adviceItems.userId, userId))
+}
+
+export async function applyAdviceHomeRanking(input: {
+  userId: string
+  rankings: Array<{
+    adviceItemId: string
+    position: 1 | 2 | 3
+    score: number
+  }>
+  rankedAt: Date
+}) {
+  await clearAdviceHomeRankingForUser(input.userId)
+
+  if (input.rankings.length === 0) {
+    return []
+  }
+
+  const updates = input.rankings.map((ranking) =>
+    db
+      .update(adviceItems)
+      .set({
+        homeRankPosition: ranking.position,
+        homeRankScore: ranking.score,
+        rankedAt: input.rankedAt,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(adviceItems.userId, input.userId),
+          eq(adviceItems.id, ranking.adviceItemId),
+          eq(adviceItems.status, "active"),
+        ),
+      )
+      .returning(),
+  )
+
+  const rows = await Promise.all(updates)
+  return rows.flat()
 }

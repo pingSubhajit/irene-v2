@@ -26,6 +26,7 @@ import {
   getUserSettings,
   hasExtractedSignalsForRawDocument,
   listUserIdsForAdvice,
+  listUserIdsWithActiveAdvice,
   listUserIdsForForecasting,
   listUserIdsForInstrumentRepair,
   listUserIdsForMemoryLearning,
@@ -51,6 +52,7 @@ import {
 } from "@workspace/integrations"
 import {
   ADVICE_QUEUE_NAME,
+  ADVICE_RANK_USER_JOB_NAME,
   ADVICE_REBUILD_USER_JOB_NAME,
   ADVICE_REFRESH_USER_JOB_NAME,
   AI_EXTRACTION_QUEUE_NAME,
@@ -100,12 +102,14 @@ import {
   createWorkerRedisConnection,
   adviceRefreshUserJobPayloadSchema,
   adviceRebuildUserJobPayloadSchema,
+  adviceRankUserJobPayloadSchema,
   documentInferBalanceJobPayloadSchema,
   documentExtractRouteJobPayloadSchema,
   documentExtractStructuredJobPayloadSchema,
   documentNormalizeJobPayloadSchema,
   enqueueAdviceRebuildUser,
   enqueueAdviceRefreshUser,
+  enqueueAdviceRankUser,
   forecastRefreshUserJobPayloadSchema,
   forecastRebuildUserJobPayloadSchema,
   enqueueForecastRefreshUser,
@@ -156,7 +160,7 @@ import {
   systemHealthcheckJobPayloadSchema,
 } from "@workspace/workflows"
 
-import { refreshAdviceForUser } from "./advice"
+import { rankAdviceForUser, refreshAdviceForUser } from "./advice"
 import {
   inferAccountsAndPromoteBalancesForEvent,
   inferAccountsAndPromoteBalancesForRawDocument,
@@ -1065,6 +1069,36 @@ async function enqueueTrackedAdviceRebuild(input: {
   })
 
   await enqueueAdviceRebuildUser({
+    correlationId: input.correlationId,
+    jobRunId: jobRun.id,
+    jobKey,
+    requestedAt: new Date().toISOString(),
+    userId: input.userId,
+    source: input.source,
+    reason: input.reason,
+  })
+}
+
+async function enqueueTrackedAdviceRank(input: {
+  userId: string
+  correlationId: string
+  source: "worker" | "web" | "scheduler" | "startup"
+  reason: "hourly_rank" | "post_refresh_rank" | "manual_rank"
+}) {
+  const jobKey = `${ADVICE_RANK_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: ADVICE_QUEUE_NAME,
+    jobName: ADVICE_RANK_USER_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+    },
+  })
+
+  await enqueueAdviceRankUser({
     correlationId: input.correlationId,
     jobRunId: jobRun.id,
     jobKey,
@@ -2713,6 +2747,13 @@ async function handleAdviceRefresh(job: Job) {
     reason: payload.reason,
   })
 
+  await enqueueTrackedAdviceRank({
+    userId: payload.userId,
+    correlationId: payload.correlationId,
+    source: "worker",
+    reason: "post_refresh_rank",
+  })
+
   await markJobSucceeded(job, payload, outcome)
   return outcome
 }
@@ -2722,6 +2763,26 @@ async function handleAdviceRebuild(job: Job) {
   await markJobRunning(job, payload)
 
   const outcome = await refreshAdviceForUser({
+    userId: payload.userId,
+    reason: payload.reason,
+  })
+
+  await enqueueTrackedAdviceRank({
+    userId: payload.userId,
+    correlationId: payload.correlationId,
+    source: "worker",
+    reason: "post_refresh_rank",
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+  return outcome
+}
+
+async function handleAdviceRank(job: Job) {
+  const payload = adviceRankUserJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await rankAdviceForUser({
     userId: payload.userId,
     reason: payload.reason,
   })
@@ -3022,6 +3083,10 @@ const adviceWorker = new Worker(
       return handleAdviceRebuild(job)
     }
 
+    if (job.name === ADVICE_RANK_USER_JOB_NAME) {
+      return handleAdviceRank(job)
+    }
+
     throw new Error(`Unsupported job: ${job.name}`)
   },
   {
@@ -3161,6 +3226,7 @@ async function shutdown(signal: string) {
   logger.info("Shutting down worker", { signal })
   clearInterval(forecastNightlyScheduler)
   clearInterval(adviceNightlyScheduler)
+  clearInterval(adviceRankingScheduler)
   clearInterval(memoryDecayScheduler)
 
   await Promise.all([
@@ -3184,6 +3250,7 @@ async function shutdown(signal: string) {
 
 let lastNightlyForecastRebuildDate: string | null = null
 let lastNightlyAdviceRebuildDate: string | null = null
+let lastHourlyAdviceRankHour: string | null = null
 let lastMemoryDecayScanDate: string | null = null
 
 async function scheduleNightlyForecastRebuildIfDue() {
@@ -3247,6 +3314,38 @@ async function scheduleNightlyAdviceRebuildIfDue() {
 const adviceNightlyScheduler = setInterval(() => {
   scheduleNightlyAdviceRebuildIfDue().catch((error) => {
     logger.errorWithCause("Failed to schedule nightly advice rebuilds", error)
+  })
+}, 60 * 60 * 1000)
+
+async function scheduleHourlyAdviceRankingIfDue() {
+  const hourKey = new Date().toISOString().slice(0, 13)
+  if (lastHourlyAdviceRankHour === hourKey) {
+    return
+  }
+
+  lastHourlyAdviceRankHour = hourKey
+  const userIds = await listUserIdsWithActiveAdvice()
+
+  await Promise.all(
+    userIds.map((userId) =>
+      enqueueTrackedAdviceRank({
+        userId,
+        correlationId: `scheduler:${hourKey}:${userId}`,
+        source: "scheduler",
+        reason: "hourly_rank",
+      }),
+    ),
+  )
+
+  logger.info("Scheduled hourly advice ranking", {
+    hour: hourKey,
+    userCount: userIds.length,
+  })
+}
+
+const adviceRankingScheduler = setInterval(() => {
+  scheduleHourlyAdviceRankingIfDue().catch((error) => {
+    logger.errorWithCause("Failed to schedule hourly advice ranking", error)
   })
 }, 60 * 60 * 1000)
 
@@ -3354,6 +3453,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         logger.errorWithCause("Worker shutdown failed", error, { signal })
         clearInterval(forecastNightlyScheduler)
         clearInterval(adviceNightlyScheduler)
+        clearInterval(adviceRankingScheduler)
         clearInterval(memoryDecayScheduler)
         process.exit(1)
       })

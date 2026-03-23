@@ -49,5 +49,5 @@ export const aiPromptVersions = {
   financeMerchantResolver: "finance-merchant-resolver-v1",
   financeCategoryResolver: "finance-category-resolver-v1",
   financeReconciliationResolver: "finance-reconciliation-resolver-v1",
-  financeAdviceGenerator: "finance-advice-generator-v1",
+  financeAdviceGenerator: "finance-advice-generator-v2",
 } as const

@@ -7,6 +7,7 @@ import {
   listDashboardLedgerEventsForUser,
   listFinancialGoalsForUser,
   listFinancialEventSourcesForEventIds,
+  listHomeRankedAdviceItemsForUser,
   listLatestGoalContributionSnapshotsForGoalIds,
   listIncomeStreamsForUser,
   listLedgerEventsForUser,
@@ -14,7 +15,7 @@ import {
 } from "@workspace/db"
 
 import { ActionTile } from "@/components/action-tile"
-import { AdviceRail } from "@/components/advice-rail"
+import { AdviceHomeCarousel } from "@/components/advice-rail"
 import { GoalSnapshotPanel } from "@/components/goal-snapshot-panel"
 import { HeroBalanceCard } from "@/components/hero-balance-card"
 import { RecurringModelCard } from "@/components/recurring-model-card"
@@ -26,7 +27,9 @@ import {
 } from "@/lib/date-format"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
+import { resolveAdviceContextHref } from "@/lib/advice"
 import { requireSession } from "@/lib/session"
+import Link from "next/link"
 
 export const dynamic = "force-dynamic"
 
@@ -94,6 +97,7 @@ export default async function DashboardPage() {
     incomeStreamCounts,
     recurringObligations,
     incomeStreams,
+    rankedAdvice,
     activeAdvice,
     activeGoals,
   ] = await Promise.all([
@@ -120,10 +124,14 @@ export default async function DashboardPage() {
       userId: session.user.id,
       limit: 3,
     }),
+    listHomeRankedAdviceItemsForUser({
+      userId: session.user.id,
+      limit: 3,
+    }),
     listAdviceItemsForUser({
       userId: session.user.id,
       statuses: ["active"],
-      limit: 3,
+      limit: 24,
     }),
     listFinancialGoalsForUser({
       userId: session.user.id,
@@ -231,19 +239,19 @@ export default async function DashboardPage() {
         }
       : null
 
-  const adviceRailItems = activeAdvice.map(({ adviceItem, merchant, goal }) => ({
+  const adviceRailItems = rankedAdvice.map(({ adviceItem, merchant, goal }) => ({
     id: adviceItem.id,
     title: adviceItem.title,
     summary: adviceItem.summary,
     detail: adviceItem.detail,
     priority: adviceItem.priority,
     status: adviceItem.status,
-    href:
-      goal?.id
-        ? `/goals/${goal.id}`
-        : adviceItem.triggerType === "review_backlog"
-          ? "/review"
-          : "/activity",
+    contextHref: resolveAdviceContextHref({
+      goalId: goal?.id,
+      triggerType: adviceItem.triggerType,
+    }),
+    primaryAction: adviceItem.primaryActionJson,
+    secondaryAction: adviceItem.secondaryActionJson,
     merchantName: merchant?.displayName ?? null,
     goalName: goal?.name ?? null,
     updatedAtLabel: formatInUserTimeZone(adviceItem.updatedAt, settings.timeZone, {
@@ -319,7 +327,28 @@ export default async function DashboardPage() {
             actionLabel="Open activity"
           />
 
-          <AdviceRail items={adviceRailItems} />
+          {adviceRailItems.length > 0 ? (
+            <section className="grid gap-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="neo-kicker">Advice</p>
+                  <h2 className="mt-3 text-[1.6rem] font-medium text-white">
+                    top next moves
+                  </h2>
+                </div>
+                <Link
+                  href="/advice"
+                  className="text-sm text-white/52 transition hover:text-white"
+                >
+                  Open all
+                </Link>
+              </div>
+              <AdviceHomeCarousel
+                items={adviceRailItems}
+                actionRedirectTo="/dashboard"
+              />
+            </section>
+          ) : null}
 
           <SnapshotStatStrip
             stats={[

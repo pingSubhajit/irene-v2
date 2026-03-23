@@ -31,7 +31,7 @@
     --chart-3: oklch(0.72 0.2 310);
     --chart-4: oklch(0.68 0.15 255);
     --chart-5: oklch(0.83 0.13 80);
-    --radius: 0rem;
+    --radius: 0.375rem;
     --sidebar: oklch(0.18 0.01 286);
     --sidebar-foreground: oklch(0.97 0.01 95);
     --sidebar-primary: oklch(0.95 0.02 95);
@@ -115,13 +115,13 @@
     --color-chart-3: var(--chart-3);
     --color-chart-4: var(--chart-4);
     --color-chart-5: var(--chart-5);
-    --radius-sm: 0rem;
-    --radius-md: 0rem;
+    --radius-sm: calc(var(--radius) - 0.25rem);
+    --radius-md: calc(var(--radius) - 0.0625rem);
     --radius-lg: var(--radius);
-    --radius-xl: 0rem;
-    --radius-2xl: 0rem;
-    --radius-3xl: 0rem;
-    --radius-4xl: 0rem;
+    --radius-xl: calc(var(--radius) + 0.125rem);
+    --radius-2xl: calc(var(--radius) + 0.25rem);
+    --radius-3xl: calc(var(--radius) + 0.375rem);
+    --radius-4xl: calc(var(--radius) + 0.5rem);
     --color-sidebar: var(--sidebar);
     --color-sidebar-foreground: var(--sidebar-foreground);
     --color-sidebar-primary: var(--sidebar-primary);
@@ -152,7 +152,7 @@
   input,
   select,
   textarea {
-    @apply rounded-none;
+    @apply rounded-md;
   }
 
   button,

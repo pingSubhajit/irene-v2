@@ -3,6 +3,8 @@ export {
   adviceItems,
   financialGoals,
   goalContributionSnapshots,
+  type AdviceItemAction,
+  type AdviceItemActionType,
   type AdviceItemInsert,
   type AdviceItemPriority,
   type AdviceItemSelect,

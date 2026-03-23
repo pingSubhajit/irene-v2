@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@workspace/ui/lib/utils"
 
 const cardVariants = cva(
-  "relative overflow-hidden rounded-none border border-white/8 bg-[rgba(15,15,16,0.94)] text-card-foreground shadow-[0_16px_48px_rgba(0,0,0,0.35)]",
+  "relative overflow-hidden rounded-xl border border-white/8 bg-[rgba(15,15,16,0.94)] text-card-foreground shadow-[0_16px_48px_rgba(0,0,0,0.35)]",
   {
     variants: {
       variant: {

@@ -1,6 +1,7 @@
 import { getUserSettings, listAdviceItemsForUser } from "@workspace/db"
 
 import { AdviceList } from "@/components/advice-rail"
+import { resolveAdviceContextHref } from "@/lib/advice"
 import { formatInUserTimeZone } from "@/lib/date-format"
 import { requireSession } from "@/lib/session"
 
@@ -52,11 +53,12 @@ export default async function AdvicePage({ searchParams }: AdvicePageProps) {
     detail: row.adviceItem.detail,
     priority: row.adviceItem.priority,
     status: row.adviceItem.status,
-    href: row.goal?.id
-      ? `/goals/${row.goal.id}`
-      : row.adviceItem.triggerType === "review_backlog"
-        ? "/review"
-        : "/activity",
+    contextHref: resolveAdviceContextHref({
+      goalId: row.goal?.id,
+      triggerType: row.adviceItem.triggerType,
+    }),
+    primaryAction: row.adviceItem.primaryActionJson,
+    secondaryAction: row.adviceItem.secondaryActionJson,
     merchantName: row.merchant?.displayName ?? null,
     goalName: row.goal?.name ?? null,
     updatedAtLabel: formatInUserTimeZone(row.adviceItem.updatedAt, settings.timeZone, {
@@ -109,7 +111,7 @@ export default async function AdvicePage({ searchParams }: AdvicePageProps) {
           </div>
           <div className="mt-4">
             {active.length > 0 ? (
-              <AdviceList items={active.map(mapItem)} />
+              <AdviceList items={active.map(mapItem)} actionRedirectTo="/advice" />
             ) : (
               <p className="text-sm leading-6 text-white/42">
                 No active advice right now.
@@ -125,7 +127,7 @@ export default async function AdvicePage({ searchParams }: AdvicePageProps) {
           </div>
           <div className="mt-4">
             {closed.length > 0 ? (
-              <AdviceList items={closed.map(mapItem)} />
+              <AdviceList items={closed.map(mapItem)} actionRedirectTo="/advice" />
             ) : (
               <p className="text-sm leading-6 text-white/42">
                 Nothing dismissed or completed yet.

@@ -1,4 +1,5 @@
 import { ensureJobRun } from "@workspace/db"
+import type { AdviceItemAction } from "@workspace/db"
 import { createCorrelationId } from "@workspace/observability"
 import {
   ADVICE_QUEUE_NAME,
@@ -72,4 +73,31 @@ export async function triggerUserAdviceRebuild(input: {
   })
 
   return jobRun
+}
+
+export function resolveAdviceContextHref(input: {
+  goalId?: string | null
+  triggerType: string
+}) {
+  if (input.goalId) {
+    return `/goals/${input.goalId}`
+  }
+
+  if (input.triggerType === "review_backlog") {
+    return "/review"
+  }
+
+  return "/activity"
+}
+
+export function resolveAdviceActionHref(action: AdviceItemAction | null | undefined) {
+  if (!action) {
+    return null
+  }
+
+  if ("href" in action && typeof action.href === "string") {
+    return action.href
+  }
+
+  return null
 }

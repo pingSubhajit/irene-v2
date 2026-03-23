@@ -64,6 +64,9 @@ export async function POST(request: Request) {
     await updateAdviceItem(parsed.adviceItemId, {
       status: "dismissed",
       dismissedAt: new Date(),
+      homeRankScore: null,
+      homeRankPosition: null,
+      rankedAt: null,
     })
     return redirectTo(redirectPath, "dismissed")
   }
@@ -72,6 +75,9 @@ export async function POST(request: Request) {
     await updateAdviceItem(parsed.adviceItemId, {
       status: "done",
       doneAt: new Date(),
+      homeRankScore: null,
+      homeRankPosition: null,
+      rankedAt: null,
     })
     return redirectTo(redirectPath, "done")
   }
@@ -80,6 +86,9 @@ export async function POST(request: Request) {
     status: "active",
     dismissedAt: null,
     doneAt: null,
+    homeRankScore: null,
+    homeRankPosition: null,
+    rankedAt: null,
   })
   return redirectTo(redirectPath, "restored")
 }

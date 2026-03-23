@@ -28,6 +28,55 @@ export type AdviceItemTriggerType =
 
 export type AdviceItemStatus = "active" | "dismissed" | "done" | "expired"
 export type AdviceItemPriority = 1 | 2 | 3
+export type AdviceItemActionType =
+  | "navigate"
+  | "open_review_queue"
+  | "refresh_advice"
+  | "open_goal"
+  | "open_activity_filtered"
+  | "open_settings_subpage"
+  | "open_accounts_baseline"
+
+export type AdviceItemAction =
+  | {
+      type: "navigate"
+      label: string
+      href: string
+    }
+  | {
+      type: "open_review_queue"
+      label: string
+      href: "/review"
+    }
+  | {
+      type: "refresh_advice"
+      label: string
+    }
+  | {
+      type: "open_goal"
+      label: string
+      goalId: string
+      href: string
+    }
+  | {
+      type: "open_activity_filtered"
+      label: string
+      href: string
+      view?: "all" | "outflow" | "inflow" | "review" | "subscriptions" | "emis" | "income"
+      merchantIds?: string[]
+      eventTypes?: string[]
+    }
+  | {
+      type: "open_settings_subpage"
+      label: string
+      href: string
+      subpage: string
+    }
+  | {
+      type: "open_accounts_baseline"
+      label: string
+      href: "/settings/accounts/baseline"
+    }
 export type FinancialGoalType =
   | "emergency_fund"
   | "target_purchase"
@@ -138,6 +187,15 @@ export const adviceItems = pgTable(
     title: text("title").notNull(),
     summary: text("summary").notNull(),
     detail: text("detail").notNull(),
+    primaryActionJson: jsonb("primary_action_json").$type<AdviceItemAction | null>(),
+    secondaryActionJson: jsonb("secondary_action_json").$type<AdviceItemAction | null>(),
+    homeRankScore: numeric("home_rank_score", {
+      precision: 5,
+      scale: 4,
+      mode: "number",
+    }),
+    homeRankPosition: integer("home_rank_position"),
+    rankedAt: timestamp("ranked_at", { withTimezone: true, mode: "date" }),
     relatedMerchantId: uuid("related_merchant_id").references(() => merchants.id, {
       onDelete: "set null",
     }),
@@ -170,6 +228,12 @@ export const adviceItems = pgTable(
       table.priority,
       table.updatedAt,
     ),
+    index("advice_item_user_status_home_rank_idx").on(
+      table.userId,
+      table.status,
+      table.homeRankPosition,
+      table.rankedAt,
+    ),
     check(
       "advice_item_trigger_type_check",
       sql`${table.triggerType} in ('low_cash_projection', 'rising_recurring_obligations', 'delayed_income', 'discretionary_overspending', 'goal_slippage', 'review_backlog')`,
@@ -179,6 +243,14 @@ export const adviceItems = pgTable(
       sql`${table.status} in ('active', 'dismissed', 'done', 'expired')`,
     ),
     check("advice_item_priority_check", sql`${table.priority} between 1 and 3`),
+    check(
+      "advice_item_home_rank_position_check",
+      sql`${table.homeRankPosition} IS NULL OR ${table.homeRankPosition} between 1 and 3`,
+    ),
+    check(
+      "advice_item_home_rank_score_check",
+      sql`${table.homeRankScore} IS NULL OR (${table.homeRankScore} >= 0 AND ${table.homeRankScore} <= 1)`,
+    ),
   ],
 )
 
