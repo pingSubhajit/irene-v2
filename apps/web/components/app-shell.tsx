@@ -44,7 +44,7 @@ export function AppShell({
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl overflow-x-hidden px-4 pb-28 pt-6 md:px-6 md:pb-32 md:pt-8">
+      <main className="mx-auto max-w-6xl overflow-x-hidden px-4 pb-28 pt-6 [--page-gutter:1rem] md:px-6 md:pb-32 md:pt-8 md:[--page-gutter:1.5rem]">
         {children}
       </main>
       <BottomTabBar reviewAttentionCount={reviewAttentionCount} />

@@ -133,7 +133,7 @@ export function CategoryBadge({
         className
       )}
     >
-      <Icon className="size-3.5" />
+      <Icon className="size-5" />
     </span>
   )
 }

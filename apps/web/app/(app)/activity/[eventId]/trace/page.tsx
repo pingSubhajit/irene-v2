@@ -4,6 +4,7 @@ import {
   RiArrowLeftLine,
   RiArrowRightSLine,
 } from "@remixicon/react"
+import type { CategoryColorToken } from "@workspace/config"
 import {
   Accordion,
   AccordionContent,
@@ -21,6 +22,10 @@ import {
 } from "@workspace/db"
 
 import { ActivityEventActions } from "@/components/activity-event-actions"
+import {
+  CategoryBadge,
+  resolveCategoryBadgeToneClassName,
+} from "@/components/category-badge"
 import { ModelRunList } from "@/components/model-run-list"
 import { MerchantLogoPicker } from "@/components/merchant-logo-picker"
 import { formatInUserTimeZone } from "@/lib/date-format"
@@ -72,6 +77,58 @@ function formatShortDate(
     month: "short",
     year: "numeric",
   })
+}
+
+function cn(...values: Array<string | false | null | undefined>) {
+  return values.filter(Boolean).join(" ")
+}
+
+function getAccentStyles(colorToken: CategoryColorToken | null | undefined) {
+  switch (colorToken) {
+    case "yellow":
+      return {
+        glow: "rgba(255, 233, 77, 0.18)",
+        soft: "rgba(255, 233, 77, 0.1)",
+        border: "rgba(255, 233, 77, 0.18)",
+      }
+    case "green":
+      return {
+        glow: "rgba(77, 255, 184, 0.16)",
+        soft: "rgba(77, 255, 184, 0.09)",
+        border: "rgba(77, 255, 184, 0.16)",
+      }
+    case "violet":
+      return {
+        glow: "rgba(156, 107, 255, 0.16)",
+        soft: "rgba(156, 107, 255, 0.09)",
+        border: "rgba(156, 107, 255, 0.16)",
+      }
+    case "blue":
+      return {
+        glow: "rgba(83, 183, 255, 0.16)",
+        soft: "rgba(83, 183, 255, 0.09)",
+        border: "rgba(83, 183, 255, 0.16)",
+      }
+    case "coral":
+      return {
+        glow: "rgba(255, 122, 92, 0.16)",
+        soft: "rgba(255, 122, 92, 0.09)",
+        border: "rgba(255, 122, 92, 0.16)",
+      }
+    case "graphite":
+      return {
+        glow: "rgba(199, 210, 255, 0.14)",
+        soft: "rgba(199, 210, 255, 0.08)",
+        border: "rgba(199, 210, 255, 0.14)",
+      }
+    case "cream":
+    default:
+      return {
+        glow: "rgba(255, 241, 168, 0.14)",
+        soft: "rgba(255, 241, 168, 0.07)",
+        border: "rgba(255, 241, 168, 0.14)",
+      }
+  }
 }
 
 export default async function EventTracePage({
@@ -128,6 +185,9 @@ export default async function EventTracePage({
     trace.event.description ??
     trace.event.merchantDescriptorRaw ??
     "Unmapped event"
+  const selectedCategory =
+    categories.find((category) => category.id === trace.event.categoryId) ?? null
+  const accent = getAccentStyles(selectedCategory?.colorToken)
   const processorLine = trace.paymentProcessor?.displayName
     ? `via ${trace.paymentProcessor.displayName}`
     : null
@@ -137,6 +197,19 @@ export default async function EventTracePage({
 
   return (
     <section className="mx-auto max-w-2xl">
+      <div
+        className="pointer-events-none absolute left-1/2 top-[-10rem] h-[24rem] w-[100vw] -translate-x-1/2 blur-3xl"
+        style={{
+          background: `radial-gradient(circle at 50% 0%, ${accent.glow}, transparent 72%)`,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute left-1/2 top-[-2rem] h-[20rem] w-[100vw] -translate-x-1/2 blur-[120px]"
+        style={{
+          background: `radial-gradient(circle at 50% 0%, ${accent.soft}, transparent 74%)`,
+        }}
+      />
+      <div className="relative">
       {/* Back */}
       <Link
         href="/activity"
@@ -217,6 +290,39 @@ export default async function EventTracePage({
         {formatShortDate(trace.event.eventOccurredAt, settings.timeZone)} ·{" "}
         {trace.event.eventType}
       </p>
+      {selectedCategory ? (
+        <Link
+          href={`/activity/categories/${selectedCategory.id}`}
+          className="mt-4 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.18)]"
+          style={{
+            borderColor: accent.border,
+            background:
+              "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02))",
+          }}
+        >
+          <span
+            className="inline-flex size-7 items-center justify-center rounded-full bg-white/[0.03]"
+            style={{
+              boxShadow: `0 0 28px ${accent.soft}`,
+            }}
+          >
+            <CategoryBadge
+              categoryName={selectedCategory.name}
+              iconName={selectedCategory.iconName}
+              colorToken={selectedCategory.colorToken}
+              className="size-4"
+            />
+          </span>
+          <span
+            className={cn(
+              "text-sm font-medium tracking-[-0.02em]",
+              resolveCategoryBadgeToneClassName(selectedCategory.colorToken),
+            )}
+          >
+            {selectedCategory.name}
+          </span>
+        </Link>
+      ) : null}
       {statusMessage ? (
         <div className="mt-5 border-l-2 border-[var(--neo-green)] bg-[rgba(111,247,184,0.04)] px-4 py-3">
           <p className="text-sm leading-relaxed text-white/68">{statusMessage}</p>
@@ -478,6 +584,7 @@ export default async function EventTracePage({
           <span>debug timeline</span>
           <RiArrowRightSLine className="size-4" />
         </Link>
+      </div>
       </div>
     </section>
   )

@@ -76,8 +76,10 @@ export function CategoryExplorerTile({
     <Link
       href={href}
       className={cn(
-        "group block text-center text-white",
-        variant === "rail" ? "w-[4.55rem] shrink-0 snap-start" : "w-full",
+        "group text-white",
+        variant === "rail"
+          ? "grid w-[5rem] shrink-0 snap-start justify-items-center text-center"
+          : "block w-full text-center",
       )}
     >
       <div
@@ -138,12 +140,17 @@ export function CategoryExplorerTile({
           />
         ) : null}
       </div>
-      <div className={cn("px-0.5", variant === "rail" ? "pt-2.5" : "pt-3.5")}>
+      <div
+        className={cn(
+          "w-full px-0.5",
+          variant === "rail" ? "pt-2.5" : "pt-3.5",
+        )}
+      >
         <p
           className={cn(
-            "font-medium leading-tight tracking-[-0.02em] text-white",
+            "font-medium leading-tight tracking-[-0.02em] text-white text-center",
             variant === "rail"
-              ? "text-[0.8rem] leading-[1.2] text-white/94"
+              ? "min-h-[2.15rem] text-[0.8rem] leading-[1.15] text-white/94 [text-wrap:balance]"
               : "text-[1.04rem]",
           )}
         >

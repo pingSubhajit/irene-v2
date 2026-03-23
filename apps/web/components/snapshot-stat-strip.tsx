@@ -8,7 +8,7 @@ type SnapshotStat = {
 
 export function SnapshotStatStrip({ stats }: { stats: SnapshotStat[] }) {
   return (
-    <div className="neo-scrollbar mr-[-1rem] flex w-auto gap-3 overflow-x-auto pb-1 pr-4 md:mr-[-1.5rem] md:pr-6">
+    <div className="neo-scrollbar mx-[calc(var(--page-gutter)*-1)] flex w-auto gap-3 overflow-x-auto px-[var(--page-gutter)] pb-1">
       {stats.map((stat) => (
         <Card
           key={stat.label}

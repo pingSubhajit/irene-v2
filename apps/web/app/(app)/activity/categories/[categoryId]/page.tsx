@@ -7,12 +7,16 @@ import {
 import {
   getCategoryDetailForUser,
   getUserSettings,
+  listCategoriesForUser,
+  listDashboardLedgerEventsForUser,
 } from "@workspace/db"
 import type { CategoryColorToken } from "@workspace/config"
 
 import { CategoryBadge } from "@/components/category-badge"
 import { CategoryTopMerchantsChart } from "@/components/category-top-merchants-chart"
+import { HomeCategoryStrip } from "@/components/home-category-strip"
 import { TransactionCard } from "@/components/transaction-card"
+import { summarizeCategoryActivity } from "@/lib/category-summary"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
 import { requireSession } from "@/lib/session"
 
@@ -71,6 +75,11 @@ function formatLocalDateInput(value: Date, timeZone: string) {
     month: "2-digit",
     day: "2-digit",
   }).format(value)
+}
+
+function startOfCurrentMonth() {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 }
 
 function getAccentStyles(colorToken: CategoryColorToken | null | undefined) {
@@ -137,23 +146,33 @@ export default async function CategoryDetailPage({
   const query = (await searchParams) ?? {}
 
   const settings = await getUserSettings(session.user.id)
+  const monthStart = startOfCurrentMonth()
 
   await ensureUserFinancialEventValuationCoverage(session.user.id, {
     dateFrom: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000),
     limit: 600,
   })
 
-  const detail = await getCategoryDetailForUser({
-    userId: session.user.id,
-    categoryId,
-    reportingCurrency: settings.reportingCurrency,
-    timeZone: settings.timeZone,
-    monthKey: asSingleValue(query.month) ?? null,
-    week: (() => {
-      const value = Number(asSingleValue(query.week))
-      return value >= 1 && value <= 4 ? value : null
-    })(),
-  })
+  const [detail, categories, monthEvents] = await Promise.all([
+    getCategoryDetailForUser({
+      userId: session.user.id,
+      categoryId,
+      reportingCurrency: settings.reportingCurrency,
+      timeZone: settings.timeZone,
+      monthKey: asSingleValue(query.month) ?? null,
+      week: (() => {
+        const value = Number(asSingleValue(query.week))
+        return value >= 1 && value <= 4 ? value : null
+      })(),
+    }),
+    listCategoriesForUser(session.user.id),
+    listDashboardLedgerEventsForUser({
+      userId: session.user.id,
+      targetCurrency: settings.reportingCurrency,
+      dateFrom: monthStart,
+      limit: 240,
+    }),
+  ])
 
   if (!detail) {
     notFound()
@@ -189,6 +208,36 @@ export default async function CategoryDetailPage({
     return `/activity?${search.toString()}`
   })()
 
+  const activitySummaries = summarizeCategoryActivity(monthEvents)
+  const activityByCategoryId = new Map(
+    activitySummaries.map((summary) => [summary.id, summary]),
+  )
+  const relatedCategories = categories
+    .map((category) => {
+      const summary = activityByCategoryId.get(category.id)
+
+      return {
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        iconName: category.iconName,
+        colorToken: category.colorToken,
+        totalOutflowMinor: summary?.totalOutflowMinor ?? 0,
+        transactionCount: summary?.transactionCount ?? 0,
+      }
+    })
+    .sort((left, right) => {
+      const leftActive = left.totalOutflowMinor > 0 ? 1 : 0
+      const rightActive = right.totalOutflowMinor > 0 ? 1 : 0
+
+      return (
+        rightActive - leftActive ||
+        right.totalOutflowMinor - left.totalOutflowMinor ||
+        left.name.localeCompare(right.name)
+      )
+    })
+    .slice(0, 6)
+
   return (
     <div className="">
       <div
@@ -203,7 +252,7 @@ export default async function CategoryDetailPage({
           background: `radial-gradient(circle at 50% 0%, ${accent.soft}, transparent 74%)`,
         }}
       />
-      <section className="relative mx-auto grid w-full max-w-4xl gap-8">
+      <section className="relative mx-auto grid w-full max-w-4xl min-w-0 gap-8">
         <div className="pt-2">
           <Link
             href="/activity"
@@ -216,12 +265,17 @@ export default async function CategoryDetailPage({
 
         <div className="relative pb-8 text-center md:pb-12">
           <div className="relative z-10 mx-auto grid max-w-3xl gap-4">
-            <div className="mx-auto flex size-12 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.02] shadow-[0_12px_30px_rgba(0,0,0,0.16)]">
+            <div
+              className="mx-auto flex size-12 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.02] shadow-[0_12px_30px_rgba(0,0,0,0.16)]"
+              style={{
+                boxShadow: `0 12px 30px rgba(0,0,0,0.16), 0 0 28px ${accent.soft}`,
+              }}
+            >
               <CategoryBadge
                 categoryName={detail.category.name}
                 iconName={detail.category.iconName}
                 colorToken={detail.category.colorToken}
-                className="size-5"
+                className="size-6"
               />
             </div>
 
@@ -325,8 +379,8 @@ export default async function CategoryDetailPage({
         </div>
       </div>
 
-      {detail.topMerchants.length > 0 && <div className="mt-10 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="px-1 md:px-0">
+      {detail.topMerchants.length > 0 && <div className="mt-10 grid min-w-0 gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="min-w-0 px-1 md:px-0">
           <div className="grid gap-4">
             <CategoryTopMerchantsChart
               merchants={detail.topMerchants}
@@ -388,6 +442,18 @@ export default async function CategoryDetailPage({
         </div>
       </section>
       </section>
+
+      {relatedCategories.length > 0 ? (
+        <div className="relative mt-12">
+          <HomeCategoryStrip
+            items={relatedCategories}
+            formatAmount={(amountMinor) =>
+              formatCurrency(amountMinor, settings.reportingCurrency)
+            }
+            excludeCategoryId={detail.category.id}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }
