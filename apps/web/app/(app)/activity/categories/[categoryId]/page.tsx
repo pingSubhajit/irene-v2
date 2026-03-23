@@ -4,7 +4,6 @@ import {
   RiArrowLeftLine,
   RiArrowRightSLine,
 } from "@remixicon/react"
-import { Avatar, AvatarFallback, AvatarImage } from "@workspace/ui/components/avatar"
 import {
   getCategoryDetailForUser,
   getUserSettings,
@@ -12,6 +11,7 @@ import {
 import type { CategoryColorToken } from "@workspace/config"
 
 import { CategoryBadge } from "@/components/category-badge"
+import { CategoryTopMerchantsChart } from "@/components/category-top-merchants-chart"
 import { TransactionCard } from "@/components/transaction-card"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
 import { requireSession } from "@/lib/session"
@@ -71,18 +71,6 @@ function formatLocalDateInput(value: Date, timeZone: string) {
     month: "2-digit",
     day: "2-digit",
   }).format(value)
-}
-
-function getInitials(name: string) {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part.slice(0, 1))
-      .join("")
-      .toUpperCase() || "?"
-  )
 }
 
 function getAccentStyles(colorToken: CategoryColorToken | null | undefined) {
@@ -244,7 +232,7 @@ export default async function CategoryDetailPage({
               </h1>
             </div>
 
-            <div className="grid gap-5">
+            <div className="grid gap-12">
               <p
                 className="font-display text-[3rem] leading-none tracking-tight md:text-[4.3rem]"
                 style={{
@@ -290,10 +278,10 @@ export default async function CategoryDetailPage({
           </div>
         </div>
 
-      <div className="grid gap-5">
+      <div className="grid gap-4">
         <div className="flex items-center justify-between gap-4">
           <div className="text-[0.82rem] uppercase tracking-[0.18em] text-white/32">
-            {detail.mode === "month" ? "Monthly view" : "Current month by week"}
+            {detail.mode === "month" ? "Current year" : "Current month"}
           </div>
           <Link
             href={categoryActivityHref}
@@ -316,17 +304,18 @@ export default async function CategoryDetailPage({
 
             return (
               <Link key={bucket.key} href={href} className="group">
-                <div className="h-px w-full bg-white/16 transition group-hover:bg-white/34" />
-                <div
-                  className="mt-2 h-0.5 w-full transition"
-                  style={{
-                    backgroundColor: isActive ? accent.line : "transparent",
-                    boxShadow: isActive ? `0 0 18px ${accent.glow}` : "none",
-                  }}
-                />
-                <div className="mt-3 flex items-center justify-between gap-3 text-sm uppercase tracking-[0.18em] text-white/34 transition group-hover:text-white/60">
-                  <span>{"label" in bucket ? bucket.label : ""}</span>
-                  <span>
+                <div className="relative h-2">
+                  <div className="absolute inset-x-0 top-0 h-px bg-white/16 transition group-hover:bg-white/34" />
+                  <div
+                    className="absolute inset-x-0 top-0 h-0.5 transition"
+                    style={{
+                      backgroundColor: isActive ? accent.line : "transparent",
+                      boxShadow: isActive ? `0 0 18px ${accent.glow}` : "none",
+                    }}
+                  />
+                </div>
+                <div className="mt-1 min-w-0 text-white/34 transition group-hover:text-white/60">
+                  <span className="block truncate text-[0.9rem] font-medium tracking-[-0.01em] text-white/54">
                     {formatCurrency(bucket.totalMinor, settings.reportingCurrency)}
                   </span>
                 </div>
@@ -336,113 +325,33 @@ export default async function CategoryDetailPage({
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="neo-panel p-5 md:p-6">
-          <p className="neo-kicker">Category overview</p>
-          <div className="mt-5 grid gap-4">
-            <MetricRow
-              label="total spend"
-              value={formatCurrency(detail.summary.totalOutflowMinor, settings.reportingCurrency)}
-              accentColor={accent.line}
+      {detail.topMerchants.length > 0 && <div className="mt-10 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="px-1 md:px-0">
+          <div className="grid gap-4">
+            <CategoryTopMerchantsChart
+              merchants={detail.topMerchants}
+              currency={settings.reportingCurrency}
+              colorToken={detail.category.colorToken}
             />
-            <MetricRow
-              label="transactions"
-              value={String(detail.summary.transactionCount)}
-            />
-            <MetricRow
-              label="average ticket"
-              value={formatCurrency(
-                detail.summary.averageTransactionMinor,
-                settings.reportingCurrency,
-              )}
-            />
-            <MetricRow
-              label="share of outflow"
-              value={formatPercent(detail.summary.shareOfTotalOutflow)}
-            />
-          </div>
-          <div
-            className="mt-6 border border-white/[0.06] px-4 py-4 text-sm leading-6 text-white/44"
-            style={{ backgroundColor: accent.soft }}
-          >
-            {detail.summary.topMerchantName
-              ? `${detail.summary.topMerchantName} contributed the most to ${detail.category.name.toLowerCase()} during this period.`
-              : `No merchant stands out yet for ${detail.category.name.toLowerCase()} in this period.`}
           </div>
         </div>
+      </div>}
 
-        <div className="neo-panel p-5 md:p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="neo-kicker">Top merchants</p>
-              <h2 className="mt-3 text-[1.35rem] font-medium text-white">
-                where this category concentrated
-              </h2>
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4">
-            {detail.topMerchants.length > 0 ? (
-              detail.topMerchants.map((merchant, index) => (
-                <div
-                  key={`${merchant.merchantId ?? merchant.merchantName}-${index}`}
-                  className="flex items-center gap-3 border border-white/[0.06] bg-[rgba(255,255,255,0.02)] px-4 py-4"
-                >
-                  <Avatar className="size-11 rounded-full bg-white/[0.07]">
-                    {merchant.merchantLogoUrl ? (
-                      <AvatarImage src={merchant.merchantLogoUrl} alt={merchant.merchantName} />
-                    ) : (
-                      <AvatarFallback className="bg-white/[0.07] text-xs font-semibold tracking-wide text-white/50">
-                        {getInitials(merchant.merchantName)}
-                      </AvatarFallback>
-                    )}
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] uppercase tracking-[0.22em] text-white/24">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
-                      <p className="truncate text-[15px] font-medium text-white">
-                        {merchant.merchantName}
-                      </p>
-                    </div>
-                    <p className="mt-1 text-sm text-white/38">
-                      {merchant.transactionCount} {merchant.transactionCount === 1 ? "transaction" : "transactions"} ·{" "}
-                      {formatPercent(merchant.shareOfCategorySpend)}
-                    </p>
-                  </div>
-                  <p className="shrink-0 text-[15px] font-semibold text-white tabular-nums">
-                    {formatCurrency(merchant.spendMinor, settings.reportingCurrency)}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <div className="border border-dashed border-white/[0.08] px-4 py-5 text-sm leading-6 text-white/42">
-                No merchant concentration is available for this period yet.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="neo-panel p-5 md:p-6">
+      <section className="mt-10 grid gap-3">
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="neo-kicker">Recent transactions</p>
-            <h2 className="mt-3 text-[1.35rem] font-medium text-white">
-              movement inside this category
-            </h2>
+          <div className="flex items-center gap-2 text-[0.82rem] uppercase tracking-[0.18em] text-white/36">
+            <span>Recent transactions</span>
+            <span>({detail.recentTransactions.length})</span>
           </div>
           <Link
             href={categoryActivityHref}
-            className="text-sm text-white/50 transition hover:text-white"
+            className="text-sm text-white/52 transition hover:text-white"
           >
-            open filtered feed
-            <RiArrowRightSLine className="ml-1 inline size-4" />
+            view all
           </Link>
         </div>
 
-        <div className="mt-5 divide-y divide-white/[0.06]">
+        <div className="divide-y divide-white/[0.06]">
           {detail.recentTransactions.length > 0 ? (
             detail.recentTransactions.map((row) => (
               <TransactionCard
@@ -472,12 +381,12 @@ export default async function CategoryDetailPage({
               />
             ))
           ) : (
-            <div className="border border-dashed border-white/[0.08] px-4 py-5 text-sm leading-6 text-white/42">
+            <div className="py-5 text-sm leading-6 text-white/42">
               No transactions landed in this category for the selected period.
             </div>
           )}
         </div>
-      </div>
+      </section>
       </section>
     </div>
   )
