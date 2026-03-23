@@ -15,6 +15,7 @@
     "@bull-board/api": "^6.20.5",
     "@bull-board/express": "^6.20.5",
     "@bull-board/ui": "^6.20.5",
+    "@phosphor-icons/react": "^2.1.10",
     "@remixicon/react": "^4.9.0",
     "@workspace/ai": "workspace:*",
     "@workspace/config": "workspace:*",
