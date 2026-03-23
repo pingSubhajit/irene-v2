@@ -1,3 +1,4 @@
+import { BackfillStatusBanner } from "@/components/backfill-status-banner"
 import { BottomTabBar } from "@/components/bottom-tab-bar"
 import { ProfileAvatar } from "@/components/profile-avatar"
 
@@ -7,6 +8,7 @@ type AppShellProps = {
     image?: string | null
   }
   reviewAttentionCount?: number
+  backfillRunning?: boolean
   children: React.ReactNode
 }
 
@@ -17,6 +19,7 @@ function getGreetingName(name: string) {
 export function AppShell({
   user,
   reviewAttentionCount = 0,
+  backfillRunning = false,
   children,
 }: AppShellProps) {
   const greetingName = getGreetingName(user.name)
@@ -44,10 +47,18 @@ export function AppShell({
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl overflow-x-hidden px-4 pb-28 pt-6 [--page-gutter:1rem] md:px-6 md:pb-32 md:pt-8 md:[--page-gutter:1.5rem]">
+      <main className="mx-auto max-w-6xl overflow-x-hidden px-4 pb-36 pt-6 [--page-gutter:1rem] md:px-6 md:pb-40 md:pt-8 md:[--page-gutter:1.5rem]">
         {children}
       </main>
-      <BottomTabBar reviewAttentionCount={reviewAttentionCount} />
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50">
+        <div className="pointer-events-auto">
+          <BackfillStatusBanner
+            initialRunning={backfillRunning}
+            forceVisible
+          />
+          <BottomTabBar reviewAttentionCount={reviewAttentionCount} />
+        </div>
+      </div>
     </div>
   )
 }

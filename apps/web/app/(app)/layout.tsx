@@ -4,6 +4,7 @@ import {
 } from "@workspace/db"
 
 import { AppShell } from "@/components/app-shell"
+import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { requireSession } from "@/lib/session"
 
 export default async function AuthenticatedLayout({
@@ -12,9 +13,13 @@ export default async function AuthenticatedLayout({
   children: React.ReactNode
 }>) {
   const session = await requireSession()
-  const authUser = await getAuthUserProfile(session.user.id)
-  const reviewAttentionCount = await countOpenReviewQueueItemsForUser(
-    session.user.id,
+  const [authUser, reviewAttentionCount, gmailState] = await Promise.all([
+    getAuthUserProfile(session.user.id),
+    countOpenReviewQueueItemsForUser(session.user.id),
+    getGmailIntegrationState(session.user.id),
+  ])
+  const backfillRunning = Boolean(
+    gmailState.cursor?.backfillStartedAt && !gmailState.cursor?.backfillCompletedAt,
   )
 
   return (
@@ -24,6 +29,7 @@ export default async function AuthenticatedLayout({
         image: authUser?.image ?? session.user.image,
       }}
       reviewAttentionCount={reviewAttentionCount}
+      backfillRunning={backfillRunning}
     >
       {children}
     </AppShell>

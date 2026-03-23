@@ -26,7 +26,7 @@ export function BottomTabBar({
   const pathname = usePathname()
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/8 bg-[rgba(10,10,12,0.8)] backdrop-blur-2xl">
+    <nav className="border-t border-white/8 bg-[rgba(10,10,12,0.8)] backdrop-blur-2xl">
       <div className="mx-auto max-w-md md:max-w-3xl">
         <div className="flex items-center justify-between px-5 mt-[-1px] pb-4 md:px-7">
         {tabs.map((tab) => {
