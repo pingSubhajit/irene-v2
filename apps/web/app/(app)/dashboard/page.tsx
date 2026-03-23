@@ -232,8 +232,6 @@ export default async function DashboardPage() {
           refunds={formatCurrency(monthRefundMinor, reportingCurrency)}
           dailySpend={dailySpend}
           reportingCurrency={reportingCurrency}
-          actionHref="/activity"
-          actionLabel="Open activity"
         />
 
         <SnapshotStatStrip

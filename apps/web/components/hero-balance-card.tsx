@@ -22,8 +22,8 @@ type HeroBalanceCardProps = {
   refunds: string
   dailySpend: { day: number; amount: number; originalCurrencies: string[] }[]
   reportingCurrency: string
-  actionHref: string
-  actionLabel: string
+  actionHref?: string
+  actionLabel?: string
   accent?: "yellow" | "green" | "violet"
 }
 
@@ -87,20 +87,22 @@ export function HeroBalanceCard({
           />
         </div>
 
-        <div className="mt-6">
-          <Link
-            href={actionHref}
-            className={[
-              "neo-btn-3d inline-flex h-12 items-center gap-2 border px-5 text-sm font-semibold transition-all",
-              accent === "yellow"
-                ? "neo-btn-3d-yellow border-[rgba(255,231,90,0.35)] bg-[var(--neo-yellow)] text-[var(--neo-black)]"
-                : "neo-btn-3d-cream border-[rgba(255,255,255,0.12)] bg-[var(--neo-cream)] text-[var(--neo-black)]",
-            ].join(" ")}
-          >
-            {actionLabel}
-            <RiArrowRightLine className="size-4" />
-          </Link>
-        </div>
+        {actionHref && actionLabel ? (
+          <div className="mt-6">
+            <Link
+              href={actionHref}
+              className={[
+                "neo-btn-3d inline-flex h-12 items-center gap-2 border px-5 text-sm font-semibold transition-all",
+                accent === "yellow"
+                  ? "neo-btn-3d-yellow border-[rgba(255,231,90,0.35)] bg-[var(--neo-yellow)] text-[var(--neo-black)]"
+                  : "neo-btn-3d-cream border-[rgba(255,255,255,0.12)] bg-[var(--neo-cream)] text-[var(--neo-black)]",
+              ].join(" ")}
+            >
+              {actionLabel}
+              <RiArrowRightLine className="size-4" />
+            </Link>
+          </div>
+        ) : null}
       </div>
 
       {/* Brutalist geometric blocks */}
