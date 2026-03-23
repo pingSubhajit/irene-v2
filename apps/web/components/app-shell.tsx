@@ -54,7 +54,6 @@ export function AppShell({
         <div className="pointer-events-auto">
           <BackfillStatusBanner
             initialRunning={backfillRunning}
-            forceVisible
           />
           <BottomTabBar reviewAttentionCount={reviewAttentionCount} />
         </div>
