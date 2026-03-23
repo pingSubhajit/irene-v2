@@ -27,16 +27,52 @@ export type AdviceRailItem = {
   updatedAtIso?: string
 }
 
-function getPriorityLabel(priority: AdviceRailItem["priority"]) {
-  if (priority === 1) {
-    return "Now"
+const relativeTimeFormatter = new Intl.RelativeTimeFormat("en", {
+  numeric: "auto",
+})
+
+function formatRelativeAdviceTime(isoTimestamp?: string | null) {
+  if (!isoTimestamp) {
+    return null
   }
 
-  if (priority === 2) {
-    return "Soon"
+  const timestamp = new Date(isoTimestamp)
+  if (Number.isNaN(timestamp.getTime())) {
+    return null
   }
 
-  return "Watch"
+  const diffMs = timestamp.getTime() - Date.now()
+  const diffMinutes = Math.round(diffMs / (60 * 1000))
+  const absMinutes = Math.abs(diffMinutes)
+
+  if (absMinutes < 1) {
+    return "Just now"
+  }
+
+  if (absMinutes < 60) {
+    return relativeTimeFormatter.format(diffMinutes, "minute")
+  }
+
+  const diffHours = Math.round(diffMinutes / 60)
+  if (Math.abs(diffHours) < 24) {
+    return relativeTimeFormatter.format(diffHours, "hour")
+  }
+
+  const diffDays = Math.round(diffHours / 24)
+  if (Math.abs(diffDays) < 7) {
+    return relativeTimeFormatter.format(diffDays, "day")
+  }
+
+  const diffWeeks = Math.round(diffDays / 7)
+  return relativeTimeFormatter.format(diffWeeks, "week")
+}
+
+function getAdviceMetaParts(item: AdviceRailItem) {
+  return [
+    formatRelativeAdviceTime(item.updatedAtIso) ?? item.updatedAtLabel,
+    item.goalName,
+    item.merchantName,
+  ].filter(Boolean)
 }
 
 function AdviceActionLink({
@@ -178,7 +214,7 @@ export function AdviceRail({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] uppercase tracking-[0.28em] text-white/22">
-                    {getPriorityLabel(item.priority)}
+                    {formatRelativeAdviceTime(item.updatedAtIso) ?? item.updatedAtLabel}
                   </span>
                 </div>
                 <div className="mt-2 flex items-start justify-between gap-3">
@@ -187,9 +223,7 @@ export function AdviceRail({
                 </div>
                 <p className="mt-2 text-sm leading-6 text-white/46">{item.summary}</p>
                 <p className="mt-3 text-xs uppercase tracking-[0.28em] text-white/18">
-                  {[item.goalName, item.merchantName, item.updatedAtLabel]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  {getAdviceMetaParts(item).join(" · ")}
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   {item.status === "active" && item.primaryAction ? (
@@ -235,9 +269,7 @@ export function AdviceList({
               <p className="mt-2 text-sm leading-6 text-white/46">{item.summary}</p>
               <p className="mt-3 text-sm leading-6 text-white/32">{item.detail}</p>
               <p className="mt-4 text-xs uppercase tracking-[0.28em] text-white/18">
-                {[getPriorityLabel(item.priority), item.goalName, item.merchantName, item.updatedAtLabel]
-                  .filter(Boolean)
-                  .join(" · ")}
+                {getAdviceMetaParts(item).join(" · ")}
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3">
