@@ -303,7 +303,7 @@ export default async function MerchantDetailPage({
                   </p>
                   {detail.summary.averageTransactionMinor > 0 ? (
                     <p className="mt-1 text-xs text-white/42">
-                      Avg ticket{" "}
+                      Avg{" "}
                       {formatCurrency(
                         detail.summary.averageTransactionMinor,
                         settings.reportingCurrency,

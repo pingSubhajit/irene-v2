@@ -28,7 +28,7 @@ export function BottomTabBar({
   return (
     <nav className="border-t border-white/8 bg-[rgba(10,10,12,0.8)] backdrop-blur-2xl">
       <div className="mx-auto max-w-md md:max-w-3xl">
-        <div className="flex items-center justify-between px-5 mt-[-1px] pb-4 md:px-7">
+        <div className="flex items-center justify-between px-5 mt-[-1px] md:px-7">
         {tabs.map((tab) => {
           const Icon = tab.icon
           const active =
