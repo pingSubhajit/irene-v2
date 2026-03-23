@@ -15,17 +15,19 @@ jobs:
       LOG_LEVEL: info
       DATABASE_URL: postgres://user:pass@localhost:5432/irene
       DATABASE_URL_DIRECT: postgres://user:pass@localhost:5432/irene
-      BETTER_AUTH_SECRET: 1234567890123456789012345678901234567890
+      BETTER_AUTH_SECRET: "dummy-better-auth-secret-0123456789abcdef"
       BETTER_AUTH_URL: http://localhost:3000
       GOOGLE_CLIENT_ID: dummy-google-client-id
       GOOGLE_CLIENT_SECRET: dummy-google-client-secret
       ALLOWED_EMAILS: owner@example.com
-      APP_ENCRYPTION_KEY: 1234567890123456789012345678901234567890
+      APP_ENCRYPTION_KEY: "dummy-app-encryption-key-0123456789abcdef"
       GCS_BUCKET: irene-test-bucket
       GCS_PROJECT_ID: irene-test-project
       GCS_CLIENT_EMAIL: irene-test@example.iam.gserviceaccount.com
       GCS_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\\nTEST\\n-----END PRIVATE KEY-----\\n"
       AI_GATEWAY_API_KEY: dummy-ai-gateway-key
+      LOGO_DOT_DEV_SECRET_KEY: sk_dummy-logo-dev-secret
+      NEXT_PUBLIC_LOGO_DOT_DEV_PUBLIC_KEY: pk_dummy-logo-dev-public
       CRON_SECRET: cron-secret
       UPSTASH_REDIS_HOST: localhost
       UPSTASH_REDIS_PORT: 6379
