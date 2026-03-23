@@ -394,6 +394,19 @@ type CategoryDetailTransactionRow = Awaited<
       reportingAmountMinor: number | null
     }
 
+type MerchantDetailCategoryRow = {
+  categoryId: string | null
+  categoryName: string
+  categorySlug: string | null
+  categoryIconName: CategoryIconName | null
+  categoryColorToken: CategoryColorToken | null
+  spendMinor: number
+  transactionCount: number
+  shareOfMerchantSpend: number
+}
+
+type MerchantDetailTransactionRow = CategoryDetailTransactionRow
+
 export async function getCategoryDetailForUser(input: {
   userId: string
   categoryId: string
@@ -755,6 +768,388 @@ export async function getCategoryDetailForUser(input: {
       topMerchantName: topMerchants[0]?.merchantName ?? null,
     },
     topMerchants,
+    recentTransactions,
+  }
+}
+
+export async function getMerchantDetailForUser(input: {
+  userId: string
+  merchantId: string
+  reportingCurrency: string
+  timeZone: string
+  monthKey?: string | null
+  week?: number | null
+  recentTransactionsLimit?: number
+  topCategoriesLimit?: number
+}) {
+  const [merchant] = await db
+    .select()
+    .from(merchants)
+    .where(and(eq(merchants.userId, input.userId), eq(merchants.id, input.merchantId)))
+    .limit(1)
+
+  if (!merchant) {
+    return null
+  }
+
+  const outflowBaseConditions = [
+    eq(financialEvents.userId, input.userId),
+    eq(financialEvents.merchantId, input.merchantId),
+    inArray(financialEvents.status, ["confirmed", "needs_review"]),
+    eq(financialEvents.direction, "outflow"),
+    eq(financialEvents.isTransfer, false),
+  ]
+
+  const comparableAmountExpression = getComparableAmountExpression(
+    input.reportingCurrency,
+  )
+
+  const monthBucketRows = await db
+    .select({
+      eventOccurredAt: financialEvents.eventOccurredAt,
+      amountMinor: comparableAmountExpression.mapWith(Number),
+    })
+    .from(financialEvents)
+    .leftJoin(
+      financialEventValuations,
+      and(
+        eq(financialEventValuations.financialEventId, financialEvents.id),
+        eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+        isNull(financialEventValuations.supersededAt),
+      ),
+    )
+    .where(and(...outflowBaseConditions))
+    .orderBy(desc(financialEvents.eventOccurredAt))
+
+  const monthBucketMap = new Map<
+    string,
+    {
+      monthKey: string
+      totalMinor: number
+      transactionCount: number
+    }
+  >()
+
+  for (const row of monthBucketRows) {
+    const monthKey = getUserTimeZoneMonthKey(row.eventOccurredAt, input.timeZone)
+    const existing = monthBucketMap.get(monthKey)
+
+    if (existing) {
+      existing.totalMinor += row.amountMinor ?? 0
+      existing.transactionCount += 1
+      continue
+    }
+
+    monthBucketMap.set(monthKey, {
+      monthKey,
+      totalMinor: row.amountMinor ?? 0,
+      transactionCount: 1,
+    })
+  }
+
+  const normalizedMonthBuckets = [...monthBucketMap.values()]
+    .sort((left, right) => right.monthKey.localeCompare(left.monthKey))
+    .slice(0, 4)
+    .map((bucket) => ({
+      ...bucket,
+      key: bucket.monthKey,
+      label: bucket.monthKey,
+    }))
+
+  const mode = normalizedMonthBuckets.length >= 4 ? "month" : "week"
+  const currentMonthKey = getUserTimeZoneMonthKey(new Date(), input.timeZone)
+
+  let selectedMonthKey: string | null = null
+  let selectedWeek: 1 | 2 | 3 | 4 | null = null
+  let periodDateFrom: Date | null = null
+  let periodDateTo: Date | null = null
+  let weekBuckets: Array<{
+    key: string
+    week: 1 | 2 | 3 | 4
+    label: string
+    dateFrom: Date | null
+    dateTo: Date | null
+    totalMinor: number
+    transactionCount: number
+  }> = []
+
+  if (mode === "month") {
+    selectedMonthKey =
+      input.monthKey &&
+      normalizedMonthBuckets.some((bucket) => bucket.monthKey === input.monthKey)
+        ? input.monthKey
+        : (normalizedMonthBuckets[0]?.monthKey ?? null)
+
+    const monthRange = selectedMonthKey
+      ? buildMonthDateRange(selectedMonthKey, input.timeZone)
+      : null
+
+    periodDateFrom = monthRange?.dateFrom ?? null
+    periodDateTo = monthRange?.dateTo ?? null
+  } else {
+    selectedMonthKey = currentMonthKey
+    const currentMonthRange = buildMonthDateRange(currentMonthKey, input.timeZone)
+    const currentMonthOutflowRows =
+      currentMonthRange?.dateFrom && currentMonthRange.dateTo
+        ? await db
+            .select({
+              eventOccurredAt: financialEvents.eventOccurredAt,
+              amountMinor: comparableAmountExpression.mapWith(Number),
+            })
+            .from(financialEvents)
+            .leftJoin(
+              financialEventValuations,
+              and(
+                eq(financialEventValuations.financialEventId, financialEvents.id),
+                eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+                isNull(financialEventValuations.supersededAt),
+              ),
+            )
+            .where(
+              and(
+                ...outflowBaseConditions,
+                gte(financialEvents.eventOccurredAt, currentMonthRange.dateFrom),
+                lte(financialEvents.eventOccurredAt, currentMonthRange.dateTo),
+              ),
+            )
+        : []
+
+    weekBuckets = buildWeekBucketsForMonth({
+      monthKey: currentMonthKey,
+      timeZone: input.timeZone,
+    }).map((bucket) => {
+      const rows = currentMonthOutflowRows.filter((row) => {
+        const day = getUserTimeZoneDayOfMonth(row.eventOccurredAt, input.timeZone)
+
+        if (bucket.week === 1) return day >= 1 && day <= 7
+        if (bucket.week === 2) return day >= 8 && day <= 14
+        if (bucket.week === 3) return day >= 15 && day <= 21
+        return day >= 22
+      })
+
+      return {
+        ...bucket,
+        totalMinor: rows.reduce((sum, row) => sum + (row.amountMinor ?? 0), 0),
+        transactionCount: rows.length,
+      }
+    })
+
+    const preferredWeek =
+      input.week && weekBuckets.some((bucket) => bucket.week === input.week)
+        ? input.week
+        : null
+    const currentWeek = (() => {
+      const day = getUserTimeZoneDayOfMonth(new Date(), input.timeZone)
+      if (day <= 7) return 1
+      if (day <= 14) return 2
+      if (day <= 21) return 3
+      return 4
+    })()
+    const currentWeekWithActivity = weekBuckets.find(
+      (bucket) => bucket.week === currentWeek && bucket.transactionCount > 0,
+    )
+    const latestWeekWithActivity = [...weekBuckets]
+      .reverse()
+      .find((bucket) => bucket.transactionCount > 0)
+    const resolvedWeek =
+      preferredWeek ??
+      currentWeekWithActivity?.week ??
+      latestWeekWithActivity?.week ??
+      weekBuckets[0]?.week ??
+      1
+
+    selectedWeek = resolvedWeek as 1 | 2 | 3 | 4
+    const selectedBucket = weekBuckets.find((bucket) => bucket.week === resolvedWeek) ?? null
+    periodDateFrom = selectedBucket?.dateFrom ?? null
+    periodDateTo = selectedBucket?.dateTo ?? null
+  }
+
+  if (!periodDateFrom || !periodDateTo) {
+    return {
+      merchant,
+      mode,
+      monthBuckets: normalizedMonthBuckets,
+      selectedMonthKey,
+      selectedWeek,
+      weekBuckets,
+      summary: {
+        totalOutflowMinor: 0,
+        transactionCount: 0,
+        averageTransactionMinor: 0,
+        shareOfTotalOutflow: 0,
+        topCategoryName: null,
+        categoryCount: 0,
+      },
+      topCategories: [] as MerchantDetailCategoryRow[],
+      recentTransactions: [] as MerchantDetailTransactionRow[],
+    }
+  }
+
+  const periodConditions = [
+    eq(financialEvents.userId, input.userId),
+    eq(financialEvents.merchantId, input.merchantId),
+    inArray(financialEvents.status, ["confirmed", "needs_review"]),
+    gte(financialEvents.eventOccurredAt, periodDateFrom),
+    lte(financialEvents.eventOccurredAt, periodDateTo),
+  ]
+
+  const outflowPeriodConditions = [
+    ...periodConditions,
+    eq(financialEvents.direction, "outflow"),
+    eq(financialEvents.isTransfer, false),
+  ]
+
+  const [periodSummaryRow, overallPeriodOutflowRow, topCategoryRows, recentTransactions] =
+    await Promise.all([
+      db
+        .select({
+          totalOutflowMinor:
+            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
+          transactionCount: count(financialEvents.id).mapWith(Number),
+        })
+        .from(financialEvents)
+        .leftJoin(
+          financialEventValuations,
+          and(
+            eq(financialEventValuations.financialEventId, financialEvents.id),
+            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+            isNull(financialEventValuations.supersededAt),
+          ),
+        )
+        .where(and(...outflowPeriodConditions))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({
+          totalOutflowMinor:
+            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
+        })
+        .from(financialEvents)
+        .leftJoin(
+          financialEventValuations,
+          and(
+            eq(financialEventValuations.financialEventId, financialEvents.id),
+            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+            isNull(financialEventValuations.supersededAt),
+          ),
+        )
+        .where(
+          and(
+            eq(financialEvents.userId, input.userId),
+            inArray(financialEvents.status, ["confirmed", "needs_review"]),
+            eq(financialEvents.direction, "outflow"),
+            eq(financialEvents.isTransfer, false),
+            gte(financialEvents.eventOccurredAt, periodDateFrom),
+            lte(financialEvents.eventOccurredAt, periodDateTo),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({
+          categoryId: financialEvents.categoryId,
+          categoryName:
+            sql<string>`coalesce(${categories.name}, 'Uncategorized')`,
+          categorySlug: categories.slug,
+          categoryIconName: categories.iconName,
+          categoryColorToken: categories.colorToken,
+          spendMinor:
+            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
+          transactionCount: count(financialEvents.id).mapWith(Number),
+        })
+        .from(financialEvents)
+        .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
+        .leftJoin(
+          financialEventValuations,
+          and(
+            eq(financialEventValuations.financialEventId, financialEvents.id),
+            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+            isNull(financialEventValuations.supersededAt),
+          ),
+        )
+        .where(and(...outflowPeriodConditions))
+        .groupBy(
+          financialEvents.categoryId,
+          categories.name,
+          categories.slug,
+          categories.iconName,
+          categories.colorToken,
+        )
+        .orderBy(
+          desc(sql`coalesce(sum(${comparableAmountExpression}), 0)`),
+          desc(count(financialEvents.id)),
+        )
+        .limit(input.topCategoriesLimit ?? 5),
+      db
+        .select({
+          event: financialEvents,
+          merchant: merchants,
+          category: categories,
+          paymentInstrument: paymentInstruments,
+          paymentProcessor: paymentProcessors,
+          reportingAmountMinor: comparableAmountExpression.mapWith(Number),
+        })
+        .from(financialEvents)
+        .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
+        .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
+        .leftJoin(
+          paymentInstruments,
+          eq(financialEvents.paymentInstrumentId, paymentInstruments.id),
+        )
+        .leftJoin(
+          paymentProcessors,
+          eq(financialEvents.paymentProcessorId, paymentProcessors.id),
+        )
+        .leftJoin(
+          financialEventValuations,
+          and(
+            eq(financialEventValuations.financialEventId, financialEvents.id),
+            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+            isNull(financialEventValuations.supersededAt),
+          ),
+        )
+        .where(and(...periodConditions))
+        .orderBy(desc(financialEvents.eventOccurredAt), desc(financialEvents.createdAt))
+        .limit(input.recentTransactionsLimit ?? 10),
+    ])
+
+  const totalOutflowMinor = periodSummaryRow?.totalOutflowMinor ?? 0
+  const transactionCount = periodSummaryRow?.transactionCount ?? 0
+  const overallPeriodOutflowMinor = overallPeriodOutflowRow?.totalOutflowMinor ?? 0
+  const averageTransactionMinor =
+    transactionCount > 0 ? Math.round(totalOutflowMinor / transactionCount) : 0
+
+  const topCategories = topCategoryRows.map((row) => ({
+    categoryId: row.categoryId,
+    categoryName: row.categoryName,
+    categorySlug: row.categorySlug,
+    categoryIconName: row.categoryIconName,
+    categoryColorToken: row.categoryColorToken,
+    spendMinor: row.spendMinor,
+    transactionCount: row.transactionCount,
+    shareOfMerchantSpend:
+      totalOutflowMinor > 0 ? row.spendMinor / totalOutflowMinor : 0,
+  }))
+
+  return {
+    merchant,
+    mode,
+    monthBuckets: normalizedMonthBuckets,
+    selectedMonthKey,
+    selectedWeek,
+    weekBuckets,
+    summary: {
+      totalOutflowMinor,
+      transactionCount,
+      averageTransactionMinor,
+      shareOfTotalOutflow:
+        overallPeriodOutflowMinor > 0
+          ? totalOutflowMinor / overallPeriodOutflowMinor
+          : 0,
+      topCategoryName: topCategories[0]?.categoryName ?? null,
+      categoryCount: topCategories.length,
+    },
+    topCategories,
     recentTransactions,
   }
 }

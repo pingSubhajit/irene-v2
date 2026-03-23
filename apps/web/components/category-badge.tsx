@@ -37,7 +37,7 @@ import {
   DEFAULT_CATEGORY_ICON_NAME,
   type CategoryColorToken,
   type CategoryIconName,
-} from "@workspace/config"
+} from "@workspace/config/category-presentation"
 
 const CATEGORY_ICON_REGISTRY: Record<CategoryIconName, RemixiconComponentType> =
   {

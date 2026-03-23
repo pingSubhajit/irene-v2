@@ -2,8 +2,10 @@
 
 import Link from "next/link"
 import { Pie, PieChart, Sector, Tooltip } from "recharts"
-import { Avatar, AvatarFallback, AvatarImage } from "@workspace/ui/components/avatar"
-import type { CategoryColorToken } from "@workspace/config/category-presentation"
+import type {
+  CategoryColorToken,
+  CategoryIconName,
+} from "@workspace/config/category-presentation"
 
 import {
   type ChartConfig,
@@ -11,19 +13,23 @@ import {
   ChartTooltipContent,
 } from "@workspace/ui/components/chart"
 
-type MerchantSlice = {
-  merchantId: string | null
-  merchantName: string
-  merchantLogoUrl: string | null
+import { CategoryBadge } from "./category-badge"
+
+type CategorySlice = {
+  categoryId: string | null
+  categoryName: string
+  categorySlug: string | null
+  categoryIconName: CategoryIconName | null
+  categoryColorToken: CategoryColorToken | null
   spendMinor: number
-  shareOfCategorySpend: number
+  shareOfMerchantSpend: number
   transactionCount: number
 }
 
 const chartConfig = {
   spend: {
-    label: "Spend share",
-    color: "#f8a23e",
+    label: "Spend mix",
+    color: "#7cc8ff",
   },
 } satisfies ChartConfig
 
@@ -48,59 +54,44 @@ function formatPercent(value: number) {
   }).format(value)
 }
 
-function getInitials(name: string) {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part.slice(0, 1))
-      .join("")
-      .toUpperCase() || "?"
-  )
-}
-
-function getCategorySliceColors(
+function getCategorySliceColor(
   colorToken: CategoryColorToken | null | undefined,
+  index: number,
 ) {
-  switch (colorToken) {
-    case "yellow":
-      return ["#ffd95f", "#ffe78e", "#fff0b5", "#f4c852", "#ddaa39"] as const
-    case "green":
-      return ["#58efb1", "#82f5c7", "#acf7da", "#35d39a", "#1fb97f"] as const
-    case "violet":
-      return ["#b488ff", "#c9a7ff", "#decbff", "#9260ef", "#7646d5"] as const
-    case "blue":
-      return ["#72c8ff", "#97d9ff", "#bee9ff", "#46acf0", "#2e8fd7"] as const
-    case "coral":
-      return ["#ff9b7b", "#ffb8a1", "#ffd2c3", "#ef7554", "#d55a3a"] as const
-    case "graphite":
-      return ["#d3dcff", "#e0e6ff", "#edf0ff", "#abb9f0", "#8798d4"] as const
-    case "cream":
-    default:
-      return ["#ffde92", "#ffebba", "#fff3d8", "#f1c66a", "#dca645"] as const
+  const byToken: Record<CategoryColorToken, [string, string]> = {
+    yellow: ["#ffd75f", "#efbc3b"],
+    green: ["#5bf0b6", "#29c98c"],
+    violet: ["#b68bff", "#8b59ec"],
+    blue: ["#78caff", "#4ca5ef"],
+    coral: ["#ff9d81", "#ee7556"],
+    graphite: ["#d5ddff", "#a7b6ef"],
+    cream: ["#ffe3a2", "#d7b26a"],
   }
+
+  const pair = byToken[colorToken ?? "cream"] ?? byToken.cream
+  return index % 2 === 0 ? pair[0] : pair[1]
 }
 
-export function CategoryTopMerchantsChart({
-  merchants,
+export function MerchantTopCategoriesChart({
+  categories,
   currency,
-  colorToken,
 }: {
-  merchants: MerchantSlice[]
+  categories: CategorySlice[]
   currency: string
-  colorToken?: CategoryColorToken | null
 }) {
-  const leadMerchant = merchants[0] ?? null
-  const sliceColors = getCategorySliceColors(colorToken)
+  const activeCategoryCount = categories.filter((category) => category.spendMinor > 0).length
 
-  const data = merchants.map((merchant, index) => ({
-    name: merchant.merchantName,
-    value: merchant.spendMinor / 100,
-    spendMinor: merchant.spendMinor,
-    share: merchant.shareOfCategorySpend,
-    transactionCount: merchant.transactionCount,
-    fill: sliceColors[index % sliceColors.length],
+  const data = categories.map((category, index) => ({
+    name: category.categoryName,
+    value: category.spendMinor / 100,
+    spendMinor: category.spendMinor,
+    share: category.shareOfMerchantSpend,
+    transactionCount: category.transactionCount,
+    categoryId: category.categoryId,
+    categorySlug: category.categorySlug,
+    categoryIconName: category.categoryIconName,
+    categoryColorToken: category.categoryColorToken,
+    fill: getCategorySliceColor(category.categoryColorToken, index),
   }))
 
   return (
@@ -136,7 +127,7 @@ export function CategoryTopMerchantsChart({
                           </span>
                         </div>
                         <div className="text-[0.72rem] text-muted-foreground">
-                          {formatPercent(point.share)} of this category
+                          {formatPercent(point.share)} of this merchant
                         </div>
                       </div>
                     )
@@ -181,70 +172,79 @@ export function CategoryTopMerchantsChart({
               textAnchor="middle"
               dominantBaseline="middle"
               fill="#ffffff"
-              className="font-sans text-[18px] font-semibold"
+              className="font-sans text-[20px] font-semibold"
             >
-              {leadMerchant ? formatCurrency(leadMerchant.spendMinor, currency) : formatCurrency(0, currency)}
+              {activeCategoryCount}
             </text>
             <text
               x="50%"
               y="59%"
               textAnchor="middle"
               dominantBaseline="middle"
-              fill={sliceColors[0]}
+              fill="rgba(255,255,255,0.54)"
               className="font-sans text-[10px] font-semibold uppercase tracking-[0.18em]"
             >
-              {leadMerchant ? leadMerchant.merchantName.slice(0, 18).toUpperCase() : "NO MERCHANT"}
+              categories
             </text>
           </PieChart>
         </ChartContainer>
       </div>
 
       <div className="-mt-12 divide-y divide-white/[0.06] border-y border-white/[0.06]">
-        {merchants.map((merchant, index) => (
-          <Link
-            key={`${merchant.merchantId ?? merchant.merchantName}-${index}`}
-            href={
-              merchant.merchantId
-                ? `/activity/merchants/${merchant.merchantId}`
-                : "#"
-            }
-            className={merchant.merchantId ? "block transition hover:bg-white/[0.02]" : "pointer-events-none block"}
-          >
+        {categories.map((category, index) => {
+          const content = (
             <div className="flex items-center justify-between gap-4 py-4">
               <div className="flex min-w-0 flex-1 items-center gap-3">
-                <Avatar className="size-9 shrink-0 rounded-full bg-white/[0.05]">
-                  {merchant.merchantLogoUrl ? (
-                    <AvatarImage src={merchant.merchantLogoUrl} alt={merchant.merchantName} />
-                  ) : (
-                    <AvatarFallback className="bg-white/[0.05] text-[0.68rem] font-semibold tracking-wide text-white/48">
-                      {getInitials(merchant.merchantName)}
-                    </AvatarFallback>
-                  )}
-                </Avatar>
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/[0.03] ring-1 ring-white/[0.06]">
+                  <CategoryBadge
+                    categoryName={category.categoryName}
+                    iconName={category.categoryIconName}
+                    colorToken={category.categoryColorToken}
+                    className="size-5"
+                  />
+                </div>
                 <div className="min-w-0 flex-1">
                   <p
                     className="truncate text-[15px] font-medium"
                     style={{
-                      color: sliceColors[index % sliceColors.length],
+                      color: getCategorySliceColor(category.categoryColorToken, index),
                     }}
                   >
-                    {merchant.merchantName}
+                    {category.categoryName}
                   </p>
                   <p className="mt-1 text-sm text-white/38">
-                    {merchant.transactionCount}{" "}
-                    {merchant.transactionCount === 1 ? "transaction" : "transactions"} ·{" "}
-                    {formatPercent(merchant.shareOfCategorySpend)}
+                    {category.transactionCount}{" "}
+                    {category.transactionCount === 1 ? "transaction" : "transactions"} ·{" "}
+                    {formatPercent(category.shareOfMerchantSpend)}
                   </p>
                 </div>
               </div>
               <div className="shrink-0 text-right">
                 <p className="text-[15px] font-semibold text-white tabular-nums">
-                  {formatCurrency(merchant.spendMinor, currency)}
+                  {formatCurrency(category.spendMinor, currency)}
                 </p>
               </div>
             </div>
-          </Link>
-        ))}
+          )
+
+          if (category.categoryId) {
+            return (
+              <Link
+                key={`${category.categoryId}-${index}`}
+                href={`/activity/categories/${category.categoryId}`}
+                className="block transition hover:bg-white/[0.02]"
+              >
+                {content}
+              </Link>
+            )
+          }
+
+          return (
+            <div key={`${category.categoryName}-${index}`}>
+              {content}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

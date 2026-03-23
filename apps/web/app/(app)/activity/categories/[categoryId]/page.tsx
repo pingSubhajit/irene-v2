@@ -1,9 +1,6 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import {
-  RiArrowLeftLine,
-  RiArrowRightSLine,
-} from "@remixicon/react"
+import { RiArrowLeftLine } from "@remixicon/react"
 import {
   getCategoryDetailForUser,
   getUserSettings,
@@ -454,30 +451,6 @@ export default async function CategoryDetailPage({
           />
         </div>
       ) : null}
-    </div>
-  )
-}
-
-function MetricRow({
-  label,
-  value,
-  accentColor,
-}: {
-  label: string
-  value: string
-  accentColor?: string
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-white/[0.06] pb-3 last:border-b-0 last:pb-0">
-      <span className="text-sm uppercase tracking-[0.18em] text-white/28">
-        {label}
-      </span>
-      <span
-        className="text-base font-medium text-white tabular-nums"
-        style={accentColor ? { color: accentColor } : undefined}
-      >
-        {value}
-      </span>
     </div>
   )
 }

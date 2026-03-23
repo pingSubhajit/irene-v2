@@ -7,7 +7,10 @@ import {
   RiErrorWarningLine,
   RiSwapLine,
 } from "@remixicon/react"
-import type { CategoryColorToken, CategoryIconName } from "@workspace/config"
+import type {
+  CategoryColorToken,
+  CategoryIconName,
+} from "@workspace/config/category-presentation"
 import {
   Avatar,
   AvatarFallback,

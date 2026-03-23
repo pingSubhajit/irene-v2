@@ -228,9 +228,20 @@ export default async function EventTracePage({
               currentLogoUrl={trace.merchant.logoUrl ?? null}
             />
           ) : null}
-          <h1 className="min-w-0 text-[1.65rem] font-semibold tracking-tight text-white">
-            {merchantName}
-          </h1>
+          {trace.merchant?.id ? (
+            <Link
+              href={`/activity/merchants/${trace.merchant.id}`}
+              className="min-w-0 transition hover:text-white/82"
+            >
+              <h1 className="min-w-0 text-[1.65rem] font-semibold tracking-tight text-white">
+                {merchantName}
+              </h1>
+            </Link>
+          ) : (
+            <h1 className="min-w-0 text-[1.65rem] font-semibold tracking-tight text-white">
+              {merchantName}
+            </h1>
+          )}
         </div>
         <ActivityEventActions
           redirectTo={`/activity/${trace.event.id}/trace`}

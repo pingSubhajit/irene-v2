@@ -2,7 +2,10 @@ import React from "react"
 import Link from "next/link"
 import { RiApps2Line, RiArrowRightUpLine } from "@remixicon/react"
 import { cn } from "@workspace/ui/lib/utils"
-import type { CategoryColorToken, CategoryIconName } from "@workspace/config"
+import type {
+  CategoryColorToken,
+  CategoryIconName,
+} from "@workspace/config/category-presentation"
 
 import {
   resolveCategoryIconComponent,
