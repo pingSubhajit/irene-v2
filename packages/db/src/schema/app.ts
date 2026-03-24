@@ -42,6 +42,10 @@ export const userSettings = pgTable(
       .notNull()
       .default("0.9500"),
     dataRetentionDays: integer("data_retention_days"),
+    onboardingCompletedAt: timestamp("onboarding_completed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .notNull()
       .defaultNow(),

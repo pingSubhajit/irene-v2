@@ -63,11 +63,12 @@ async function wipeDatabase() {
     },
   })
 
-  console.log("Wiping database schema...")
+  console.log("Wiping database schemas...")
 
   await client.connect()
 
   try {
+    await client.query("drop schema if exists drizzle cascade")
     await client.query("drop schema if exists public cascade")
     await client.query("create schema public")
     await client.query("grant all on schema public to current_user")
@@ -76,7 +77,7 @@ async function wipeDatabase() {
     await client.end()
   }
 
-  console.log("Database schema wiped.")
+  console.log("Database schemas wiped.")
 
   if (options.skipMigrate) {
     console.log("Skipped migrations.")

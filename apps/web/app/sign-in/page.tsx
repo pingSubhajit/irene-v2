@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 
 import { Badge } from "@workspace/ui/components/badge"
 import { Card } from "@workspace/ui/components/card"
+import { getUserSettings } from "@workspace/db"
 
 import { SignInButton } from "@/components/sign-in-button"
 import { getServerSession } from "@/lib/session"
@@ -12,7 +13,8 @@ export default async function SignInPage() {
   const session = await getServerSession()
 
   if (session) {
-    redirect("/dashboard")
+    const settings = await getUserSettings(session.user.id)
+    redirect(settings.onboardingCompletedAt ? "/dashboard" : "/onboarding")
   }
 
   return (
@@ -55,8 +57,9 @@ export default async function SignInPage() {
           <div className="mt-8 border border-white/16 bg-black/10 p-5">
             <p className="neo-kicker text-white/72">Access rule</p>
             <p className="mt-3 text-sm leading-6 text-white/74">
-              Only allowlisted Google accounts can enter Irene. The Gmail inbox you
-              connect later must match the owner account you use here.
+              Only allowlisted Google accounts can enter Irene. Irene requests Gmail
+              read access during sign-in so onboarding can start your backfill
+              immediately.
             </p>
           </div>
 

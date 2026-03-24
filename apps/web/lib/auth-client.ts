@@ -24,8 +24,14 @@ async function postAuth<T>(path: string, body?: Record<string, unknown>) {
 export async function signInWithGoogle() {
   const result = await postAuth<SignInResult>("/api/auth/sign-in/social", {
     provider: "google",
-    callbackURL: "/dashboard",
+    callbackURL: "/onboarding",
     errorCallbackURL: "/sign-in?error=access_denied",
+    scopes: [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/gmail.readonly",
+    ],
   })
 
   if (result.url) {

@@ -21,6 +21,10 @@ const buttonVariants = cva(
         destructive:
           "neo-btn-3d neo-btn-3d-coral border-[rgba(255,126,99,0.34)] bg-[var(--neo-coral)] text-[var(--neo-black)]",
         link: "border-transparent bg-transparent p-0 text-[var(--neo-cream)] underline-offset-4 shadow-none hover:underline active:translate-y-0",
+        onboardingLight:
+          "border-white bg-white text-black shadow-none hover:bg-white/92 active:translate-y-px",
+        onboardingDark:
+          "border-black bg-black text-white shadow-none hover:bg-black/88 active:translate-y-px",
       },
       size: {
         default:

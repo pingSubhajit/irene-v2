@@ -3,6 +3,7 @@ const nextConfig = {
   transpilePackages: [
     "@workspace/config",
     "@workspace/db",
+    "@workspace/assets",
     "@workspace/observability",
     "@workspace/workflows",
     "@workspace/ui",

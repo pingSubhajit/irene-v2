@@ -178,17 +178,7 @@ export default async function DashboardPage() {
         badge: "Action",
         badgeVariant: "warning" as const,
       }
-    : recentEvents.length === 0
-      ? {
-          eyebrow: "Next step",
-          title: "build your feed",
-          description:
-            "Your inbox is connected, but Irene still needs more reconciled activity to paint the month clearly.",
-          href: "/settings",
-          badge: "Sync",
-          badgeVariant: "cream" as const,
-        }
-      : null
+    : null
 
   const adviceRailItems = rankedAdvice.map(({ adviceItem, merchant, goal }) => ({
     id: adviceItem.id,

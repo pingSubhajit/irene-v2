@@ -1,6 +1,9 @@
+import { redirect } from "next/navigation"
+
 import {
   countOpenReviewQueueItemsForUser,
   getAuthUserProfile,
+  getUserSettings,
 } from "@workspace/db"
 
 import { AppShell } from "@/components/app-shell"
@@ -13,6 +16,12 @@ export default async function AuthenticatedLayout({
   children: React.ReactNode
 }>) {
   const session = await requireSession()
+  const settings = await getUserSettings(session.user.id)
+
+  if (!settings.onboardingCompletedAt) {
+    redirect("/onboarding")
+  }
+
   const [authUser, reviewAttentionCount, gmailState] = await Promise.all([
     getAuthUserProfile(session.user.id),
     countOpenReviewQueueItemsForUser(session.user.id),

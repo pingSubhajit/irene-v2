@@ -176,6 +176,13 @@
       "when": 1774322400000,
       "tag": "0024_merchant_hint_extraction",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1774327800000,
+      "tag": "0025_onboarding_state",
+      "breakpoints": true
     }
   ]
 }
