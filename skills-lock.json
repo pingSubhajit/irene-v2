@@ -16,6 +16,11 @@
       "sourceType": "github",
       "computedHash": "a4c830509e85557b59339d8d93a4e243e9e59c686e7678854d39230e12c2a6dc"
     },
+    "create-readme": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "d0ece1b2164ce1376e4ab6e98d6ac079df3a2a94f5f02224362b6a1ce2516ae9"
+    },
     "fixing-accessibility": {
       "source": "ibelick/ui-skills",
       "sourceType": "github",
