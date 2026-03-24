@@ -4,7 +4,7 @@
 
 # Irene
 
-Irene is a private, inbox-native personal finance app. It turns finance-related emails and attachments into a structured ledger, recurring obligations, forecasts, review items, and planning guidance.
+Irene is an inbox-native personal finance app. It turns finance-related emails and attachments into a structured ledger, recurring obligations, forecasts, review items, and planning guidance.
 
 ## What Irene does
 
@@ -16,7 +16,7 @@ Irene is a private, inbox-native personal finance app. It turns finance-related 
 - Keeps uncertain cases visible through a review-first workflow
 
 > [!IMPORTANT]
-> Irene is designed as a private authenticated app, not a public multi-tenant SaaS. End-to-end local development needs Postgres, Redis, Google OAuth, object storage, and AI credentials.
+> End-to-end local development needs Postgres, Redis, Google OAuth, object storage, and AI credentials.
 
 ## Workspace layout
 
@@ -85,9 +85,6 @@ At minimum, configure these groups:
 - Redis: `UPSTASH_REDIS_HOST`, `UPSTASH_REDIS_PORT`, `UPSTASH_REDIS_PASSWORD`
 - Optional but useful: `CURRENCYAPI_API_KEY`, `CRON_SECRET`
 
-> [!NOTE]
-> The runtime config currently expects `LOGO_DOT_DEV_SECRET_KEY` and `NEXT_PUBLIC_LOGO_DOT_DEV_PUBLIC_KEY`, even though they are not listed in `.env.example` yet.
-
 ### 4. Run database migrations
 
 ```bash
@@ -142,7 +139,7 @@ pnpm worker:smoke    # Enqueue a smoke job through the web app
 
 ## Current product surface
 
-The main authenticated app includes:
+The main app includes:
 
 - dashboard
 - activity and ledger views
