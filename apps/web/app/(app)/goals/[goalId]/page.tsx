@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
@@ -8,9 +9,14 @@ import {
   listGoalContributionSnapshotsForGoal,
 } from "@workspace/db"
 
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Goal",
+  description: "Goal detail in Irene.",
+})
 
 type GoalDetailPageProps = {
   params: Promise<{

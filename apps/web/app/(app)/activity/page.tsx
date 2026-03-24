@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import {
   getUserSettings,
   listActivityMerchantsForUser,
@@ -21,10 +22,15 @@ import {
   getUtcEndOfUserDay,
   getUtcStartOfUserDay,
 } from "@/lib/date-format"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 import type { FinancialEventType } from "@workspace/db"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Activity",
+  description: "Activity in Irene.",
+})
 
 type ActivityPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { getMemoryFactById } from "@workspace/db"
@@ -7,9 +8,14 @@ import {
   SettingsSubpageShell,
 } from "@/components/settings-accounts-shared"
 import { SettingsMemoryEditor } from "@/components/settings-memory-editor"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Edit memory",
+  description: "Edit a memory in Irene.",
+})
 
 type MemoryEditPageProps = {
   params: Promise<{ memoryId: string }>

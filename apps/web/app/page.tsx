@@ -3,15 +3,17 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 
 import { SignInButton } from "@/components/sign-in-button"
+import { createPublicMetadata } from "@/lib/metadata"
 import { getServerSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
 
-export const metadata: Metadata = {
-  title: "Irene | Calm money clarity from your inbox",
+export const metadata: Metadata = createPublicMetadata({
+  title: "Irene",
   description:
-    "Irene turns receipts, bank alerts, subscriptions, and obligation emails into one calm ledger with recurring clarity and evidence-backed review.",
-}
+    "Calm money clarity from your inbox.",
+  path: "/",
+})
 
 const principles = [
   "Receipts, alerts, and reminders resolve into one readable money trail.",

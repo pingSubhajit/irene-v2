@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 
 import {
@@ -8,7 +9,10 @@ import {
 
 import { AppShell } from "@/components/app-shell"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
+import { authenticatedAppMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
+
+export const metadata: Metadata = authenticatedAppMetadata
 
 export default async function AuthenticatedLayout({
   children,

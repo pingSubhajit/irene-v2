@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 
 import {
@@ -8,6 +9,7 @@ import {
 } from "@workspace/db"
 
 import { AppEmptyState } from "@/components/app-empty-state"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 import {
   asSingleValue,
@@ -17,6 +19,10 @@ import {
 } from "./review-view"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Review",
+  description: "Review items in Irene.",
+})
 
 type ReviewPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

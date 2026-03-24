@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 
 import {
@@ -7,8 +8,13 @@ import {
 } from "@workspace/db"
 
 import { requireSession } from "@/lib/session"
+import { createPrivateMetadata } from "@/lib/metadata"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Goals",
+  description: "Goals in Irene.",
+})
 
 type GoalsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

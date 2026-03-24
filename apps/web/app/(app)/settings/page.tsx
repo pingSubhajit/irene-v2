@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { RiArrowRightSLine } from "@remixicon/react"
 import {
@@ -20,9 +21,14 @@ import { SignOutRow } from "@/components/sign-out-row"
 import { TimeZoneRow } from "@/components/time-zone-row"
 import { formatInUserTimeZone } from "@/lib/date-format"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Settings",
+  description: "Settings for Irene.",
+})
 
 type SettingsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

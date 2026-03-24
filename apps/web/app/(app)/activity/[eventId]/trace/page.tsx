@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { RiArrowLeftLine } from "@remixicon/react"
@@ -27,9 +28,14 @@ import {
 import { ModelRunList } from "@/components/model-run-list"
 import { MerchantLogoPicker } from "@/components/merchant-logo-picker"
 import { formatInUserTimeZone } from "@/lib/date-format"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Event trace",
+  description: "Event trace in Irene.",
+})
 
 type EventTracePageProps = {
   params: Promise<{

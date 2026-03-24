@@ -1,11 +1,17 @@
+import type { Metadata } from "next"
 import {
   SettingsFootnote,
   SettingsSubpageShell,
 } from "@/components/settings-accounts-shared"
 import { SettingsMemoryEditor } from "@/components/settings-memory-editor"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "New memory",
+  description: "Add a memory in Irene.",
+})
 
 export default async function MemoryNewPage() {
   await requireSession()

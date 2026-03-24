@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import {
   getUserSettings,
   listCashPaymentInstrumentsForUser,
@@ -10,9 +11,14 @@ import {
   SettingsSubpageShell,
 } from "@/components/settings-accounts-shared"
 import { SettingsCashAccountActions } from "@/components/settings-cash-account-actions"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Cash accounts",
+  description: "Cash accounts in Irene.",
+})
 
 type CashPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

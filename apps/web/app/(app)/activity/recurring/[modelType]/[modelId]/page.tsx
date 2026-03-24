@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { RiArrowLeftLine } from "@remixicon/react"
@@ -12,9 +13,14 @@ import {
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Recurring model",
+  description: "Recurring model detail in Irene.",
+})
 
 type RecurringDetailPageProps = {
   params: Promise<{

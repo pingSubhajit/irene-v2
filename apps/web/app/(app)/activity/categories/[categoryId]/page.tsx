@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { RiArrowLeftLine } from "@remixicon/react"
@@ -16,15 +17,48 @@ import { HomeCategoryStrip } from "@/components/home-category-strip"
 import { TransactionCard } from "@/components/transaction-card"
 import { summarizeCategoryActivity } from "@/lib/category-summary"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
-import { requireSession } from "@/lib/session"
+import { createPrivateMetadata } from "@/lib/metadata"
+import { getServerSession, requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+const fallbackMetadata = createPrivateMetadata({
+  title: "Category",
+  description: "Category detail in Irene.",
+})
 
 type CategoryDetailPageProps = {
   params: Promise<{
     categoryId: string
   }>
   searchParams?: Promise<Record<string, string | string[] | undefined>>
+}
+
+export async function generateMetadata({
+  params,
+}: CategoryDetailPageProps): Promise<Metadata> {
+  const session = await getServerSession()
+
+  if (!session) {
+    return fallbackMetadata
+  }
+
+  const { categoryId } = await params
+  const settings = await getUserSettings(session.user.id)
+  const detail = await getCategoryDetailForUser({
+    userId: session.user.id,
+    categoryId,
+    reportingCurrency: settings.reportingCurrency,
+    timeZone: settings.timeZone,
+  })
+
+  if (!detail) {
+    return fallbackMetadata
+  }
+
+  return createPrivateMetadata({
+    title: detail.category.name,
+    description: `${detail.category.name} activity in Irene.`,
+  })
 }
 
 function asSingleValue(value: string | string[] | undefined) {

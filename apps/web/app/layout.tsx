@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Manrope } from "next/font/google"
 import localFont from "next/font/local"
 
@@ -5,6 +6,7 @@ import "@workspace/ui/globals.css"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { ThemeProvider } from "@/components/theme-provider"
+import { rootMetadata } from "@/lib/metadata"
 
 const fontSans = Manrope({
   subsets: ["latin"],
@@ -16,6 +18,8 @@ const fontDisplay = localFont({
   display: "swap",
   variable: "--font-display",
 })
+
+export const metadata: Metadata = rootMetadata
 
 export default function RootLayout({
   children,

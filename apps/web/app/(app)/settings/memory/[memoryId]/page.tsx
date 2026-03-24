@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { RiPushpin2Fill } from "@remixicon/react"
@@ -17,9 +18,14 @@ import {
   getMemoryStatusLabel,
   isExpiredMemoryFact,
 } from "@/components/settings-memory-shared"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Memory detail",
+  description: "Memory detail in Irene.",
+})
 
 type MemoryDetailPageProps = {
   params: Promise<{ memoryId: string }>

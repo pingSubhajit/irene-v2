@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import {
   countFinancialEventsForUser,
   countExtractedSignalsForUser,
@@ -21,9 +22,14 @@ import {
   RECONCILIATION_QUEUE_NAME,
 } from "@workspace/workflows"
 
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Ops extraction",
+  description: "Extraction diagnostics in Irene.",
+})
 
 export default async function ExtractionOpsPage() {
   const session = await requireSession()

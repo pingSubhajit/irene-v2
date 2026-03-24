@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import {
   countOpenReviewQueueItemsForUser,
   countRecurringObligationsByType,
@@ -28,11 +29,16 @@ import {
 } from "@/lib/date-format"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { resolveAdviceContextHref } from "@/lib/advice"
 import { requireSession } from "@/lib/session"
 import Link from "next/link"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Dashboard",
+  description: "Your Irene money overview.",
+})
 
 function startOfCurrentMonth() {
   const now = new Date()

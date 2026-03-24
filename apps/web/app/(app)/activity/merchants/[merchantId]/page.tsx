@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { RiArrowLeftLine } from "@remixicon/react"
@@ -8,15 +9,48 @@ import { AppEmptyState } from "@/components/app-empty-state"
 import { MerchantTopCategoriesChart } from "@/components/merchant-top-categories-chart"
 import { TransactionCard } from "@/components/transaction-card"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
-import { requireSession } from "@/lib/session"
+import { createPrivateMetadata } from "@/lib/metadata"
+import { getServerSession, requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+const fallbackMetadata = createPrivateMetadata({
+  title: "Merchant",
+  description: "Merchant detail in Irene.",
+})
 
 type MerchantDetailPageProps = {
   params: Promise<{
     merchantId: string
   }>
   searchParams?: Promise<Record<string, string | string[] | undefined>>
+}
+
+export async function generateMetadata({
+  params,
+}: MerchantDetailPageProps): Promise<Metadata> {
+  const session = await getServerSession()
+
+  if (!session) {
+    return fallbackMetadata
+  }
+
+  const { merchantId } = await params
+  const settings = await getUserSettings(session.user.id)
+  const detail = await getMerchantDetailForUser({
+    userId: session.user.id,
+    merchantId,
+    reportingCurrency: settings.reportingCurrency,
+    timeZone: settings.timeZone,
+  })
+
+  if (!detail) {
+    return fallbackMetadata
+  }
+
+  return createPrivateMetadata({
+    title: detail.merchant.displayName,
+    description: `${detail.merchant.displayName} activity in Irene.`,
+  })
 }
 
 type MerchantAccent = {

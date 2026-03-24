@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 
 import { getUserSettings, listMemoryFactsForUser } from "@workspace/db"
@@ -14,9 +15,14 @@ import {
   isExpiredMemoryFact,
   MemoryRow,
 } from "@/components/settings-memory-shared"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Memory",
+  description: "Memory in Irene.",
+})
 
 type MemoryPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

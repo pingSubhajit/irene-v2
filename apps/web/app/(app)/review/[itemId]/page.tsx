@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
@@ -11,10 +12,15 @@ import {
 import { Badge } from "@workspace/ui/components/badge"
 
 import { ReviewDecisionCard } from "@/components/review-decision-card"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 import { buildReviewEntry } from "../review-view"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Review item",
+  description: "Review one Irene item.",
+})
 
 type ReviewItemPageProps = {
   params: Promise<{ itemId: string }>

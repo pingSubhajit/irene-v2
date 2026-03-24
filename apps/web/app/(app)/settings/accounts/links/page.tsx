@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { listCashPaymentInstrumentsForUser, listDebitAndUpiPaymentInstrumentsForUser } from "@workspace/db"
 
 import {
@@ -7,9 +8,14 @@ import {
   SettingsSubpageShell,
 } from "@/components/settings-accounts-shared"
 import { SettingsLinkActions } from "@/components/settings-link-actions"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Linked instruments",
+  description: "Linked instruments in Irene.",
+})
 
 type LinksPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

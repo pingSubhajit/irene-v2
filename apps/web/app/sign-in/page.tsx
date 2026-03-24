@@ -1,12 +1,18 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
+import type { Metadata } from "next"
 
 import { getUserSettings } from "@workspace/db"
 
 import { SignInButton } from "@/components/sign-in-button"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { getServerSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Sign in",
+  description: "Private Irene sign-in.",
+})
 
 export default async function SignInPage() {
   const session = await getServerSession()

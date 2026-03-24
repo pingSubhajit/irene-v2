@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import {
   RiArrowLeftLine,
@@ -15,9 +16,14 @@ import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { formatInUserTimeZone } from "@/lib/date-format"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Logs",
+  description: "Diagnostic logs in Irene.",
+})
 
 const outlineButtonClassName =
   "neo-btn-3d neo-btn-3d-dark inline-flex h-12 shrink-0 items-center justify-center gap-2 border border-white/12 bg-[rgba(24,24,26,0.92)] px-5 text-sm font-semibold text-[var(--neo-cream)] transition-all hover:bg-[rgba(32,32,36,0.98)]"

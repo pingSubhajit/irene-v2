@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { RiRefreshLine } from "@remixicon/react"
 import { getLatestJobRunForUser, getUserSettings, listAdviceItemsForUser } from "@workspace/db"
 import {
@@ -11,9 +12,14 @@ import { AdviceList } from "@/components/advice-rail"
 import { AppEmptyState } from "@/components/app-empty-state"
 import { resolveAdviceContextHref } from "@/lib/advice"
 import { formatInUserTimeZone } from "@/lib/date-format"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Advice",
+  description: "Advice in Irene.",
+})
 
 type AdvicePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

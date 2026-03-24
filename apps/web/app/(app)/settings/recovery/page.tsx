@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { RiArrowLeftLine, RiRefreshLine } from "@remixicon/react"
 import {
@@ -21,9 +22,14 @@ import { Button } from "@workspace/ui/components/button"
 
 import { AppEmptyState } from "@/components/app-empty-state"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Recovery",
+  description: "Recovery tools in Irene.",
+})
 
 type RecoveryPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

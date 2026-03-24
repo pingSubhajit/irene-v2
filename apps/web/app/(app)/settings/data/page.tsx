@@ -1,10 +1,16 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { RiArrowLeftLine, RiShieldCheckLine } from "@remixicon/react"
 
 import { DataManagementActions } from "@/components/data-management-actions"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Data",
+  description: "Data controls in Irene.",
+})
 
 export default async function DataManagementPage() {
   await requireSession()

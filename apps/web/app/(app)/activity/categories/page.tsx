@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { RiArrowLeftLine } from "@remixicon/react"
 import {
@@ -10,9 +11,14 @@ import { AppEmptyState } from "@/components/app-empty-state"
 import { CategoryExplorerTile } from "@/components/category-explorer-tile"
 import { summarizeCategoryActivity } from "@/lib/category-summary"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Categories",
+  description: "Category activity in Irene.",
+})
 
 function startOfCurrentMonth() {
   const now = new Date()

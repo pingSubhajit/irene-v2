@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import {
   getLatestForecastRunWithSnapshots,
   getUserSettings,
@@ -15,9 +16,14 @@ import {
   SettingsSubpageShell,
 } from "@/components/settings-accounts-shared"
 import { SettingsBaselineActions } from "@/components/settings-baseline-actions"
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Balance baseline",
+  description: "Balance anchors in Irene.",
+})
 
 type BaselinePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>

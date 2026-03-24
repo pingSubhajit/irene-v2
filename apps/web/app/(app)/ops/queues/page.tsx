@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { listRecentJobRuns } from "@workspace/db"
 import {
   getBackfillImportQueueStats,
@@ -8,9 +9,14 @@ import {
   getSystemQueueStats,
 } from "@workspace/workflows"
 
+import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = createPrivateMetadata({
+  title: "Ops queues",
+  description: "Queue status in Irene.",
+})
 
 export default async function QueueOpsPage() {
   await requireSession()
