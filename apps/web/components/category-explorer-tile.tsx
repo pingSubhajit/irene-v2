@@ -153,7 +153,7 @@ export function CategoryExplorerTile({
           className={cn(
             "font-medium leading-tight tracking-[-0.02em] text-white text-center",
             variant === "rail"
-              ? "min-h-[2.15rem] text-[0.8rem] leading-[1.15] text-white/94 [text-wrap:balance]"
+              ? "text-[0.8rem] leading-[1.15] text-white/94 [text-wrap:balance]"
               : "text-[1.04rem]",
           )}
         >
