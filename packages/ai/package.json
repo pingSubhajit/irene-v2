@@ -13,16 +13,16 @@
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.66",
+    "@types/node": "^25.1.0",
     "@workspace/config": "workspace:*",
     "@workspace/observability": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
     "ai": "^6.0.116",
+    "typescript": "^5.9.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^25.1.0",
     "@workspace/eslint-config": "workspace:*",
-    "@workspace/typescript-config": "workspace:*",
-    "eslint": "^9.39.2",
-    "typescript": "^5.9.3"
+    "eslint": "^9.39.2"
   }
 }

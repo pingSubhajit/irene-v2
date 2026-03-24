@@ -12,17 +12,17 @@
     "./schema": "./src/schema.ts"
   },
   "dependencies": {
+    "@types/node": "^25.1.0",
     "@types/pg": "^8.18.0",
     "@workspace/config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
     "drizzle-orm": "^0.45.1",
     "pg": "^8.20.0",
+    "typescript": "^5.9.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^25.1.0",
     "@workspace/eslint-config": "workspace:*",
-    "@workspace/typescript-config": "workspace:*",
-    "eslint": "^9.39.2",
-    "typescript": "^5.9.3"
+    "eslint": "^9.39.2"
   }
 }

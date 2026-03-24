@@ -11,16 +11,16 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@types/node": "^25.1.0",
     "@workspace/config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
     "bullmq": "^5.71.0",
     "ioredis": "^5.9.3",
+    "typescript": "^5.9.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^25.1.0",
     "@workspace/eslint-config": "workspace:*",
-    "@workspace/typescript-config": "workspace:*",
-    "eslint": "^9.39.2",
-    "typescript": "^5.9.3"
+    "eslint": "^9.39.2"
   }
 }

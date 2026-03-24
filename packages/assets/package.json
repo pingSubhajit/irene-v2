@@ -11,11 +11,13 @@
     ".": "./src/index.ts",
     "./images/*": "./images/*"
   },
-  "devDependencies": {
+  "dependencies": {
     "@types/node": "^25.1.0",
-    "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
-    "eslint": "^9.39.2",
     "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@workspace/eslint-config": "workspace:*",
+    "eslint": "^9.39.2"
   }
 }

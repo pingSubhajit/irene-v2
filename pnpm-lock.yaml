@@ -199,111 +199,112 @@ importers:
       '@ai-sdk/gateway':
         specifier: ^3.0.66
         version: 3.0.66(zod@4.3.6)
+      '@types/node':
+        specifier: ^25.1.0
+        version: 25.2.3
       '@workspace/config':
         specifier: workspace:*
         version: link:../config
       '@workspace/observability':
         specifier: workspace:*
         version: link:../observability
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
       ai:
         specifier: ^6.0.116
         version: 6.0.116(zod@4.3.6)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       zod:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
-      '@types/node':
-        specifier: ^25.1.0
-        version: 25.2.3
       '@workspace/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@workspace/typescript-config':
-        specifier: workspace:*
-        version: link:../typescript-config
       eslint:
         specifier: ^9.39.2
         version: 9.39.2(jiti@2.6.1)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/assets:
-    devDependencies:
+    dependencies:
       '@types/node':
         specifier: ^25.1.0
         version: 25.2.3
-      '@workspace/eslint-config':
-        specifier: workspace:*
-        version: link:../eslint-config
       '@workspace/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
-      eslint:
-        specifier: ^9.39.2
-        version: 9.39.2(jiti@2.6.1)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+    devDependencies:
+      '@workspace/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.2(jiti@2.6.1)
 
   packages/config:
     dependencies:
+      '@types/node':
+        specifier: ^25.1.0
+        version: 25.2.3
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
       dotenv:
         specifier: ^17.3.1
         version: 17.3.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       zod:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
-      '@types/node':
-        specifier: ^25.1.0
-        version: 25.2.3
       '@workspace/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@workspace/typescript-config':
-        specifier: workspace:*
-        version: link:../typescript-config
       eslint:
         specifier: ^9.39.2
         version: 9.39.2(jiti@2.6.1)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/db:
     dependencies:
+      '@types/node':
+        specifier: ^25.1.0
+        version: 25.2.3
       '@types/pg':
         specifier: ^8.18.0
         version: 8.18.0
       '@workspace/config':
         specifier: workspace:*
         version: link:../config
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.1(@opentelemetry/api@1.9.0)(@types/pg@8.18.0)(kysely@0.28.12)(pg@8.20.0)
       pg:
         specifier: ^8.20.0
         version: 8.20.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       zod:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
-      '@types/node':
-        specifier: ^25.1.0
-        version: 25.2.3
       '@workspace/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@workspace/typescript-config':
-        specifier: workspace:*
-        version: link:../typescript-config
       eslint:
         specifier: ^9.39.2
         version: 9.39.2(jiti@2.6.1)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/eslint-config:
     devDependencies:
@@ -352,59 +353,59 @@ importers:
       '@google-cloud/storage':
         specifier: ^7.19.0
         version: 7.19.0
+      '@types/node':
+        specifier: ^25.1.0
+        version: 25.2.3
       '@workspace/config':
         specifier: workspace:*
         version: link:../config
       '@workspace/observability':
         specifier: workspace:*
         version: link:../observability
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
       googleapis:
         specifier: ^150.0.1
         version: 150.0.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       zod:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
-      '@types/node':
-        specifier: ^25.1.0
-        version: 25.2.3
       '@workspace/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@workspace/typescript-config':
-        specifier: workspace:*
-        version: link:../typescript-config
       eslint:
         specifier: ^9.39.2
         version: 9.39.2(jiti@2.6.1)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/observability:
     dependencies:
+      '@types/node':
+        specifier: ^25.1.0
+        version: 25.2.3
       '@workspace/config':
         specifier: workspace:*
         version: link:../config
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       zod:
         specifier: ^4
         version: 4.3.6
     devDependencies:
-      '@types/node':
-        specifier: ^25.1.0
-        version: 25.2.3
       '@workspace/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@workspace/typescript-config':
-        specifier: workspace:*
-        version: link:../typescript-config
       eslint:
         specifier: ^9.39.2
         version: 9.39.2(jiti@2.6.1)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/typescript-config: {}
 
@@ -428,6 +429,18 @@ importers:
       '@tailwindcss/postcss':
         specifier: ^4.1.18
         version: 4.1.18
+      '@types/node':
+        specifier: ^25.1.0
+        version: 25.2.3
+      '@types/react':
+        specifier: ^19.2.10
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.14)
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -458,6 +471,9 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -465,58 +481,43 @@ importers:
       '@turbo/gen':
         specifier: ^2.8.1
         version: 2.8.7(@types/node@25.2.3)
-      '@types/node':
-        specifier: ^25.1.0
-        version: 25.2.3
-      '@types/react':
-        specifier: ^19.2.10
-        version: 19.2.14
-      '@types/react-dom':
-        specifier: ^19.2.3
-        version: 19.2.3(@types/react@19.2.14)
       '@workspace/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@workspace/typescript-config':
-        specifier: workspace:*
-        version: link:../typescript-config
       eslint:
         specifier: ^9.39.2
         version: 9.39.2(jiti@2.6.1)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/workflows:
     dependencies:
+      '@types/node':
+        specifier: ^25.1.0
+        version: 25.2.3
       '@workspace/config':
         specifier: workspace:*
         version: link:../config
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
       bullmq:
         specifier: ^5.71.0
         version: 5.71.0
       ioredis:
         specifier: ^5.9.3
         version: 5.10.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       zod:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
-      '@types/node':
-        specifier: ^25.1.0
-        version: 25.2.3
       '@workspace/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@workspace/typescript-config':
-        specifier: workspace:*
-        version: link:../typescript-config
       eslint:
         specifier: ^9.39.2
         version: 9.39.2(jiti@2.6.1)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
 packages:
 
