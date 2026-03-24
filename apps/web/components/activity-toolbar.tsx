@@ -670,7 +670,9 @@ export function ActivityToolbar({
                     <Input
                       type="date"
                       value={draftDateFrom}
-                      onChange={(event) => setDraftDateFrom(event.target.value)}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        setDraftDateFrom(event.target.value)
+                      }
                       className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
                     />
                   </label>
@@ -679,7 +681,9 @@ export function ActivityToolbar({
                     <Input
                       type="date"
                       value={draftDateTo}
-                      onChange={(event) => setDraftDateTo(event.target.value)}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        setDraftDateTo(event.target.value)
+                      }
                       className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
                     />
                   </label>
@@ -807,7 +811,9 @@ export function ActivityToolbar({
                       min="0"
                       step="0.01"
                       value={draftAmountMin}
-                      onChange={(event) => setDraftAmountMin(event.target.value)}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        setDraftAmountMin(event.target.value)
+                      }
                       placeholder="0.00"
                       className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
                     />
@@ -819,7 +825,9 @@ export function ActivityToolbar({
                       min="0"
                       step="0.01"
                       value={draftAmountMax}
-                      onChange={(event) => setDraftAmountMax(event.target.value)}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        setDraftAmountMax(event.target.value)
+                      }
                       placeholder="0.00"
                       className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
                     />
@@ -1141,7 +1149,9 @@ function SearchableOptionList({
         <Input
           type="search"
           value={value}
-          onChange={(event) => onValueChange(event.target.value)}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            onValueChange(event.target.value)
+          }
           placeholder={placeholder}
           className="h-11 border-white/[0.06] bg-white/[0.03] pl-11 text-sm placeholder:text-white/24"
         />
