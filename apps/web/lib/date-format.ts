@@ -1,6 +1,14 @@
 const DEFAULT_LOCALE = "en-IN"
 const DEFAULT_TIME_ZONE = "Asia/Kolkata"
 
+export type ResetBackfillPreset =
+  | "last_24_hours"
+  | "last_3_days"
+  | "last_week"
+  | "last_2_weeks"
+  | "last_month"
+  | "last_quarter"
+
 export function resolveUserTimeZone(timeZone: string | null | undefined) {
   return timeZone || DEFAULT_TIME_ZONE
 }
@@ -248,4 +256,25 @@ export function getDateRangeForPreset(
       timeZone,
     ),
   }
+}
+
+const RESET_BACKFILL_PRESET_DURATIONS_MS: Record<ResetBackfillPreset, number> = {
+  last_24_hours: 24 * 60 * 60 * 1000,
+  last_3_days: 3 * 24 * 60 * 60 * 1000,
+  last_week: 7 * 24 * 60 * 60 * 1000,
+  last_2_weeks: 14 * 24 * 60 * 60 * 1000,
+  last_month: 30 * 24 * 60 * 60 * 1000,
+  last_quarter: 90 * 24 * 60 * 60 * 1000,
+}
+
+export function getDateRangeForResetBackfillPreset(
+  preset: ResetBackfillPreset,
+  _timeZone: string | null | undefined,
+  now = new Date(),
+) {
+  const durationMs = RESET_BACKFILL_PRESET_DURATIONS_MS[preset]
+  const dateTo = new Date(now)
+  const dateFrom = new Date(now.getTime() - durationMs)
+
+  return { dateFrom, dateTo }
 }

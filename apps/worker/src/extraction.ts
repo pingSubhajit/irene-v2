@@ -10,8 +10,6 @@ import {
   type RawDocumentSelect,
 } from "@workspace/db"
 
-import { deriveMerchantDisplayName } from "./merchant-name"
-
 export type NormalizedExtractionDocument = {
   rawDocumentId: string
   sender: string | null
@@ -184,88 +182,6 @@ function inferPaymentInstrumentHint(text: string) {
   return cardMatch?.[1] ?? null
 }
 
-function isLikelyNonMerchantDescriptor(input: string | null | undefined) {
-  const lowered = input?.toLowerCase().trim() ?? ""
-
-  if (!lowered) {
-    return true
-  }
-
-  return (
-    /\b(available balance|available credit limit|outstanding amount|customer care|please visit|click here|mycards|https?:\/\/)\b/.test(
-      lowered,
-    ) ||
-    /^(?:to )?(?:know|view|visit|click|contact)\b/.test(lowered)
-  )
-}
-
-function getMerchantDescriptor(text: string) {
-  const patterns = [
-    /\b(?:debited|credited|spent|used(?:\s+for\s+a\s+transaction)?)\b[\s\S]{0,140}?\bat\s+([A-Z0-9*][A-Z0-9* ./_-]{2,80}?)(?=\s+\bon\b|\s+\bat\b|\s+\bfrom\b|[.,;]|$)/i,
-    /\binfo:\s*([A-Z0-9*][A-Z0-9* ./_-]{2,80}?)(?=\s+\bon\b|\s+\bat\b|[.,;]|$)/i,
-    /\bmerchant[:\s-]+([A-Z0-9*][A-Z0-9* ./_-]{2,80}?)(?=\s+\bon\b|\s+\bat\b|[.,;]|$)/i,
-    /\b(?:at|to)\s+([A-Z0-9*][A-Z0-9* ./_-]{2,80}?)(?=\s+\bon\b|\s+\bat\b|\s+\bfor\b|[.,;]|$)/i,
-  ]
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern)
-    if (match?.[1]) {
-      const descriptor = normalizeWhitespace(
-        match[1].replace(/\s{2,}/g, " "),
-      )
-
-      if (descriptor && !isLikelyNonMerchantDescriptor(descriptor)) {
-        return descriptor
-      }
-    }
-  }
-
-  return null
-}
-
-function parseMerchantAndProcessor(text: string) {
-  const descriptor = getMerchantDescriptor(text)
-  if (!descriptor) {
-    return {
-      merchantDescriptorRaw: null,
-      merchantNameCandidate: null,
-      processorNameCandidate: null,
-    }
-  }
-
-  const normalized = descriptor.toUpperCase()
-  const processorMap = [
-    { prefix: "PAYPAL", display: "PayPal" },
-    { prefix: "PAYU", display: "PayU" },
-    { prefix: "PYU", display: "PayU" },
-    { prefix: "RAZORPAY", display: "Razorpay" },
-    { prefix: "GOOGLE", display: "Google" },
-    { prefix: "AMAZON PAY", display: "Amazon Pay" },
-    { prefix: "APPLE.COM/BILL", display: "Apple" },
-    { prefix: "APPLE", display: "Apple" },
-  ]
-
-  for (const candidate of processorMap) {
-    if (normalized.startsWith(candidate.prefix)) {
-      const rest = deriveMerchantDisplayName(
-        normalized.slice(candidate.prefix.length).replace(/^[:* -]+/, ""),
-      )
-
-      return {
-        merchantDescriptorRaw: descriptor,
-        merchantNameCandidate: rest ?? candidate.display,
-        processorNameCandidate: candidate.display,
-      }
-    }
-  }
-
-  return {
-    merchantDescriptorRaw: descriptor,
-    merchantNameCandidate: deriveMerchantDisplayName(descriptor),
-    processorNameCandidate: null,
-  }
-}
-
 export async function buildNormalizedExtractionDocument(rawDocument: RawDocumentSelect) {
   const attachments = await listAttachmentsForRawDocument(rawDocument.id)
   let bodyText = normalizeWhitespace(rawDocument.bodyText)
@@ -355,7 +271,6 @@ export function runDeterministicExtraction(
   const amount = parseCurrencyAndAmount(combined)
   const senderName = extractSenderName(document.sender)
   const paymentInstrumentHint = inferPaymentInstrumentHint(combined)
-  const roleHints = parseMerchantAndProcessor(combined)
   const eventDate = document.messageTimestamp.slice(0, 10)
   const hasParsedAmount =
     typeof amount.amountMinor === "number" && Number.isFinite(amount.amountMinor)
@@ -386,12 +301,12 @@ export function runDeterministicExtraction(
           backingAccountNameHint: null,
           accountRelationshipHint: null,
           balanceEvidenceStrength: null,
-          merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
-          merchantNameCandidate: roleHints.merchantNameCandidate,
-          processorNameCandidate: roleHints.processorNameCandidate,
+          merchantDescriptorRaw: null,
+          merchantNameCandidate: null,
+          processorNameCandidate: null,
           channelHint: "bank_transfer",
-          merchantRaw: senderName,
-          merchantHint: senderName,
+          merchantRaw: null,
+          merchantHint: null,
           paymentInstrumentHint,
           categoryHint: "income",
           isRecurringHint: true,
@@ -426,12 +341,12 @@ export function runDeterministicExtraction(
           backingAccountNameHint: null,
           accountRelationshipHint: null,
           balanceEvidenceStrength: null,
-          merchantDescriptorRaw: roleHints.merchantDescriptorRaw,
-          merchantNameCandidate: roleHints.merchantNameCandidate,
-          processorNameCandidate: roleHints.processorNameCandidate,
+          merchantDescriptorRaw: null,
+          merchantNameCandidate: null,
+          processorNameCandidate: null,
           channelHint: "card",
-          merchantRaw: roleHints.merchantDescriptorRaw ?? senderName,
-          merchantHint: roleHints.merchantNameCandidate ?? senderName,
+          merchantRaw: null,
+          merchantHint: null,
           paymentInstrumentHint,
           categoryHint: isIncome ? "income" : null,
           isRecurringHint: false,

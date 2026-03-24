@@ -7,6 +7,7 @@ import {
   aiModels,
   aiPromptVersions,
   classifyFinanceRelevance,
+  extractMerchantHint,
   extractStructuredSignals,
   inferDocumentBalanceContext,
   routeDocumentForExtraction,
@@ -446,6 +447,7 @@ async function enqueueTrackedBackfillPage(input: {
   correlationId: string
   query: string
   windowDays: number
+  windowStartAt?: Date
   pageToken?: string
 }) {
   const jobKey = `${GMAIL_BACKFILL_PAGE_JOB_NAME}:${input.oauthConnectionId}:${input.correlationId}:${input.pageToken ?? "first"}`
@@ -462,6 +464,7 @@ async function enqueueTrackedBackfillPage(input: {
       pageToken: input.pageToken ?? null,
       source: "worker",
       windowDays: input.windowDays,
+      windowStartAt: input.windowStartAt?.toISOString() ?? null,
     },
   })
 
@@ -475,6 +478,7 @@ async function enqueueTrackedBackfillPage(input: {
     cursorId: input.cursorId,
     source: "worker",
     windowDays: input.windowDays,
+    windowStartAt: input.windowStartAt?.toISOString(),
     pageToken: input.pageToken,
     query: input.query,
   })
@@ -1372,6 +1376,26 @@ async function persistExtractedSignals(input: {
   )
 }
 
+function mergeMerchantHintIntoSignals(input: {
+  signals: WorkerExtractedSignal[]
+  merchantHint: Awaited<ReturnType<typeof extractMerchantHint>>["merchantHint"]
+}) {
+  return input.signals.map((signal) => ({
+    ...signal,
+    merchantDescriptorRaw: input.merchantHint.merchantDescriptorRaw ?? null,
+    merchantNameCandidate: input.merchantHint.merchantNameCandidate ?? null,
+    merchantHint: input.merchantHint.merchantHint ?? null,
+    merchantRaw: input.merchantHint.merchantRaw ?? null,
+    processorNameCandidate: input.merchantHint.processorNameCandidate ?? null,
+    confidence: Math.max(signal.confidence, input.merchantHint.confidence ?? 0),
+    evidenceSnippets:
+      input.merchantHint.evidenceSnippets.length > 0
+        ? input.merchantHint.evidenceSnippets
+        : signal.evidenceSnippets,
+    explanation: input.merchantHint.explanation || signal.explanation,
+  }))
+}
+
 async function processCandidateMessages(input: {
   job: Job
   userId: string
@@ -1531,7 +1555,12 @@ async function handleGmailBackfillStart(job: Job) {
     backfillCompletedAt: null,
   })
 
-  const query = buildFinanceSearchQuery(payload.windowDays)
+  const query = payload.windowStartAt
+    ? buildFinanceSearchQuerySince({
+        since: new Date(payload.windowStartAt),
+        overlapHours: 0,
+      })
+    : buildFinanceSearchQuery(payload.windowDays)
 
   await enqueueTrackedBackfillPage({
     userId: payload.userId,
@@ -1540,6 +1569,7 @@ async function handleGmailBackfillStart(job: Job) {
     correlationId: payload.correlationId,
     query,
     windowDays: payload.windowDays,
+    windowStartAt: payload.windowStartAt ? new Date(payload.windowStartAt) : undefined,
   })
 
   await markJobSucceeded(job, payload, {
@@ -1607,6 +1637,7 @@ async function handleGmailBackfillPage(job: Job) {
       correlationId: payload.correlationId,
       query: payload.query,
       windowDays: payload.windowDays,
+      windowStartAt: payload.windowStartAt ? new Date(payload.windowStartAt) : undefined,
       pageToken: page.nextPageToken,
     })
   }
@@ -1997,40 +2028,83 @@ async function handleDocumentNormalize(job: Job) {
   const deterministic = runDeterministicExtraction(normalizedDocument)
 
   if (deterministic) {
+    const merchantHintModelRun = await createModelRun({
+      userId: payload.userId,
+      rawDocumentId: rawDocument.id,
+      taskType: "merchant_hint_extraction",
+      provider: "ai-gateway",
+      modelName: aiModels.financeMerchantHintExtractor,
+      promptVersion: aiPromptVersions.financeMerchantHintExtractor,
+      status: "running",
+    })
     const attachmentIds = normalizedDocument.attachmentTexts.map(
       (attachment) => attachment.attachmentId,
     )
-    const signals = await persistExtractedSignals({
-      userId: payload.userId,
-      rawDocumentId: rawDocument.id,
-      source: "deterministic",
-      parserNameOrPrompt: deterministic.parserName,
-      routeLabel: null,
-      routeConfidence: null,
-      routeReasons: [],
-      attachmentIds,
-      signals: deterministic.signals,
-    })
 
-    await enqueueTrackedDocumentInferBalance({
-      userId: payload.userId,
-      rawDocumentId: rawDocument.id,
-      correlationId: payload.correlationId,
-      extractionSource: "deterministic",
-      extractionJobRunId: payload.jobRunId,
-    })
+    try {
+      const merchantHint = await extractMerchantHint({
+        normalizedDocument,
+      })
 
-    await markJobSucceeded(job, payload, {
-      extractionSource: "deterministic",
-      signalCount: signals.length,
-      parserName: deterministic.parserName,
-      rawDocumentId: rawDocument.id,
-      attachmentIds,
-    })
+      await updateModelRun(merchantHintModelRun.id, {
+        status: "succeeded",
+        provider: merchantHint.metadata.provider,
+        modelName: merchantHint.metadata.modelName,
+        promptVersion: merchantHint.metadata.promptVersion,
+        inputTokens: merchantHint.metadata.inputTokens,
+        outputTokens: merchantHint.metadata.outputTokens,
+        latencyMs: merchantHint.metadata.latencyMs,
+        requestId: merchantHint.metadata.requestId,
+        resultJson: {
+          merchantHint: merchantHint.merchantHint,
+          recovery: merchantHint.recovery,
+        },
+      })
 
-    return {
-      extractionSource: "deterministic",
-      signalCount: signals.length,
+      const signals = await persistExtractedSignals({
+        userId: payload.userId,
+        rawDocumentId: rawDocument.id,
+        modelRunId: merchantHintModelRun.id,
+        source: "deterministic",
+        parserNameOrPrompt: deterministic.parserName,
+        routeLabel: null,
+        routeConfidence: null,
+        routeReasons: [],
+        attachmentIds,
+        signals: mergeMerchantHintIntoSignals({
+          signals: deterministic.signals,
+          merchantHint: merchantHint.merchantHint,
+        }),
+      })
+
+      await enqueueTrackedDocumentInferBalance({
+        userId: payload.userId,
+        rawDocumentId: rawDocument.id,
+        correlationId: payload.correlationId,
+        extractionSource: "deterministic",
+        extractionJobRunId: payload.jobRunId,
+      })
+
+      await markJobSucceeded(job, payload, {
+        extractionSource: "deterministic",
+        signalCount: signals.length,
+        parserName: deterministic.parserName,
+        rawDocumentId: rawDocument.id,
+        attachmentIds,
+        merchantHintModelRunId: merchantHintModelRun.id,
+      })
+
+      return {
+        extractionSource: "deterministic",
+        signalCount: signals.length,
+      }
+    } catch (error) {
+      await updateModelRun(merchantHintModelRun.id, {
+        status: "failed",
+        errorMessage:
+          error instanceof Error ? error.message : "Unknown merchant hint extraction failure",
+      })
+      throw error
     }
   }
 
@@ -2165,6 +2239,15 @@ async function handleDocumentExtractStructured(job: Job) {
   const attachmentIds = normalizedDocument.attachmentTexts.map(
     (attachment) => attachment.attachmentId,
   )
+  const merchantHintModelRun = await createModelRun({
+    userId: payload.userId,
+    rawDocumentId: rawDocument.id,
+    taskType: "merchant_hint_extraction",
+    provider: "ai-gateway",
+    modelName: aiModels.financeMerchantHintExtractor,
+    promptVersion: aiPromptVersions.financeMerchantHintExtractor,
+    status: "running",
+  })
   const modelRun = await createModelRun({
     userId: payload.userId,
     rawDocumentId: rawDocument.id,
@@ -2181,6 +2264,9 @@ async function handleDocumentExtractStructured(job: Job) {
       routeLabel: payload.routeLabel,
       memorySummary: memory.summaryLines,
     })
+    const merchantHint = await extractMerchantHint({
+      normalizedDocument,
+    })
 
     await updateModelRun(modelRun.id, {
       status: "succeeded",
@@ -2196,10 +2282,25 @@ async function handleDocumentExtractStructured(job: Job) {
         recovery: extracted.recovery,
       },
     })
+    await updateModelRun(merchantHintModelRun.id, {
+      status: "succeeded",
+      provider: merchantHint.metadata.provider,
+      modelName: merchantHint.metadata.modelName,
+      promptVersion: merchantHint.metadata.promptVersion,
+      inputTokens: merchantHint.metadata.inputTokens,
+      outputTokens: merchantHint.metadata.outputTokens,
+      latencyMs: merchantHint.metadata.latencyMs,
+      requestId: merchantHint.metadata.requestId,
+      resultJson: {
+        merchantHint: merchantHint.merchantHint,
+        recovery: merchantHint.recovery,
+      },
+    })
 
     const signalPayload: WorkerExtractedSignal[] =
       extracted.extraction.signals.length > 0
-        ? extracted.extraction.signals.map((signal) => ({
+        ? mergeMerchantHintIntoSignals({
+            signals: extracted.extraction.signals.map((signal) => ({
             signalType: signal.signalType,
             candidateEventType: signal.candidateEventType ?? null,
             amountMinor: signal.amountMinor ?? null,
@@ -2228,7 +2329,9 @@ async function handleDocumentExtractStructured(job: Job) {
             confidence: signal.confidence,
             evidenceSnippets: signal.evidenceSnippets,
             explanation: signal.explanation ?? "Model extracted a structured finance signal.",
-          }))
+          })),
+            merchantHint: merchantHint.merchantHint,
+          })
         : [
             {
               signalType: "generic_finance_signal" as const,
@@ -2236,8 +2339,8 @@ async function handleDocumentExtractStructured(job: Job) {
               amountMinor: null,
               currency: null,
               eventDate: rawDocument.messageTimestamp.toISOString().slice(0, 10),
-              merchantRaw: rawDocument.fromAddress,
-              merchantHint: rawDocument.fromAddress,
+              merchantRaw: null,
+              merchantHint: null,
               issuerNameHint: null,
               instrumentLast4Hint: null,
               availableBalanceMinor: null,
@@ -2262,7 +2365,12 @@ async function handleDocumentExtractStructured(job: Job) {
                 .slice(0, 2),
               explanation: "Model could not produce a typed signal.",
             },
-          ]
+          ].map((signal) =>
+            mergeMerchantHintIntoSignals({
+              signals: [signal],
+              merchantHint: merchantHint.merchantHint,
+            })[0]!,
+          )
 
     const signals = await persistExtractedSignals({
       userId: payload.userId,
@@ -2317,6 +2425,11 @@ async function handleDocumentExtractStructured(job: Job) {
     await updateModelRun(modelRun.id, {
       status: "failed",
       errorMessage: error instanceof Error ? error.message : "Unknown extraction failure",
+    })
+    await updateModelRun(merchantHintModelRun.id, {
+      status: "failed",
+      errorMessage:
+        error instanceof Error ? error.message : "Unknown merchant hint extraction failure",
     })
     throw error
   }

@@ -23,10 +23,12 @@ const gmailBasePayloadSchema = z.object({
 
 export const gmailBackfillStartJobPayloadSchema = gmailBasePayloadSchema.extend({
   windowDays: z.number().int().positive().default(90),
+  windowStartAt: z.string().datetime().optional(),
 })
 
 export const gmailBackfillPageJobPayloadSchema = gmailBasePayloadSchema.extend({
   windowDays: z.number().int().positive().default(90),
+  windowStartAt: z.string().datetime().optional(),
   pageToken: z.string().min(1).optional(),
   query: z.string().min(1),
 })

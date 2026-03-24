@@ -169,6 +169,13 @@
       "when": 1774281296985,
       "tag": "0023_zippy_scarlet_spider",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1774322400000,
+      "tag": "0024_merchant_hint_extraction",
+      "breakpoints": true
     }
   ]
 }

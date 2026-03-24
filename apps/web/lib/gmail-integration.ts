@@ -29,9 +29,15 @@ type TriggerBaseInput = {
   source: "web" | "worker" | "cron"
 }
 
-export async function triggerGmailBackfill(input: TriggerBaseInput) {
+export async function triggerGmailBackfill(
+  input: TriggerBaseInput & {
+    windowDays?: number
+    windowStartAt?: Date | null
+  },
+) {
   const correlationId = createCorrelationId()
-  const jobKey = `${GMAIL_BACKFILL_START_JOB_NAME}:${input.oauthConnectionId}:${GMAIL_BACKFILL_WINDOW_DAYS}:${correlationId}`
+  const windowDays = input.windowDays ?? GMAIL_BACKFILL_WINDOW_DAYS
+  const jobKey = `${GMAIL_BACKFILL_START_JOB_NAME}:${input.oauthConnectionId}:${windowStartAtKey(input.windowStartAt) ?? windowDays}:${correlationId}`
   const jobRun = await ensureJobRun({
     queueName: BACKFILL_IMPORT_QUEUE_NAME,
     jobName: GMAIL_BACKFILL_START_JOB_NAME,
@@ -42,7 +48,8 @@ export async function triggerGmailBackfill(input: TriggerBaseInput) {
       oauthConnectionId: input.oauthConnectionId,
       cursorId: input.cursorId,
       source: input.source,
-      windowDays: GMAIL_BACKFILL_WINDOW_DAYS,
+      windowDays,
+      windowStartAt: input.windowStartAt?.toISOString() ?? null,
     },
   })
 
@@ -55,12 +62,17 @@ export async function triggerGmailBackfill(input: TriggerBaseInput) {
     oauthConnectionId: input.oauthConnectionId,
     cursorId: input.cursorId,
     source: input.source,
-    windowDays: GMAIL_BACKFILL_WINDOW_DAYS,
+    windowDays,
+    windowStartAt: input.windowStartAt?.toISOString() ?? undefined,
   })
 
   return {
     jobRun,
   }
+}
+
+function windowStartAtKey(value: Date | null | undefined) {
+  return value ? value.toISOString().slice(0, 16) : null
 }
 
 export async function triggerGmailIncrementalSync(input: TriggerBaseInput) {

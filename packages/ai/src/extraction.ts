@@ -109,10 +109,22 @@ export const structuredExtractionResultSchema = z.object({
   extractionSummary: z.string().max(280).optional(),
 })
 
+export const merchantHintExtractionResultSchema = z.object({
+  merchantDescriptorRaw: z.string().max(240).nullable().optional(),
+  merchantNameCandidate: z.string().max(240).nullable().optional(),
+  merchantHint: z.string().max(240).nullable().optional(),
+  merchantRaw: z.string().max(240).nullable().optional(),
+  processorNameCandidate: z.string().max(160).nullable().optional(),
+  confidence: z.number().min(0).max(1),
+  evidenceSnippets: z.array(z.string().max(280)).max(4),
+  explanation: z.string().max(240).optional(),
+})
+
 export type DocumentRouteLabel = z.infer<typeof documentRouteLabelSchema>
 export type DocumentRouteResult = z.infer<typeof documentRouteResultSchema>
 export type StructuredExtractionSignal = z.infer<typeof extractedSignalSchema>
 export type StructuredExtractionResult = z.infer<typeof structuredExtractionResultSchema>
+export type MerchantHintExtractionResult = z.infer<typeof merchantHintExtractionResultSchema>
 
 export type NormalizedFinanceDocumentInput = {
   sender: string | null
@@ -811,6 +823,29 @@ function coerceStructuredExtractionResult(
   }
 }
 
+function coerceMerchantHintExtractionResult(input: {
+  raw: unknown
+  normalizedDocument: NormalizedFinanceDocumentInput
+}): MerchantHintExtractionResult {
+  const record =
+    input.raw && typeof input.raw === "object" ? (input.raw as Record<string, unknown>) : {}
+  const evidenceSnippets = normalizeStringArray(record.evidenceSnippets, 4, 280)
+  const fallbackEvidence = getFallbackEvidence(input.normalizedDocument)
+
+  return {
+    merchantDescriptorRaw: normalizeString(record.merchantDescriptorRaw, 240),
+    merchantNameCandidate: normalizeString(record.merchantNameCandidate, 240),
+    merchantHint: normalizeString(record.merchantHint, 240),
+    merchantRaw: normalizeString(record.merchantRaw, 240),
+    processorNameCandidate: normalizeString(record.processorNameCandidate, 160),
+    confidence: clampProbability(record.confidence, 0.2),
+    evidenceSnippets: evidenceSnippets.length > 0 ? evidenceSnippets : fallbackEvidence,
+    explanation:
+      normalizeString(record.explanation, 240) ??
+      "Recovered merchant hint extraction from schema-mismatch model output.",
+  }
+}
+
 function buildBaseContext(input: NormalizedFinanceDocumentInput) {
   const attachmentSection =
     input.attachmentTexts.length > 0
@@ -1047,6 +1082,73 @@ export async function extractStructuredSignals(input: {
 
   return {
     extraction,
+    metadata: result.metadata,
+    recovery: result.recovery,
+  }
+}
+
+export async function extractMerchantHint(input: {
+  normalizedDocument: NormalizedFinanceDocumentInput
+}) {
+  const gateway = getGatewayProvider()
+  const prompt = [
+    "You extract only the merchant identity for a finance email.",
+    "Use only the subject and normalized email body below.",
+    "Return the charged merchant, not the sender, bank, issuer, card provider, or inbox alias.",
+    "If a processor is explicitly present, separate processorNameCandidate from merchantNameCandidate.",
+    "merchantNameCandidate should be the main brand the user paid.",
+    "merchantDescriptorRaw should preserve the most specific raw merchant/descriptor fragment visible in the text.",
+    "merchantHint and merchantRaw should follow the same merchant identity, not the sender identity.",
+    "If the merchant is unclear, return null merchant fields rather than guessing.",
+    "Do not use the sender display name or sender email as merchant evidence unless the body itself clearly makes the sender the merchant.",
+    "",
+    `Subject: ${input.normalizedDocument.subject ?? "unknown"}`,
+    "",
+    "Normalized email body:",
+    truncate(input.normalizedDocument.bodyText, 6000),
+  ].join("\n")
+
+  const result = await generateStructuredObject({
+    model: gateway(aiModels.financeMerchantHintExtractor),
+    schema: merchantHintExtractionResultSchema,
+    prompt,
+    provider: providerName,
+    modelName: aiModels.financeMerchantHintExtractor,
+    promptVersion: aiPromptVersions.financeMerchantHintExtractor,
+    coerce: (raw) =>
+      coerceMerchantHintExtractionResult({
+        raw,
+        normalizedDocument: input.normalizedDocument,
+      }),
+    fallback: () => ({
+      merchantDescriptorRaw: null,
+      merchantNameCandidate: null,
+      merchantHint: null,
+      merchantRaw: null,
+      processorNameCandidate: null,
+      confidence: 0.1,
+      evidenceSnippets: getFallbackEvidence(input.normalizedDocument),
+      explanation: "Merchant hint extraction could not identify a merchant confidently.",
+    }),
+  })
+
+  if (result.recovery.mode === "strict") {
+    logger.info("Extracted merchant hint", {
+      merchantNameCandidate: result.object.merchantNameCandidate,
+      processorNameCandidate: result.object.processorNameCandidate,
+      ...result.metadata,
+    })
+  } else {
+    logger.warn("Recovered merchant hint from degraded model response", {
+      merchantNameCandidate: result.object.merchantNameCandidate,
+      processorNameCandidate: result.object.processorNameCandidate,
+      recoveryMode: result.recovery.mode,
+      ...result.metadata,
+    })
+  }
+
+  return {
+    merchantHint: result.object,
     metadata: result.metadata,
     recovery: result.recovery,
   }

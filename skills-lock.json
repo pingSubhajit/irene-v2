@@ -31,6 +31,11 @@
       "sourceType": "github",
       "computedHash": "f963cad25daccb7f45a90d0a0ab65f329234f0c97d17555ee8bc28c7501fa43b"
     },
+    "tanstack-query-best-practices": {
+      "source": "deckardger/tanstack-agent-skills",
+      "sourceType": "github",
+      "computedHash": "21d2e8b7468a81d772b6527ad8ca178cc2f3f08af777bb9061333013ee88a0c9"
+    },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
