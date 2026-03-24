@@ -1,7 +1,6 @@
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 
-import { isAllowedEmail } from "@workspace/config/server"
 import { upsertUserSettings } from "@workspace/db"
 
 import { auth } from "./auth"
@@ -12,10 +11,6 @@ export async function getServerSession() {
   })
 
   if (!session) {
-    return null
-  }
-
-  if (!isAllowedEmail(session.user.email)) {
     return null
   }
 

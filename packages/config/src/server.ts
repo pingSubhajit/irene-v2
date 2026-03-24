@@ -38,7 +38,6 @@ const authEnvSchema = z.object({
   BETTER_AUTH_URL: z.url(),
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),
-  ALLOWED_EMAILS: z.string().min(1),
 })
 
 const securityEnvSchema = z.object({
@@ -262,20 +261,6 @@ export function getServerEnv(): ServerEnv {
   return serverEnvCache
 }
 
-export function getAllowedEmails() {
-  const env = getAuthEnv()
-
-  return new Set(
-    env.ALLOWED_EMAILS.split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  )
-}
-
-export function isAllowedEmail(email: string) {
-  return getAllowedEmails().has(email.trim().toLowerCase())
-}
-
 export function getEnvSanityChecks() {
   const runtime = getRuntimeEnv()
   const database = getDatabaseEnv()
@@ -308,6 +293,5 @@ export function getEnvSanityChecks() {
     ),
     ai: Boolean(ai.AI_GATEWAY_API_KEY),
     fx: Boolean(fx.CURRENCYAPI_API_KEY),
-    allowlistSize: getAllowedEmails().size,
   }
 }

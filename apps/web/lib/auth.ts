@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { nextCookies } from "better-auth/next-js"
 
-import { getAuthEnv, isAllowedEmail } from "@workspace/config/server"
+import { getAuthEnv } from "@workspace/config/server"
 import { authSchema, db, upsertUserSettings } from "@workspace/db"
 import { createLogger } from "@workspace/observability"
 
@@ -28,17 +28,8 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async (user, context) => {
+        before: async (user) => {
           const normalizedEmail = user.email.toLowerCase()
-
-          if (!isAllowedEmail(normalizedEmail)) {
-            logger.warn("Rejected non-allowlisted sign-in attempt", {
-              email: normalizedEmail,
-              path: context?.path,
-            })
-
-            return false
-          }
 
           return {
             data: {

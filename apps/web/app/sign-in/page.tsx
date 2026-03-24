@@ -1,7 +1,6 @@
+import Link from "next/link"
 import { redirect } from "next/navigation"
 
-import { Badge } from "@workspace/ui/components/badge"
-import { Card } from "@workspace/ui/components/card"
 import { getUserSettings } from "@workspace/db"
 
 import { SignInButton } from "@/components/sign-in-button"
@@ -18,65 +17,44 @@ export default async function SignInPage() {
   }
 
   return (
-    <main className="relative flex min-h-svh items-center justify-center overflow-hidden px-5 py-12 text-white">
-      <div className="relative z-10 grid w-full max-w-5xl gap-6 lg:grid-cols-[0.92fr_1.08fr]">
-        <Card className="p-6 md:p-8">
-          <p className="neo-kicker">Irene</p>
-          <h1 className="mt-4 max-w-[10ch] font-display text-[3.3rem] leading-[0.9] text-white md:text-[4.6rem]">
-            one place
-            <br />
-            for your
-            <br />
-            money trail.
-          </h1>
-          <p className="mt-5 max-w-xl text-sm leading-6 text-white/58">
-            Irene reads your inbox, builds a canonical ledger, and helps you decide
-            what is real, what is recurring, and what needs your attention.
-          </p>
+    <main className="min-h-svh bg-[var(--neo-black)] text-white">
+      <div className="mx-auto flex w-full max-w-4xl flex-col px-5 pb-16 pt-5 md:px-8 md:pb-24 md:pt-6">
+        <header className="flex items-center justify-between gap-4 border-b border-white/8 pb-4">
+          <p className="neo-kicker text-white/66">Irene</p>
+          <Link
+            href="/"
+            className="cursor-pointer text-[0.72rem] font-semibold tracking-[0.22em] text-white/54 uppercase transition hover:text-white"
+          >
+            Back
+          </Link>
+        </header>
 
-          <div className="mt-8 grid gap-3">
-            <FeatureStrip title="Evidence-backed" description="Receipts, alerts, subscriptions, and obligations stay traceable to source." />
-            <FeatureStrip title="Private by design" description="Single-owner access, Gmail-bound identity, and no generic public signup flow." />
-            <FeatureStrip title="Mobile first" description="Built like a finance app, not an internal dashboard." />
-          </div>
-        </Card>
-
-        <Card variant="spotlight" className="p-6 md:p-8">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="neo-kicker text-white/72">Owner access</p>
-              <h2 className="mt-4 font-display text-[2.8rem] leading-[0.92] text-white md:text-[3.6rem]">
-                sign in to
-                <br />
-                continue.
-              </h2>
-            </div>
-            <Badge variant="cream">Private</Badge>
-          </div>
-
-          <div className="mt-8 border border-white/16 bg-black/10 p-5">
-            <p className="neo-kicker text-white/72">Access rule</p>
-            <p className="mt-3 text-sm leading-6 text-white/74">
-              Only allowlisted Google accounts can enter Irene. Irene requests Gmail
-              read access during sign-in so onboarding can start your backfill
-              immediately.
+        <section className="flex min-h-[calc(100svh-8rem)] flex-col justify-center py-12 md:py-16">
+          <div className="max-w-2xl">
+            <p className="text-[0.72rem] font-medium tracking-[0.16em] text-white/42 uppercase">
+              Sign-in
+            </p>
+            <h1 className="mt-3 max-w-[10ch] font-display text-[3rem] leading-[0.94] text-white md:text-[4.8rem]">
+              continue into
+              <br />
+              your money
+              <br />
+              picture.
+            </h1>
+            <p className="mt-6 max-w-[36rem] text-[0.98rem] leading-7 text-white/58 md:text-[1.02rem]">
+              Irene is private by default. Sign in with an allowlisted Google
+              account so the app can read the relevant inbox evidence and start
+              building your ledger immediately.
             </p>
           </div>
 
-          <div className="mt-8">
-            <SignInButton />
+          <div className="mt-10 grid gap-10 border-t border-white/8 pt-6 md:grid-cols-[minmax(0,1fr)_240px] md:items-start">
+            <div className="w-full max-w-sm">
+              <SignInButton />
+            </div>
           </div>
-        </Card>
+        </section>
       </div>
     </main>
-  )
-}
-
-function FeatureStrip(props: { title: string; description: string }) {
-  return (
-    <div className="border border-white/8 bg-black/20 p-4">
-      <p className="neo-kicker">{props.title}</p>
-      <p className="mt-3 text-sm leading-6 text-white/62">{props.description}</p>
-    </div>
   )
 }
