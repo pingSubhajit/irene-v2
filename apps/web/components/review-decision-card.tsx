@@ -30,6 +30,7 @@ type ReviewDecisionCardProps = {
   proposedAmount: string
   matchedIds: string[]
   categories: Array<{ id: string; name: string }>
+  returnPath?: string
 }
 
 export function ReviewDecisionCard({
@@ -48,6 +49,7 @@ export function ReviewDecisionCard({
   proposedAmount,
   matchedIds,
   categories,
+  returnPath = "/review",
 }: ReviewDecisionCardProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const isRecurring =
@@ -64,131 +66,147 @@ export function ReviewDecisionCard({
     isMerchantResolution
 
   return (
-    <>
-      <div className="border-y border-white/[0.06] py-5 first:border-t-0">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="neo-kicker">{itemType}</p>
-            <h2 className="mt-3 font-display text-[2rem] leading-none text-white">{title}</h2>
-            <p className="mt-4 max-w-2xl text-sm leading-6 text-white/64">{explanation}</p>
+    <div className="grid gap-6 lg:sticky lg:top-24">
+      <div className="border-b border-white/[0.06] pb-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-[0.72rem] text-white/34">
+              <span className="uppercase tracking-[0.18em]">{itemType}</span>
+              <span>·</span>
+              <span>{signalType}</span>
+            </div>
+            <h2 className="mt-4 max-w-[16ch] font-display text-[2.4rem] leading-[0.94] text-white md:text-[3.2rem]">
+              {title}
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-white/58">{explanation}</p>
           </div>
           <Badge variant="warning">Needs review</Badge>
         </div>
+      </div>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-3">
-          <ContextBlock title="Raw document" primary={rawDocumentTitle} secondary={rawDocumentSubtitle} />
-          <ContextBlock title="Extracted signal" primary={signalType} secondary={`${candidateEventType} · ${confidenceLabel}`} />
-          <ContextBlock title="Proposal" primary={proposedType} secondary={`${proposedAction} · ${proposedAmount}`} />
-        </div>
+      <div className="grid gap-4 border-y border-white/[0.06] py-4 md:grid-cols-3 md:divide-x md:divide-white/[0.06] md:py-0">
+        <DetailRail
+          eyebrow="Raw document"
+          title={rawDocumentTitle}
+          detail={rawDocumentSubtitle}
+        />
+        <DetailRail
+          eyebrow="Extracted signal"
+          title={signalType}
+          detail={`${candidateEventType} · ${confidenceLabel}`}
+        />
+        <DetailRail
+          eyebrow="Proposed outcome"
+          title={proposedType}
+          detail={`${proposedAction} · ${proposedAmount}`}
+          emphasize
+        />
+      </div>
 
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <form action="/api/review/resolve" method="post">
-            <input type="hidden" name="reviewItemId" value={reviewItemId} />
-            <input type="hidden" name="resolution" value="approve" />
-            <Button variant="secondary">Approve</Button>
-          </form>
-          <Button variant="outline" onClick={() => setAdvancedOpen(true)}>
-            Fix details
-          </Button>
-          <form action="/api/review/resolve" method="post">
-            <input type="hidden" name="reviewItemId" value={reviewItemId} />
-            <input type="hidden" name="resolution" value="ignore" />
-            <Button variant="ghost">Ignore</Button>
-          </form>
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <form action="/api/review/resolve" method="post">
+          <input type="hidden" name="reviewItemId" value={reviewItemId} />
+          <input type="hidden" name="resolution" value="approve" />
+          <input type="hidden" name="returnPath" value={returnPath} />
+          <Button variant="secondary">Approve</Button>
+        </form>
+
+        <Button variant="outline" onClick={() => setAdvancedOpen((open) => !open)}>
+          {advancedOpen ? "Hide fixes" : "Fix details"}
+        </Button>
+
+        <form action="/api/review/resolve" method="post">
+          <input type="hidden" name="reviewItemId" value={reviewItemId} />
+          <input type="hidden" name="resolution" value="ignore" />
+          <input type="hidden" name="returnPath" value={returnPath} />
+          <Button variant="ghost">Ignore</Button>
+        </form>
       </div>
 
       {advancedOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-4 pb-0 pt-10 backdrop-blur-sm md:items-center md:p-6">
-          <div className="w-full max-w-2xl border border-white/10 bg-[rgba(15,15,16,0.98)] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.65)] md:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="neo-kicker">Advanced resolution</p>
-                <h3 className="mt-3 font-display text-[2rem] leading-none text-white">
-                  Refine this event
-                </h3>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setAdvancedOpen(false)}>
-                Close
-              </Button>
-            </div>
+        <form action="/api/review/resolve" method="post" className="grid gap-6">
+          <input type="hidden" name="reviewItemId" value={reviewItemId} />
+          <input type="hidden" name="returnPath" value={returnPath} />
 
-            <form action="/api/review/resolve" method="post" className="mt-6 grid gap-4">
-              <input type="hidden" name="reviewItemId" value={reviewItemId} />
-
+          <div className="border-y border-white/[0.06]">
+            <div className="grid gap-3 py-4 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-4">
+              <p className="text-[0.72rem] font-semibold tracking-[0.18em] text-white/28 uppercase">
+                Resolution
+              </p>
               <div className="grid gap-4 md:grid-cols-2">
-                <label className="grid gap-2 text-sm text-white/72">
-                  <span className="font-medium text-white">Resolution</span>
-                  <Select name="resolution" defaultValue={matchedIds.length > 0 ? "merge" : "approve"}>
+                <Field label="Decision">
+                  <Select
+                    name="resolution"
+                    defaultValue={matchedIds.length > 0 ? "merge" : "approve"}
+                  >
                     <option value="approve">
                       {isInstrumentResolution
                         ? "Approve instrument resolution"
                         : isMerchantResolution
                           ? "Approve merchant resolution"
-                        : isRecurring
-                          ? "Confirm recurring model"
-                          : "Approve proposed event"}
+                          : isRecurring
+                            ? "Confirm recurring model"
+                            : "Approve proposed event"}
                     </option>
                     <option value="merge">
                       {isInstrumentResolution
                         ? "Merge into existing instrument"
                         : isMerchantResolution
                           ? "Merge into existing merchant"
-                        : isRecurring
-                          ? "Merge into existing recurring model"
-                          : "Merge into existing event"}
+                          : isRecurring
+                            ? "Merge into existing recurring model"
+                            : "Merge into existing event"}
                     </option>
                     <option value="ignore">
                       {isInstrumentResolution
                         ? "Ignore instrument observations"
                         : isMerchantResolution
                           ? "Ignore merchant observations"
-                        : isRecurring
-                          ? "Ignore recurring hypothesis"
-                          : "Ignore signal"}
+                          : isRecurring
+                            ? "Ignore recurring hypothesis"
+                            : "Ignore signal"}
                     </option>
                   </Select>
-                </label>
+                </Field>
 
-                <label className="grid gap-2 text-sm text-white/72">
-                  <span className="font-medium text-white">
-                    {isInstrumentResolution
+                <Field
+                  label={
+                    isInstrumentResolution
                       ? "Merge target instrument ID"
                       : isMerchantResolution
                         ? "Merge target merchant ID"
-                      : isRecurring
-                        ? "Merge target recurring model ID"
-                        : "Merge target event ID"}
-                  </span>
+                        : isRecurring
+                          ? "Merge target recurring model ID"
+                          : "Merge target event ID"
+                  }
+                >
                   <Input
                     name={
                       isInstrumentResolution
                         ? "targetPaymentInstrumentId"
                         : isMerchantResolution
                           ? "targetMerchantId"
-                        : isRecurring
-                          ? "targetRecurringModelId"
-                          : "targetEventId"
+                          : isRecurring
+                            ? "targetRecurringModelId"
+                            : "targetEventId"
                     }
                     defaultValue={matchedIds[0] ?? ""}
-                    placeholder={isRecurring ? "Only needed for merge" : "Only needed for merge"}
+                    placeholder="Only needed for merge"
                   />
-                </label>
+                </Field>
 
                 {isMerchantResolution ? (
-                  <label className="grid gap-2 text-sm text-white/72">
-                    <span className="font-medium text-white">Target processor ID</span>
+                  <Field label="Target processor ID">
                     <Input
                       name="targetProcessorId"
                       placeholder="Optional existing processor"
                     />
-                  </label>
+                  </Field>
                 ) : null}
 
-                <label className="grid gap-2 text-sm text-white/72">
-                  <span className="font-medium text-white">
-                    {isInstrumentResolution ? "Override institution" : "Override merchant"}
-                  </span>
+                <Field
+                  label={isInstrumentResolution ? "Override institution" : "Override merchant"}
+                >
                   <Input
                     name={isInstrumentResolution ? "overrideInstitution" : "overrideMerchant"}
                     placeholder={
@@ -197,21 +215,19 @@ export function ReviewDecisionCard({
                         : "Optional merchant override"
                     }
                   />
-                </label>
+                </Field>
 
                 {isMerchantResolution ? (
-                  <label className="grid gap-2 text-sm text-white/72">
-                    <span className="font-medium text-white">Override processor</span>
+                  <Field label="Override processor">
                     <Input
                       name="overrideProcessor"
                       placeholder="Optional processor override"
                     />
-                  </label>
+                  </Field>
                 ) : null}
 
                 {reviewKind === "event" ? (
-                  <label className="grid gap-2 text-sm text-white/72">
-                    <span className="font-medium text-white">Override event type</span>
+                  <Field label="Override event type">
                     <Select name="overrideEventType" defaultValue="">
                       <option value="">Use proposed type</option>
                       <option value="purchase">Purchase</option>
@@ -222,10 +238,9 @@ export function ReviewDecisionCard({
                       <option value="refund">Refund</option>
                       <option value="transfer">Transfer</option>
                     </Select>
-                  </label>
+                  </Field>
                 ) : reviewKind === "payment_instrument_resolution" ? (
-                  <label className="grid gap-2 text-sm text-white/72">
-                    <span className="font-medium text-white">Override instrument type</span>
+                  <Field label="Override instrument type">
                     <Select name="overrideInstrumentType" defaultValue="">
                       <option value="">Use proposed type</option>
                       <option value="credit_card">Credit card</option>
@@ -235,81 +250,105 @@ export function ReviewDecisionCard({
                       <option value="wallet">Wallet</option>
                       <option value="unknown">Unknown</option>
                     </Select>
-                  </label>
-                ) : isMerchantResolution ? (
-                  <div className="hidden md:block" />
+                  </Field>
                 ) : reviewKind === "recurring_obligation" || reviewKind === "emi_plan" ? (
-                  <label className="grid gap-2 text-sm text-white/72">
-                    <span className="font-medium text-white">Override recurring type</span>
+                  <Field label="Override recurring type">
                     <Select name="overrideRecurringType" defaultValue="">
                       <option value="">Use proposed type</option>
                       <option value="subscription">Subscription</option>
                       <option value="bill">Bill</option>
                       <option value="emi">EMI</option>
                     </Select>
-                  </label>
-                ) : (
-                  <div className="hidden md:block" />
-                )}
+                  </Field>
+                ) : null}
               </div>
+            </div>
 
-              {canOverrideCategory ? (
-                <label className="grid gap-2 text-sm text-white/72">
-                  <span className="font-medium text-white">Override category</span>
-                  <Select name="overrideCategoryId" defaultValue="">
-                    <option value="">Use proposed category</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              ) : null}
-
-              {matchedIds.length > 0 ? (
-                <div className="border border-white/8 bg-black/20 p-4">
-                  <p className="neo-kicker">
-                    {isInstrumentResolution
-                      ? "Candidate instruments"
-                      : isMerchantResolution
-                        ? "Candidate merchants / processors"
-                      : isRecurring
-                        ? "Candidate recurring models"
-                        : "Candidate events"}
-                  </p>
-                  <p className="mt-3 break-all text-sm text-white/66">
-                    {matchedIds.join(", ")}
-                  </p>
+            {canOverrideCategory ? (
+              <div className="grid gap-3 border-t border-white/[0.06] py-4 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-4">
+                <p className="text-[0.72rem] font-semibold tracking-[0.18em] text-white/28 uppercase">
+                  Classification
+                </p>
+                <div className="grid gap-4 md:max-w-md">
+                  <Field label="Override category">
+                    <Select name="overrideCategoryId" defaultValue="">
+                      <option value="">Use proposed category</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
                 </div>
-              ) : null}
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button variant="secondary" type="submit">
-                  Apply resolution
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setAdvancedOpen(false)}
-                >
-                  Cancel
-                </Button>
               </div>
-            </form>
+            ) : null}
+
+            {matchedIds.length > 0 ? (
+              <div className="grid gap-3 border-t border-white/[0.06] py-4 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-4">
+                <p className="text-[0.72rem] font-semibold tracking-[0.18em] text-white/28 uppercase">
+                  Candidate IDs
+                </p>
+                <p className="break-all text-sm leading-6 text-white/52">
+                  {matchedIds.join(", ")}
+                </p>
+              </div>
+            ) : null}
           </div>
-        </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="secondary" type="submit">
+              Apply resolution
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setAdvancedOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
       ) : null}
-    </>
+    </div>
   )
 }
 
-function ContextBlock(props: { title: string; primary: string; secondary: string }) {
+function DetailRail({
+  eyebrow,
+  title,
+  detail,
+  emphasize = false,
+}: {
+  eyebrow: string
+  title: string
+  detail: string
+  emphasize?: boolean
+}) {
   return (
-    <div className="border border-white/[0.06] bg-[rgba(255,255,255,0.015)] p-4">
-      <p className="neo-kicker">{props.title}</p>
-      <p className="mt-3 text-base font-semibold text-white">{props.primary}</p>
-      <p className="mt-2 text-sm leading-6 text-white/56">{props.secondary}</p>
+    <div className="px-0 py-1 md:px-5 md:py-4">
+      <p className="text-[0.68rem] font-semibold tracking-[0.2em] text-white/26 uppercase">
+        {eyebrow}
+      </p>
+      <p
+        className={`mt-3 text-base font-medium ${
+          emphasize ? "text-white" : "text-white/88"
+        }`}
+      >
+        {title}
+      </p>
+      <p className="mt-2 text-sm leading-6 text-white/46">{detail}</p>
     </div>
+  )
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <label className="grid gap-2 text-sm text-white/68">
+      <span className="font-medium text-white/92">{label}</span>
+      {children}
+    </label>
   )
 }

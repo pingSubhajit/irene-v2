@@ -52,8 +52,18 @@ import { triggerFinancialEventValuationRefresh } from "@/lib/fx-valuation"
 import { recordFeedbackEvent } from "@/lib/feedback"
 import { getServerSession } from "@/lib/session"
 
-function redirectToReview(request: Request, status: string) {
-  const url = new URL("/review", request.url)
+function sanitizeReviewReturnPath(value: FormDataEntryValue | null) {
+  const path = typeof value === "string" ? value.trim() : ""
+
+  if (!path.startsWith("/review")) {
+    return "/review"
+  }
+
+  return path
+}
+
+function redirectToReview(request: Request, status: string, returnPath = "/review") {
+  const url = new URL(returnPath, request.url)
   url.searchParams.set("status", status)
   return NextResponse.redirect(url, 303)
 }
@@ -219,6 +229,7 @@ export async function POST(request: Request) {
   }
 
   const formData = await request.formData()
+  const returnPath = sanitizeReviewReturnPath(formData.get("returnPath"))
   const reviewItemId = String(formData.get("reviewItemId") ?? "")
   const resolution = String(formData.get("resolution") ?? "")
   const targetEventId = String(formData.get("targetEventId") ?? "").trim()
@@ -276,12 +287,12 @@ export async function POST(request: Request) {
   }
 
   if (!reviewItemId || !resolution) {
-    return redirectToReview(request, "invalid-request")
+    return redirectToReview(request, "invalid-request", returnPath)
   }
 
   const context = await getReviewQueueContext(reviewItemId)
   if (!context || context.item.userId !== session.user.id) {
-    return redirectToReview(request, "missing-review-item")
+    return redirectToReview(request, "missing-review-item", returnPath)
   }
 
   const proposal = (context.item.proposedResolutionJson ?? {}) as ProposedResolution
@@ -301,7 +312,7 @@ export async function POST(request: Request) {
       resolvedAt: new Date(),
     })
 
-    return redirectToReview(request, "ignored")
+    return redirectToReview(request, "ignored", returnPath)
   }
 
   if (existingSource) {
@@ -311,7 +322,7 @@ export async function POST(request: Request) {
       financialEventId: existingSource.financialEventId,
     })
 
-    return redirectToReview(request, "already-reconciled")
+    return redirectToReview(request, "already-reconciled", returnPath)
   }
   const eventDraft = proposal.eventDraft
 
@@ -335,12 +346,12 @@ export async function POST(request: Request) {
       overrideInstrumentType || proposal.canonicalInstrumentType || "unknown"
 
     if (!context.item.financialEventId) {
-      return redirectToReview(request, "missing-review-item")
+      return redirectToReview(request, "missing-review-item", returnPath)
     }
 
     const event = await getFinancialEventById(context.item.financialEventId)
     if (!event || event.userId !== session.user.id) {
-      return redirectToReview(request, "invalid-target-event")
+      return redirectToReview(request, "invalid-target-event", returnPath)
     }
 
     const supportingObservationIds = proposal.supportingObservationIds ?? []
@@ -354,7 +365,7 @@ export async function POST(request: Request) {
         resolvedAt: new Date(),
       })
 
-      return redirectToReview(request, "ignored")
+      return redirectToReview(request, "ignored", returnPath)
     }
 
     const institution =
@@ -451,17 +462,21 @@ export async function POST(request: Request) {
       },
     })
 
-    return redirectToReview(request, resolution === "merge" ? "merged" : "approved")
+    return redirectToReview(
+      request,
+      resolution === "merge" ? "merged" : "approved",
+      returnPath,
+    )
   }
 
   if (proposalKind === "merchant_resolution" || proposalKind === "category_resolution") {
     if (!context.item.financialEventId) {
-      return redirectToReview(request, "missing-review-item")
+      return redirectToReview(request, "missing-review-item", returnPath)
     }
 
     const event = await getFinancialEventById(context.item.financialEventId)
     if (!event || event.userId !== session.user.id) {
-      return redirectToReview(request, "invalid-target-event")
+      return redirectToReview(request, "invalid-target-event", returnPath)
     }
 
     const targetMerchantId = String(formData.get("targetMerchantId") ?? "").trim()
@@ -478,7 +493,7 @@ export async function POST(request: Request) {
         resolvedAt: new Date(),
       })
 
-      return redirectToReview(request, "ignored")
+      return redirectToReview(request, "ignored", returnPath)
     }
 
     const merchant =
@@ -586,7 +601,11 @@ export async function POST(request: Request) {
       },
     })
 
-    return redirectToReview(request, resolution === "merge" ? "merged" : "approved")
+    return redirectToReview(
+      request,
+      resolution === "merge" ? "merged" : "approved",
+      returnPath,
+    )
   }
 
   if (proposalKind !== "event") {
@@ -594,13 +613,13 @@ export async function POST(request: Request) {
       const streamId = proposal.incomeStreamId
 
       if (!streamId) {
-        return redirectToReview(request, "missing-income-stream")
+        return redirectToReview(request, "missing-income-stream", returnPath)
       }
 
       const incomeStream = await getIncomeStreamById(streamId)
 
       if (!incomeStream || incomeStream.userId !== session.user.id) {
-        return redirectToReview(request, "invalid-income-stream")
+        return redirectToReview(request, "invalid-income-stream", returnPath)
       }
 
       if (resolution === "ignore") {
@@ -612,14 +631,14 @@ export async function POST(request: Request) {
           resolvedAt: new Date(),
         })
 
-        return redirectToReview(request, "ignored")
+        return redirectToReview(request, "ignored", returnPath)
       }
 
       if (resolution === "merge" && targetRecurringModelId) {
         const targetIncomeStream = await getIncomeStreamById(targetRecurringModelId)
 
         if (!targetIncomeStream || targetIncomeStream.userId !== session.user.id) {
-          return redirectToReview(request, "invalid-target-event")
+          return redirectToReview(request, "invalid-target-event", returnPath)
         }
 
         await updateIncomeStream(targetIncomeStream.id, {
@@ -642,7 +661,7 @@ export async function POST(request: Request) {
           },
         })
 
-        return redirectToReview(request, "merged")
+        return redirectToReview(request, "merged", returnPath)
       }
 
       const resolvedMerchant =
@@ -668,19 +687,19 @@ export async function POST(request: Request) {
         },
       })
 
-      return redirectToReview(request, "approved")
+      return redirectToReview(request, "approved", returnPath)
     }
 
     const recurringObligationId = proposal.recurringObligationId
 
     if (!recurringObligationId) {
-      return redirectToReview(request, "missing-recurring-obligation")
+      return redirectToReview(request, "missing-recurring-obligation", returnPath)
     }
 
     const obligation = await getRecurringObligationById(recurringObligationId)
 
     if (!obligation || obligation.userId !== session.user.id) {
-      return redirectToReview(request, "invalid-recurring-obligation")
+      return redirectToReview(request, "invalid-recurring-obligation", returnPath)
     }
 
     const resolvedMerchant =
@@ -717,14 +736,14 @@ export async function POST(request: Request) {
         resolvedAt: new Date(),
       })
 
-      return redirectToReview(request, "ignored")
+      return redirectToReview(request, "ignored", returnPath)
     }
 
     if (resolution === "merge" && targetRecurringModelId) {
       const targetObligation = await getRecurringObligationById(targetRecurringModelId)
 
       if (!targetObligation || targetObligation.userId !== session.user.id) {
-        return redirectToReview(request, "invalid-target-event")
+        return redirectToReview(request, "invalid-target-event", returnPath)
       }
 
       await updateRecurringObligation(targetObligation.id, {
@@ -747,7 +766,7 @@ export async function POST(request: Request) {
         },
       })
 
-      return redirectToReview(request, "merged")
+      return redirectToReview(request, "merged", returnPath)
     }
 
     await updateRecurringObligation(obligation.id, {
@@ -781,11 +800,11 @@ export async function POST(request: Request) {
       },
     })
 
-    return redirectToReview(request, "approved")
+    return redirectToReview(request, "approved", returnPath)
   }
 
   if (!context.signal || !context.rawDocument || !eventDraft) {
-    return redirectToReview(request, "missing-proposal")
+    return redirectToReview(request, "missing-proposal", returnPath)
   }
 
   const resolvedMerchant =
@@ -802,7 +821,7 @@ export async function POST(request: Request) {
     overrideEventType ?? (isFinancialEventType(eventDraft.eventType) ? eventDraft.eventType : null)
 
   if (!resolvedEventType) {
-    return redirectToReview(request, "invalid-event-type")
+    return redirectToReview(request, "invalid-event-type", returnPath)
   }
 
   const targetFinancialEventId =
@@ -811,14 +830,14 @@ export async function POST(request: Request) {
       : targetEventId
 
   if (resolution === "merge" && !targetFinancialEventId) {
-    return redirectToReview(request, "missing-target-event")
+    return redirectToReview(request, "missing-target-event", returnPath)
   }
 
   if (resolution === "merge") {
     const existingEvent = await getFinancialEventById(targetFinancialEventId)
 
     if (!existingEvent || existingEvent.userId !== session.user.id) {
-      return redirectToReview(request, "invalid-target-event")
+      return redirectToReview(request, "invalid-target-event", returnPath)
     }
 
     await updateFinancialEvent(existingEvent.id, {
@@ -856,7 +875,7 @@ export async function POST(request: Request) {
       financialEventId: existingEvent.id,
     })
 
-    return redirectToReview(request, "merged")
+    return redirectToReview(request, "merged", returnPath)
   }
 
   const createdEvent = await createFinancialEvent({
@@ -912,5 +931,5 @@ export async function POST(request: Request) {
     }),
   ])
 
-  return redirectToReview(request, "approved")
+  return redirectToReview(request, "approved", returnPath)
 }
