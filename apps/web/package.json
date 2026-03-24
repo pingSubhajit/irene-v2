@@ -18,6 +18,9 @@
     "@phosphor-icons/react": "^2.1.10",
     "@remixicon/react": "^4.9.0",
     "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^25.1.0",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
     "@workspace/ai": "workspace:*",
     "@workspace/assets": "workspace:*",
     "@workspace/config": "workspace:*",
@@ -37,14 +40,11 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "recharts": "^2.15.4",
+    "typescript": "^5.9.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^25.1.0",
-    "@types/react": "^19.2.10",
-    "@types/react-dom": "^19.2.3",
     "@workspace/eslint-config": "workspace:^",
-    "eslint": "^9.39.2",
-    "typescript": "^5.9.3"
+    "eslint": "^9.39.2"
   }
 }
