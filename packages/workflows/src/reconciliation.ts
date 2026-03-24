@@ -5,6 +5,7 @@ import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
 export const RECONCILIATION_QUEUE_NAME = "reconciliation"
 export const SIGNAL_RECONCILE_JOB_NAME = "signal.reconcile"
 export const RECONCILIATION_MODEL_RETRY_JOB_NAME = "reconciliation.retry-model-run"
+export const RECONCILIATION_REPAIR_BATCH_JOB_NAME = "reconciliation.repair.batch"
 
 const reconciliationJobPayloadSchema = z.object({
   correlationId: z.string().min(1),
@@ -33,6 +34,21 @@ const reconciliationModelRetryJobPayloadSchema = z.object({
 
 export type ReconciliationModelRetryJobPayload = z.infer<
   typeof reconciliationModelRetryJobPayloadSchema
+>
+
+const reconciliationRepairBatchJobPayloadSchema = z.object({
+  correlationId: z.string().min(1),
+  jobRunId: z.string().uuid(),
+  jobKey: z.string().min(1),
+  requestedAt: z.string().datetime(),
+  userId: z.string().min(1),
+  cursorId: z.string().uuid(),
+  sourceKind: z.enum(["backfill", "incremental"]),
+  source: z.enum(["worker", "web"]),
+})
+
+export type ReconciliationRepairBatchJobPayload = z.infer<
+  typeof reconciliationRepairBatchJobPayloadSchema
 >
 
 export function getReconciliationQueue() {
@@ -65,6 +81,22 @@ export async function enqueueReconciliationModelRetry(
   })
 }
 
+export async function enqueueReconciliationRepairBatch(
+  payload: ReconciliationRepairBatchJobPayload,
+  input?: { delayMs?: number },
+) {
+  const parsed = reconciliationRepairBatchJobPayloadSchema.parse(payload)
+
+  return getReconciliationQueue().add(RECONCILIATION_REPAIR_BATCH_JOB_NAME, parsed, {
+    ...createTrackedJobOptions({
+      jobId: toBullJobId(parsed.jobKey),
+      attempts: 2,
+      backoffMs: 45_000,
+    }),
+    delay: input?.delayMs,
+  })
+}
+
 export async function getReconciliationQueueStats() {
   return getReconciliationQueue().getJobCounts(
     "active",
@@ -78,3 +110,4 @@ export async function getReconciliationQueueStats() {
 }
 
 export { reconciliationJobPayloadSchema, reconciliationModelRetryJobPayloadSchema }
+export { reconciliationRepairBatchJobPayloadSchema }

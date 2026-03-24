@@ -94,7 +94,9 @@ import {
   feedbackProcessJobPayloadSchema,
   enqueueMemoryDecayScan,
   enqueueMemoryRebuildUser,
+  enqueueReconciliationRepairBatch,
   RECONCILIATION_MODEL_RETRY_JOB_NAME,
+  RECONCILIATION_REPAIR_BATCH_JOB_NAME,
   RECONCILIATION_QUEUE_NAME,
   QUEUE_PREFIX,
   SIGNAL_RECONCILE_JOB_NAME,
@@ -156,6 +158,7 @@ import {
   obligationRefreshJobPayloadSchema,
   OBLIGATION_REFRESH_JOB_NAME,
   RECURRING_DETECTION_QUEUE_NAME,
+  reconciliationRepairBatchJobPayloadSchema,
   reconciliationModelRetryJobPayloadSchema,
   reconciliationJobPayloadSchema,
   recurringObligationDetectionJobPayloadSchema,
@@ -208,8 +211,13 @@ import {
 } from "./recurring"
 import {
   reconcileExtractedSignal,
+  repairReconciliationBatch,
   retryFailedAiReconciliationResolution,
 } from "./reconciliation"
+import {
+  RECONCILIATION_REPAIR_DELAY_MS,
+  shouldScheduleReconciliationRepair,
+} from "./reconciliation-repair"
 
 const logger = createLogger("worker")
 
@@ -959,6 +967,43 @@ async function enqueueTrackedSignalReconcile(input: {
   })
 }
 
+async function enqueueTrackedReconciliationRepairBatch(input: {
+  userId: string
+  cursorId: string
+  correlationId: string
+  sourceKind: "backfill" | "incremental"
+}) {
+  const jobKey = `${RECONCILIATION_REPAIR_BATCH_JOB_NAME}:${input.cursorId}:${input.sourceKind}:${input.correlationId}`
+  const jobRun = await ensureJobRun({
+    queueName: RECONCILIATION_QUEUE_NAME,
+    jobName: RECONCILIATION_REPAIR_BATCH_JOB_NAME,
+    jobKey,
+    payloadJson: {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      cursorId: input.cursorId,
+      sourceKind: input.sourceKind,
+      source: "worker",
+    },
+  })
+
+  await enqueueReconciliationRepairBatch(
+    {
+      correlationId: input.correlationId,
+      jobRunId: jobRun.id,
+      jobKey,
+      requestedAt: new Date().toISOString(),
+      userId: input.userId,
+      cursorId: input.cursorId,
+      sourceKind: input.sourceKind,
+      source: "worker",
+    },
+    {
+      delayMs: RECONCILIATION_REPAIR_DELAY_MS,
+    },
+  )
+}
+
 async function enqueueTrackedSignalReconcilesForSignals(input: {
   userId: string
   rawDocumentId: string
@@ -1640,6 +1685,13 @@ async function handleGmailBackfillPage(job: Job) {
       windowStartAt: payload.windowStartAt ? new Date(payload.windowStartAt) : undefined,
       pageToken: page.nextPageToken,
     })
+  } else if (shouldScheduleReconciliationRepair(processed)) {
+    await enqueueTrackedReconciliationRepairBatch({
+      userId: payload.userId,
+      cursorId: payload.cursorId,
+      correlationId: payload.correlationId,
+      sourceKind: "backfill",
+    })
   }
 
   await updateOauthConnection(connection.id, {
@@ -1779,6 +1831,15 @@ async function handleGmailIncrementalPoll(job: Job) {
     lastSuccessfulSyncAt: new Date(),
     status: "active",
   })
+
+  if (shouldScheduleReconciliationRepair(processed)) {
+    await enqueueTrackedReconciliationRepairBatch({
+      userId: payload.userId,
+      cursorId: payload.cursorId,
+      correlationId: payload.correlationId,
+      sourceKind: "incremental",
+    })
+  }
 
   await markJobSucceeded(job, payload, {
     acceptedTransactionalCount: processed.acceptedTransactionalCount,
@@ -2689,6 +2750,22 @@ async function handleReconciliationModelRetry(job: Job) {
   return outcome
 }
 
+async function handleReconciliationRepairBatch(job: Job) {
+  const payload = reconciliationRepairBatchJobPayloadSchema.parse(job.data)
+  await markJobRunning(job, payload)
+
+  const outcome = await repairReconciliationBatch({
+    userId: payload.userId,
+    correlationId: payload.correlationId,
+    cursorId: payload.cursorId,
+    sourceKind: payload.sourceKind,
+  })
+
+  await markJobSucceeded(job, payload, outcome)
+
+  return outcome
+}
+
 async function handleEventExtractInstrumentObservation(job: Job) {
   const payload = eventExtractInstrumentObservationJobPayloadSchema.parse(job.data)
   await markJobRunning(job, payload)
@@ -3294,6 +3371,10 @@ const reconciliationWorker = new Worker(
 
     if (job.name === RECONCILIATION_MODEL_RETRY_JOB_NAME) {
       return handleReconciliationModelRetry(job)
+    }
+
+    if (job.name === RECONCILIATION_REPAIR_BATCH_JOB_NAME) {
+      return handleReconciliationRepairBatch(job)
     }
 
     throw new Error(`Unsupported job: ${job.name}`)

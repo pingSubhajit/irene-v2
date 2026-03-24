@@ -206,3 +206,24 @@ export async function listReplayedJobRunsForUser(input: {
     .orderBy(desc(jobRuns.createdAt))
     .limit(input.limit ?? 20)
 }
+
+export async function listSucceededJobRunsForSyncBatch(input: {
+  userId: string
+  correlationId: string
+  cursorId: string
+  sourceKind: "backfill" | "incremental"
+}) {
+  return db
+    .select()
+    .from(jobRuns)
+    .where(
+      and(
+        userIdPayloadCondition(input.userId),
+        eq(jobRuns.status, "succeeded"),
+        sql<boolean>`(${jobRuns.payloadJson} ->> 'correlationId') = ${input.correlationId}`,
+        sql<boolean>`(${jobRuns.payloadJson} ->> 'cursorId') = ${input.cursorId}`,
+        sql<boolean>`(${jobRuns.payloadJson} ->> 'sourceKind') = ${input.sourceKind}`,
+      ),
+    )
+    .orderBy(desc(jobRuns.createdAt))
+}
