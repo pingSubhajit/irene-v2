@@ -17,12 +17,14 @@
     "@bull-board/ui": "^6.20.5",
     "@phosphor-icons/react": "^2.1.10",
     "@remixicon/react": "^4.9.0",
+    "@tailwindcss/postcss": "^4.1.18",
     "@workspace/ai": "workspace:*",
     "@workspace/assets": "workspace:*",
     "@workspace/config": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations": "workspace:*",
     "@workspace/observability": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
     "@workspace/ui": "workspace:*",
     "@workspace/workflows": "workspace:*",
     "better-auth": "^1.5.5",
@@ -38,12 +40,10 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^25.1.0",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
     "@workspace/eslint-config": "workspace:^",
-    "@workspace/typescript-config": "workspace:*",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3"
   }

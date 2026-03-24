@@ -2,12 +2,12 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "globalEnv": [
-    "ALLOWED_EMAILS",
     "AI_GATEWAY_API_KEY",
     "APP_ENCRYPTION_KEY",
     "BETTER_AUTH_SECRET",
     "BETTER_AUTH_URL",
     "CRON_SECRET",
+    "CURRENCYAPI_API_KEY",
     "DATABASE_URL",
     "DATABASE_URL_DIRECT",
     "GCS_BUCKET",
@@ -17,7 +17,9 @@
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
     "LOG_LEVEL",
+    "LOGO_DOT_DEV_SECRET_KEY",
     "NODE_ENV",
+    "NEXT_PUBLIC_LOGO_DOT_DEV_PUBLIC_KEY",
     "UPSTASH_REDIS_HOST",
     "UPSTASH_REDIS_PASSWORD",
     "UPSTASH_REDIS_PORT"
