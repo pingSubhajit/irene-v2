@@ -9,6 +9,8 @@ const runtimeEnvSchema = z.object({
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 })
 
+const SSL_MODES_EQUIVALENT_TO_VERIFY_FULL = new Set(["prefer", "require", "verify-ca"])
+
 const databaseEnvInputSchema = z
   .object({
     DATABASE_URL: z.url().optional(),
@@ -124,6 +126,22 @@ function ensureEnvLoaded() {
   envLoaded = true
 }
 
+export function normalizeDatabaseConnectionString(connectionString: string): string {
+  const url = new URL(connectionString)
+  const sslMode = url.searchParams.get("sslmode")
+
+  if (!sslMode || !SSL_MODES_EQUIVALENT_TO_VERIFY_FULL.has(sslMode)) {
+    return connectionString
+  }
+
+  if (url.searchParams.get("uselibpqcompat") === "true") {
+    return connectionString
+  }
+
+  url.searchParams.set("sslmode", "verify-full")
+  return url.toString()
+}
+
 export function getRuntimeEnv(): RuntimeEnv {
   ensureEnvLoaded()
 
@@ -145,8 +163,12 @@ export function getDatabaseEnv(): DatabaseEnv {
   const parsed = databaseEnvInputSchema.parse(process.env)
 
   databaseEnvCache = databaseEnvSchema.parse({
-    DATABASE_URL: parsed.DATABASE_URL ?? parsed.DATABASE_URL_DIRECT,
-    DATABASE_URL_DIRECT: parsed.DATABASE_URL_DIRECT ?? parsed.DATABASE_URL,
+    DATABASE_URL: normalizeDatabaseConnectionString(
+      parsed.DATABASE_URL ?? parsed.DATABASE_URL_DIRECT!
+    ),
+    DATABASE_URL_DIRECT: normalizeDatabaseConnectionString(
+      parsed.DATABASE_URL_DIRECT ?? parsed.DATABASE_URL!
+    ),
   })
 
   return databaseEnvCache

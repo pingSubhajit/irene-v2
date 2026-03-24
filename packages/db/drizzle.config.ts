@@ -1,15 +1,14 @@
 import { defineConfig } from "drizzle-kit"
+import { getDatabaseEnv } from "@workspace/config/server"
 
-if (!process.env.DATABASE_URL_DIRECT) {
-  throw new Error("DATABASE_URL_DIRECT is required for Drizzle migrations")
-}
+const { DATABASE_URL_DIRECT } = getDatabaseEnv()
 
 export default defineConfig({
   dialect: "postgresql",
   schema: "./packages/db/src/schema.ts",
   out: "./packages/db/drizzle",
   dbCredentials: {
-    url: process.env.DATABASE_URL_DIRECT,
+    url: DATABASE_URL_DIRECT,
   },
   verbose: true,
   strict: true,

@@ -6,6 +6,7 @@ import { useState, useTransition } from "react"
 
 import onboardingFinishImage from "@workspace/assets/images/onboarding-finish.png"
 import onboardingHeroImage from "@workspace/assets/images/onboarding-hero.png"
+import { BackfillStatusBanner } from "@/components/backfill-status-banner"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { cn } from "@workspace/ui/lib/utils"
@@ -185,8 +186,8 @@ export function OnboardingFlow({
 
   if (step === 2) {
     return (
-      <main className="relative min-h-svh overflow-hidden bg-[#06070a] text-white">
-        <div className="relative mx-auto flex min-h-svh w-full max-w-[28rem] flex-col px-7 pt-14 pb-24">
+      <main className="relative h-svh overflow-hidden bg-[#06070a] text-white">
+        <div className="relative mx-auto flex h-svh w-full max-w-[28rem] flex-col px-7 pt-12 pb-12">
           <button
             type="button"
             className="w-fit text-white transition-opacity hover:opacity-72"
@@ -195,36 +196,38 @@ export function OnboardingFlow({
             <RiArrowLeftLine className="size-8" />
           </button>
 
-          <div className="pt-[4.5rem]">
+          <div className="mt-5">
             <p className="text-[0.76rem] tracking-[0.3em] text-white/42 uppercase">
               Let’s get you in
             </p>
-            <h1 className="mt-5 max-w-[10ch] font-display text-[3.35rem] leading-[0.96] tracking-[-0.045em] text-white">
+            <h1 className="mt-2 font-display text-[2.95rem] leading-[0.94] tracking-[-0.045em] text-white">
               You are all set to manage your money
             </h1>
           </div>
 
-          <div className="flex flex-1 items-center justify-center py-12">
+          <div className="flex flex-1 items-center justify-center py-6">
             <Image
               src={onboardingFinishImage}
               alt="Irene connected"
               priority
-              className="h-auto w-[20.5rem] object-contain"
+              className="h-auto w-[16.75rem] object-contain"
             />
           </div>
 
           <Button
             variant="onboardingLight"
             size="lg"
-            className="h-[4.25rem] w-full text-[0.98rem] font-semibold tracking-[-0.03em]"
+            className="mb-4 h-[4rem] w-full text-[0.98rem] font-semibold tracking-[-0.03em]"
             onClick={() => router.push("/dashboard")}
           >
             Super! Let’s go
           </Button>
         </div>
 
-        <div className="fixed inset-x-0 bottom-0 z-10 bg-[#16c86a] px-6 py-4 text-center text-[0.92rem] tracking-[0.02em] text-white uppercase">
-          We’re running backfill from your emails
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50">
+          <div className="pointer-events-auto">
+            <BackfillStatusBanner initialRunning />
+          </div>
         </div>
       </main>
     )
