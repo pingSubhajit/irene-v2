@@ -12,6 +12,7 @@
     "./schema": "./src/schema.ts"
   },
   "dependencies": {
+    "@types/pg": "^8.18.0",
     "@workspace/config": "workspace:*",
     "drizzle-orm": "^0.45.1",
     "pg": "^8.20.0",

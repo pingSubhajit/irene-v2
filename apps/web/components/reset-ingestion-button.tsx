@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, type ChangeEvent } from "react"
 import { useRouter } from "next/navigation"
 
 import { Button } from "@workspace/ui/components/button"
@@ -39,7 +39,9 @@ export function ResetIngestionButton() {
         </span>
         <Input
           value={confirmation}
-          onChange={(event) => setConfirmation(event.target.value)}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            setConfirmation(event.target.value)
+          }
           placeholder={CONFIRMATION_PHRASE}
         />
       </label>

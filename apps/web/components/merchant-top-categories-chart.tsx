@@ -107,11 +107,22 @@ export function MerchantTopCategoriesChart({
               content={
                 <ChartTooltipContent
                   hideLabel
-                  formatter={(_, __, item) => {
-                    const point = item.payload as {
-                      name: string
-                      spendMinor: number
-                      share: number
+                  formatter={(
+                    _value: unknown,
+                    _name: unknown,
+                    item: {
+                      payload?: {
+                        name: string
+                        spendMinor: number
+                        share: number
+                      }
+                      color?: string
+                    },
+                  ) => {
+                    const point = item.payload
+
+                    if (!point) {
+                      return null
                     }
 
                     return (

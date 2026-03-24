@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   RiArrowLeftSLine,
@@ -193,7 +193,9 @@ export function MemoryToolbar({
             <Input
               type="search"
               value={searchValue}
-              onChange={(event) => setSearchValue(event.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setSearchValue(event.target.value)
+              }
               placeholder="search memory, merchant, or sender"
               className="h-11 border-white/[0.06] bg-white/[0.03] pl-11 text-sm placeholder:text-white/24"
             />

@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { useState, useTransition } from "react"
+import { useState, useTransition, type ChangeEvent } from "react"
 
 import onboardingFinishImage from "@workspace/assets/images/onboarding-finish.png"
 import onboardingHeroImage from "@workspace/assets/images/onboarding-hero.png"
@@ -85,7 +85,9 @@ function OnboardingSelectField(props: {
         <select
           aria-label={props.label}
           value={props.value}
-          onChange={(event) => props.onChange(event.target.value)}
+          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+            props.onChange(event.target.value)
+          }
           className="absolute inset-0 cursor-pointer appearance-none opacity-0"
         >
           {props.options.map((option) => (

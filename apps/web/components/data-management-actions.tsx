@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, type ChangeEvent } from "react"
 import { useRouter } from "next/navigation"
 
 import { RiArrowRightSLine } from "@remixicon/react"
@@ -50,7 +50,7 @@ function ResetBackfillAction() {
   return (
     <Sheet
       open={open}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen: boolean) => {
         setOpen(nextOpen)
         if (!nextOpen) {
           setPreset("last_week")
@@ -108,7 +108,9 @@ function ResetBackfillAction() {
             </span>
             <Input
               value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setConfirmation(event.target.value)
+              }
               placeholder={phrase}
             />
           </label>
@@ -163,7 +165,7 @@ function ResetIngestionAction() {
   return (
     <Sheet
       open={open}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen: boolean) => {
         setOpen(nextOpen)
         if (!nextOpen) {
           setConfirmation("")
@@ -205,7 +207,9 @@ function ResetIngestionAction() {
             </span>
             <Input
               value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setConfirmation(event.target.value)
+              }
               placeholder={phrase}
             />
           </label>
@@ -260,7 +264,7 @@ function ResetDatabaseAction() {
   return (
     <Sheet
       open={open}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen: boolean) => {
         setOpen(nextOpen)
         if (!nextOpen) {
           setConfirmation("")
@@ -301,7 +305,9 @@ function ResetDatabaseAction() {
             </span>
             <Input
               value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setConfirmation(event.target.value)
+              }
               placeholder={phrase}
             />
           </label>

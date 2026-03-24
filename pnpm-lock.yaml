@@ -273,6 +273,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@types/pg':
+        specifier: ^8.18.0
+        version: 8.18.0
       '@workspace/config':
         specifier: workspace:*
         version: link:../config

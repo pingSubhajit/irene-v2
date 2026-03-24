@@ -81,6 +81,11 @@
       "sourceType": "github",
       "computedHash": "e6bea732fe6c8da34bd23e57d28351cc55e648039d28a10960306a06c68a6139"
     },
+    "trigger-tasks": {
+      "source": "triggerdotdev/skills",
+      "sourceType": "github",
+      "computedHash": "1f65ede75b8118f3b301ac41836b447808a6e188dbce44e2ed8cc161fb6a8b25"
+    },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",

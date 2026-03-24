@@ -41,15 +41,33 @@ export function DailySpendChart({
         <Tooltip
           content={
             <ChartTooltipContent
-              labelFormatter={(_, payload) => {
+              labelFormatter={(
+                _label: unknown,
+                payload?: Array<{
+                  payload?: {
+                    day?: number
+                  }
+                }>,
+              ) => {
                 const day = payload?.[0]?.payload?.day
                 return day ? `Day ${day}` : ""
               }}
-              formatter={(_, __, item) => {
-                const point = item.payload as {
-                  amount: number
-                  originalCurrencies: string[]
+              formatter={(
+                _value: unknown,
+                _name: unknown,
+                item: {
+                  payload?: {
+                    amount: number
+                    originalCurrencies: string[]
+                  }
+                },
+              ) => {
+                const point = item.payload
+
+                if (!point) {
+                  return null
                 }
+
                 const currencies = point.originalCurrencies.filter(
                   (code) => code !== currency,
                 )

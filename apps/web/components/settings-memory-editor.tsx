@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ChangeEvent } from "react"
 
 import type { MemoryAuthoringResult } from "@workspace/ai"
 
@@ -118,7 +118,9 @@ export function SettingsMemoryEditor({
         </div>
         <textarea
           value={authoredText}
-          onChange={(event) => setAuthoredText(event.target.value)}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+            setAuthoredText(event.target.value)
+          }
           placeholder="Amazon charges on card 1008 are usually subscriptions."
           rows={5}
           className="w-full resize-none border border-white/[0.08] bg-transparent px-4 py-3 text-[15px] leading-7 text-white outline-none transition placeholder:text-white/18 focus:border-white/20"

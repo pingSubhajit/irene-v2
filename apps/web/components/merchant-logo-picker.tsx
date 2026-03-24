@@ -1,6 +1,6 @@
 "use client"
 
-import { startTransition, useEffect, useMemo, useState } from "react"
+import { startTransition, useEffect, useMemo, useState, type ChangeEvent } from "react"
 
 import {
   RiLoader4Line,
@@ -160,7 +160,7 @@ export function MerchantLogoPicker({
   return (
     <Sheet
       open={open}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen: boolean) => {
         setOpen(nextOpen)
         if (nextOpen) {
           setError(null)
@@ -244,7 +244,9 @@ export function MerchantLogoPicker({
             <RiSearchLine className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-white/28" />
             <Input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setQuery(event.target.value)
+              }
               placeholder="Search brand name"
               className="h-14 border-white/8 bg-[rgba(18,18,20,0.98)] pl-11 text-base"
             />

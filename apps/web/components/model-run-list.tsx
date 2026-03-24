@@ -166,7 +166,7 @@ export function ModelRunList({ modelRuns }: ModelRunListProps) {
 
       <Sheet
         open={Boolean(selectedRun)}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           if (!open) {
             setSelectedRun(null)
             setCopyLabel("Copy details")
