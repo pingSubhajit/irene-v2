@@ -1,16 +1,16 @@
 const gatewayProviderPrefix = "google"
 
 const modelCatalog = {
-  financeRelevanceClassifier: "gemini-3-flash",
+  financeRelevanceClassifier: "openai/gpt-5-nano",
   financeDocumentRouter: "gemini-3-flash",
-  financeSignalExtractor: "gemini-3-flash",
-  financeMerchantHintExtractor: "gemini-2.5-flash-lite",
-  financeBalanceExtractor: "gemini-3-flash",
+  financeSignalExtractor: "openai/gpt-5-nano",
+  financeMerchantHintExtractor: "openai/gpt-5-nano",
+  financeBalanceExtractor: "openai/gpt-5-nano",
   financeMemoryAuthoring: "gemini-3-flash",
-  financeMemorySummarizer: "gemini-3-flash",
-  financeInstrumentResolver: "gemini-3-flash",
-  financeMerchantResolver: "gemini-3-flash",
-  financeCategoryResolver: "gemini-3-flash",
+  financeMemorySummarizer: "openai/gpt-5-nano",
+  financeInstrumentResolver: "openai/gpt-5-nano",
+  financeMerchantResolver: "openai/gpt-5-nano",
+  financeCategoryResolver: "openai/gpt-5-nano",
   financeReconciliationResolver: "gemini-3-flash",
   financeAdviceGenerator: "gemini-3-flash",
 } as const
