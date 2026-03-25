@@ -3,12 +3,15 @@
 import { useState, useTransition } from "react"
 
 import { Button } from "@workspace/ui/components/button"
+import { submitJsonPwaMutation } from "@/lib/pwa/client-mutations"
 
 type GmailIntegrationActionsProps = {
+  userId: string
   connected: boolean
 }
 
 export function GmailIntegrationActions({
+  userId,
   connected,
 }: GmailIntegrationActionsProps) {
   const [isPending, startTransition] = useTransition()
@@ -32,17 +35,23 @@ export function GmailIntegrationActions({
           onClick={() => {
             setMessage(null)
             startTransition(async () => {
-              const response = await fetch("/api/integrations/email/google/sync", {
-                method: "POST",
+              const { queued, result } = await submitJsonPwaMutation({
+                userId,
+                kind: "gmail.sync",
+                routePath: "/api/integrations/email/google/sync",
               })
 
-              if (!response.ok) {
-                setMessage("Could not queue a sync. Try again in a moment.")
+              if (!queued && !result?.ok) {
+                setMessage(
+                  result?.message ??
+                    "Could not queue a sync. Try again in a moment."
+                )
                 return
               }
 
-              await response.json()
-              setMessage("Sync queued. Irene will refresh the inbox picture shortly.")
+              setMessage(
+                "Sync queued. Irene will refresh the inbox picture shortly."
+              )
             })
           }}
         >
@@ -54,15 +63,16 @@ export function GmailIntegrationActions({
           onClick={() => {
             setMessage(null)
             startTransition(async () => {
-              const response = await fetch(
-                "/api/integrations/email/google/disconnect",
-                {
-                  method: "POST",
-                },
-              )
+              const { queued, result } = await submitJsonPwaMutation({
+                userId,
+                kind: "gmail.disconnect",
+                routePath: "/api/integrations/email/google/disconnect",
+              })
 
-              if (!response.ok) {
-                setMessage("Could not disconnect Gmail right now.")
+              if (!queued && !result?.ok) {
+                setMessage(
+                  result?.message ?? "Could not disconnect Gmail right now."
+                )
                 return
               }
 
@@ -73,7 +83,9 @@ export function GmailIntegrationActions({
           Disconnect
         </Button>
       </div>
-      {message ? <p className="text-sm leading-6 text-white/56">{message}</p> : null}
+      {message ? (
+        <p className="text-sm leading-6 text-white/56">{message}</p>
+      ) : null}
     </div>
   )
 }

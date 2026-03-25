@@ -190,6 +190,13 @@
       "when": 1774384200000,
       "tag": "0026_cost_reduction_state",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1774458600000,
+      "tag": "0027_pwa_mutation_receipts",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,7 @@ import {
 
 import { ActivityToolbar } from "@/components/activity-toolbar"
 import { AppEmptyState } from "@/components/app-empty-state"
+import { PwaSnapshotHydrator } from "@/components/pwa-snapshot-hydrator"
 import { RecurringModelCard } from "@/components/recurring-model-card"
 import { TransactionCard } from "@/components/transaction-card"
 import {
@@ -23,6 +24,10 @@ import {
   getUtcStartOfUserDay,
 } from "@/lib/date-format"
 import { createPrivateMetadata } from "@/lib/metadata"
+import {
+  PWA_SNAPSHOT_VERSION,
+  type PwaRouteSnapshot,
+} from "@/lib/pwa/contracts"
 import { requireSession } from "@/lib/session"
 import type { FinancialEventType } from "@workspace/db"
 
@@ -338,9 +343,92 @@ export default async function ActivityPage({
   const orderedGroups = [...grouped.entries()].sort((left, right) =>
     right[0].localeCompare(left[0])
   )
+  const capturedDate = new Date()
+  const capturedAt = capturedDate.toISOString()
+  const staleAt = new Date(
+    capturedDate.getTime() + 12 * 60 * 60 * 1000
+  ).toISOString()
+  const activityItems =
+    view === "income"
+      ? filteredIncomeStreams
+          .slice(0, 40)
+          .map(({ incomeStream, merchant }) => ({
+            id: incomeStream.id,
+            title: merchant?.displayName ?? incomeStream.name,
+            subtitle: incomeStream.nextExpectedAt
+              ? `next ${formatScheduleDate(incomeStream.nextExpectedAt, settings.timeZone)}`
+              : "still estimating",
+            amountLabel: formatCurrency(
+              incomeStream.expectedAmountMinor ?? 0,
+              incomeStream.currency ?? "INR"
+            ),
+            tone: "positive" as const,
+          }))
+      : view === "subscriptions" || view === "emis"
+        ? filteredRecurringRows
+            .slice(0, 40)
+            .map(({ obligation, merchant }) => ({
+              id: obligation.id,
+              title: merchant?.displayName ?? obligation.name,
+              subtitle: obligation.nextDueAt
+                ? `next ${formatScheduleDate(obligation.nextDueAt, settings.timeZone)}`
+                : "still estimating",
+              amountLabel: formatCurrency(
+                obligation.amountMinor ?? 0,
+                obligation.currency ?? "INR"
+              ),
+              tone: "negative" as const,
+            }))
+        : sortedEvents.slice(0, 40).map(({ event, merchant }) => ({
+            id: event.id,
+            title:
+              merchant?.displayName ?? event.description ?? "Unmapped event",
+            subtitle: formatInUserTimeZone(
+              event.eventOccurredAt,
+              settings.timeZone,
+              {
+                day: "numeric",
+                month: "short",
+                hour: "numeric",
+                minute: "2-digit",
+              }
+            ),
+            amountLabel: formatCurrency(event.amountMinor, event.currency),
+            tone:
+              event.direction === "inflow"
+                ? ("positive" as const)
+                : event.direction === "outflow"
+                  ? ("negative" as const)
+                  : ("neutral" as const),
+          }))
+  const pwaSnapshot = {
+    routeKey: "activity" as const,
+    capturedAt,
+    staleAt,
+    userId: session.user.id,
+    version: PWA_SNAPSHOT_VERSION,
+    payload: {
+      user: {
+        userId: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+        image: session.user.image ?? null,
+      },
+      viewLabel: view.replaceAll("_", " "),
+      filtersLabel:
+        query ||
+        selectedCategorySlugs.length ||
+        selectedMerchantIds.length ||
+        selectedInstrumentIds.length
+          ? "last opened filtered view"
+          : "default view",
+      items: activityItems,
+    },
+  } satisfies PwaRouteSnapshot<"activity">
 
   return (
     <section className="mx-auto max-w-lg">
+      <PwaSnapshotHydrator snapshot={pwaSnapshot} />
       {/* Header */}
       <h1 className="py-6 text-[1.65rem] font-semibold tracking-tight text-white">
         activity
@@ -511,7 +599,5 @@ function EmptyState({
   title: string
   description: string
 }) {
-  return (
-    <AppEmptyState compact title={title} description={description} />
-  )
+  return <AppEmptyState compact title={title} description={description} />
 }

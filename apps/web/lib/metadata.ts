@@ -11,7 +11,9 @@ const normalizedSiteUrl = rawSiteUrl
     : `https://${rawSiteUrl}`
   : null
 
-export const metadataBase = normalizedSiteUrl ? new URL(normalizedSiteUrl) : undefined
+export const metadataBase = normalizedSiteUrl
+  ? new URL(normalizedSiteUrl)
+  : undefined
 
 const privateRobots: NonNullable<Metadata["robots"]> = {
   index: false,
@@ -31,6 +33,33 @@ export const rootMetadata: Metadata = {
   applicationName: "Irene",
   title: "Irene",
   description: "Calm money clarity from your inbox.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Irene",
+  },
+  icons: {
+    icon: [
+      {
+        url: "/pwa-icons/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+      {
+        url: "/pwa-icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+      },
+    ],
+    apple: [
+      {
+        url: "/pwa-icons/icon-180.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
 }
 
 export const authenticatedAppMetadata: Metadata = {

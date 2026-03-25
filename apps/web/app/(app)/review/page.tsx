@@ -9,7 +9,12 @@ import {
 } from "@workspace/db"
 
 import { AppEmptyState } from "@/components/app-empty-state"
+import { PwaSnapshotHydrator } from "@/components/pwa-snapshot-hydrator"
 import { createPrivateMetadata } from "@/lib/metadata"
+import {
+  PWA_SNAPSHOT_VERSION,
+  type PwaRouteSnapshot,
+} from "@/lib/pwa/contracts"
 import { requireSession } from "@/lib/session"
 import {
   asSingleValue,
@@ -54,16 +59,50 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
     }),
   ])
 
-  const contexts = (await Promise.all(items.map((item) => getReviewQueueContext(item.id)))).filter(
-    (context): context is NonNullable<Awaited<ReturnType<typeof getReviewQueueContext>>> =>
-      context !== null,
+  const contexts = (
+    await Promise.all(items.map((item) => getReviewQueueContext(item.id)))
+  ).filter(
+    (
+      context
+    ): context is NonNullable<
+      Awaited<ReturnType<typeof getReviewQueueContext>>
+    > => context !== null
   )
 
-  const entries = contexts.map((context) => buildReviewEntry(context, settings.timeZone))
+  const entries = contexts.map((context) =>
+    buildReviewEntry(context, settings.timeZone)
+  )
+  const capturedDate = new Date()
+  const capturedAt = capturedDate.toISOString()
+  const staleAt = new Date(
+    capturedDate.getTime() + 12 * 60 * 60 * 1000
+  ).toISOString()
+  const pwaSnapshot = {
+    routeKey: "review" as const,
+    capturedAt,
+    staleAt,
+    userId: session.user.id,
+    version: PWA_SNAPSHOT_VERSION,
+    payload: {
+      user: {
+        userId: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+        image: session.user.image ?? null,
+      },
+      items: entries.map((detail) => ({
+        id: detail.id,
+        title: detail.title,
+        subtitle: getListDateLabel(detail.rawDocumentSubtitle),
+        itemType: detail.itemType,
+      })),
+    },
+  } satisfies PwaRouteSnapshot<"review">
 
   if (entries.length === 0) {
     return (
       <section className="mx-auto max-w-4xl">
+        <PwaSnapshotHydrator snapshot={pwaSnapshot} />
         <header className="border-b border-white/[0.06] pb-6">
           <p className="text-[0.68rem] font-semibold tracking-[0.22em] text-white/28 uppercase">
             Review
@@ -85,6 +124,7 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
 
   return (
     <section className="mx-auto grid w-full max-w-4xl gap-6">
+      <PwaSnapshotHydrator snapshot={pwaSnapshot} />
       <header className="border-b border-white/[0.06] pb-6">
         <p className="text-[0.68rem] font-semibold tracking-[0.22em] text-white/28 uppercase">
           Review
@@ -99,7 +139,9 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
 
       {statusMessage ? (
         <div className="border-l-2 border-[var(--neo-green)] px-4 py-3">
-          <p className="text-sm leading-relaxed text-white/66">{statusMessage}</p>
+          <p className="text-sm leading-relaxed text-white/66">
+            {statusMessage}
+          </p>
         </div>
       ) : null}
 
@@ -130,7 +172,10 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
                     </div>
 
                     <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.78rem] text-white/34">
-                      <span>{dateLabel}</span> · <span className="uppercase tracking-[0.16em]">{detail.itemType}</span>
+                      <span>{dateLabel}</span> ·{" "}
+                      <span className="tracking-[0.16em] uppercase">
+                        {detail.itemType}
+                      </span>
                     </div>
                   </div>
                 </div>

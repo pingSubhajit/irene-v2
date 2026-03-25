@@ -38,11 +38,13 @@ export default async function MemoryEditPage({ params }: MemoryEditPageProps) {
     >
       <SettingsMemoryEditor
         mode="edit"
+        userId={session.user.id}
         memoryFactId={fact.id}
         initialAuthoredText={fact.authoredText ?? fact.summaryText}
       />
       <SettingsFootnote>
-        Editing a memory replaces the old version instead of mutating the original record in place.
+        Editing a memory replaces the old version instead of mutating the
+        original record in place.
       </SettingsFootnote>
     </SettingsSubpageShell>
   )

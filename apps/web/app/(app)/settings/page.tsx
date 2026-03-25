@@ -16,12 +16,18 @@ import {
 } from "@workspace/ui/components/avatar"
 
 import { InboxSettingsRows } from "@/components/inbox-settings-rows"
+import { PwaStatusCard } from "@/components/pwa-status-card"
+import { PwaSnapshotHydrator } from "@/components/pwa-snapshot-hydrator"
 import { ReportingCurrencyRow } from "@/components/reporting-currency-row"
 import { SignOutRow } from "@/components/sign-out-row"
 import { TimeZoneRow } from "@/components/time-zone-row"
 import { formatInUserTimeZone } from "@/lib/date-format"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { createPrivateMetadata } from "@/lib/metadata"
+import {
+  PWA_SNAPSHOT_VERSION,
+  type PwaRouteSnapshot,
+} from "@/lib/pwa/contracts"
 import { requireSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
@@ -77,10 +83,7 @@ function getStatusMessage(value: string | undefined) {
   }
 }
 
-function formatMemberSince(
-  value: Date | null | undefined,
-  timeZone: string,
-) {
+function formatMemberSince(value: Date | null | undefined, timeZone: string) {
   if (!value) return "recently"
 
   return formatInUserTimeZone(value, timeZone, {
@@ -105,14 +108,26 @@ export default async function SettingsPage({
 }: SettingsPageProps) {
   const session = await requireSession()
   const params = (await searchParams) ?? {}
-  const [gmailState, settings, authUser, cashAccounts, cardLikeInstruments, latestForecast, memoryFacts] = await Promise.all([
+  const [
+    gmailState,
+    settings,
+    authUser,
+    cashAccounts,
+    cardLikeInstruments,
+    latestForecast,
+    memoryFacts,
+  ] = await Promise.all([
     getGmailIntegrationState(session.user.id),
     getUserSettings(session.user.id),
     getAuthUserProfile(session.user.id),
     listCashPaymentInstrumentsForUser(session.user.id),
     listDebitAndUpiPaymentInstrumentsForUser(session.user.id),
     getLatestForecastRunWithSnapshots(session.user.id),
-    listMemoryFactsForUser({ userId: session.user.id, includeExpired: false, limit: 200 }),
+    listMemoryFactsForUser({
+      userId: session.user.id,
+      includeExpired: false,
+      limit: 200,
+    }),
   ])
 
   const statusMessage =
@@ -122,9 +137,12 @@ export default async function SettingsPage({
     (() => {
       const timeZoneStatus = asSingleValue(params.tz)
 
-      if (timeZoneStatus === "updated") return getStatusMessage("updated-time-zone")
-      if (timeZoneStatus === "invalid-time-zone") return getStatusMessage("invalid-time-zone")
-      if (timeZoneStatus === "save-failed") return getStatusMessage("time-zone-save-failed")
+      if (timeZoneStatus === "updated")
+        return getStatusMessage("updated-time-zone")
+      if (timeZoneStatus === "invalid-time-zone")
+        return getStatusMessage("invalid-time-zone")
+      if (timeZoneStatus === "save-failed")
+        return getStatusMessage("time-zone-save-failed")
       return null
     })() ??
     getStatusMessage(asSingleValue(params.memory))
@@ -135,21 +153,61 @@ export default async function SettingsPage({
       : "not started"
   const displayName = session.user.name
   const displayImage = session.user.image
-  const memberSince = formatMemberSince(authUser?.createdAt ?? null, settings.timeZone)
+  const memberSince = formatMemberSince(
+    authUser?.createdAt ?? null,
+    settings.timeZone
+  )
   const lastSyncValue = gmailState.connection?.lastSuccessfulSyncAt
-    ? formatInUserTimeZone(gmailState.connection.lastSuccessfulSyncAt, settings.timeZone, {
-        day: "numeric",
-        month: "short",
-        hour: "numeric",
-        minute: "2-digit",
-      })
+    ? formatInUserTimeZone(
+        gmailState.connection.lastSuccessfulSyncAt,
+        settings.timeZone,
+        {
+          day: "numeric",
+          month: "short",
+          hour: "numeric",
+          minute: "2-digit",
+        }
+      )
     : "not yet"
-  const linkedInstrumentCount = cardLikeInstruments.filter(
-    (instrument) => Boolean(instrument.backingPaymentInstrumentId),
+  const linkedInstrumentCount = cardLikeInstruments.filter((instrument) =>
+    Boolean(instrument.backingPaymentInstrumentId)
   ).length
+  const capturedDate = new Date()
+  const capturedAt = capturedDate.toISOString()
+  const staleAt = new Date(
+    capturedDate.getTime() + 12 * 60 * 60 * 1000
+  ).toISOString()
+  const pwaSnapshot = {
+    routeKey: "settings" as const,
+    capturedAt,
+    staleAt,
+    userId: session.user.id,
+    version: PWA_SNAPSHOT_VERSION,
+    payload: {
+      user: {
+        userId: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+        image: displayImage ?? null,
+      },
+      memberSinceLabel: memberSince,
+      inboxLabel: gmailState.connection
+        ? (gmailState.connection.providerAccountEmail ?? "connected")
+        : "not linked",
+      reportingCurrency: settings.reportingCurrency,
+      timeZone: settings.timeZone,
+      lastSyncLabel: lastSyncValue,
+      backfillState,
+      cashAccountsCount: cashAccounts.length,
+      linkedInstrumentSummary: `${linkedInstrumentCount}/${cardLikeInstruments.length}`,
+      memoryFactsCount: memoryFacts.length,
+      gmailConnected: Boolean(gmailState.connection),
+    },
+  } satisfies PwaRouteSnapshot<"settings">
 
   return (
     <section className="mx-auto max-w-lg">
+      <PwaSnapshotHydrator snapshot={pwaSnapshot} />
       {/* Profile */}
       <div className="flex items-center gap-4 py-8">
         <Avatar className="size-14 rounded-full">
@@ -182,13 +240,15 @@ export default async function SettingsPage({
         </div>
       )}
 
+      <PwaStatusCard />
+
       {/* Quick stats */}
       <div className="mt-10 divide-y divide-white/[0.06]">
         <InfoRow
           label="inbox"
           value={
             gmailState.connection
-              ? gmailState.connection.providerAccountEmail ?? "connected"
+              ? (gmailState.connection.providerAccountEmail ?? "connected")
               : "not linked"
           }
         />
@@ -196,27 +256,22 @@ export default async function SettingsPage({
           label="reporting currency"
           value={settings.reportingCurrency}
         />
-        <InfoRow
-          label="time zone"
-          value={settings.timeZone}
-        />
-        <InfoRow
-          label="last sync"
-          value={lastSyncValue}
-        />
+        <InfoRow label="time zone" value={settings.timeZone} />
+        <InfoRow label="last sync" value={lastSyncValue} />
         <InfoRow label="backfill" value={backfillState} />
       </div>
 
       {/* Inbox */}
       <SectionHeader>Inbox</SectionHeader>
-      <InboxSettingsRows connected={Boolean(gmailState.connection)} />
+      <InboxSettingsRows
+        userId={session.user.id}
+        connected={Boolean(gmailState.connection)}
+      />
 
       {/* Preferences */}
       <SectionHeader>Preferences</SectionHeader>
       <div className="divide-y divide-white/[0.06]">
-        <ReportingCurrencyRow
-          currentCurrency={settings.reportingCurrency}
-        />
+        <ReportingCurrencyRow currentCurrency={settings.reportingCurrency} />
         <TimeZoneRow currentTimeZone={settings.timeZone} />
       </div>
 
@@ -225,7 +280,11 @@ export default async function SettingsPage({
         <NavRow
           href="/settings/accounts/baseline"
           label="forecast baseline"
-          value={latestForecast ? latestForecast.run.runType.replace("_", " ") : "set up"}
+          value={
+            latestForecast
+              ? latestForecast.run.runType.replace("_", " ")
+              : "set up"
+          }
         />
         <NavRow
           href="/settings/accounts/cash"
@@ -277,7 +336,7 @@ export default async function SettingsPage({
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-1 mt-10 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-white/28">
+    <p className="mt-10 mb-1 text-[0.68rem] font-semibold tracking-[0.22em] text-white/28 uppercase">
       {children}
     </p>
   )

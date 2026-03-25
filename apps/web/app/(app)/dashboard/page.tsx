@@ -21,6 +21,7 @@ import { AppEmptyState } from "@/components/app-empty-state"
 import { DashboardTimeframeSelect } from "@/components/dashboard-timeframe-select"
 import { HeroBalanceCard } from "@/components/hero-balance-card"
 import { HomeCategoryStrip } from "@/components/home-category-strip"
+import { PwaSnapshotHydrator } from "@/components/pwa-snapshot-hydrator"
 import { SnapshotStatStrip } from "@/components/snapshot-stat-strip"
 import { TransactionCard } from "@/components/transaction-card"
 import { summarizeCategoryActivity } from "@/lib/category-summary"
@@ -34,6 +35,10 @@ import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
 import { isAdviceEnabled } from "@/lib/feature-flags"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { createPrivateMetadata } from "@/lib/metadata"
+import {
+  PWA_SNAPSHOT_VERSION,
+  type PwaRouteSnapshot,
+} from "@/lib/pwa/contracts"
 import { resolveAdviceContextHref } from "@/lib/advice"
 import { requireSession } from "@/lib/session"
 import Link from "next/link"
@@ -418,9 +423,67 @@ export default async function DashboardPage({
       ),
     })
   )
+  const capturedDate = new Date()
+  const capturedAt = capturedDate.toISOString()
+  const staleAt = new Date(
+    capturedDate.getTime() + 12 * 60 * 60 * 1000
+  ).toISOString()
+  const pwaSnapshot = {
+    routeKey: "dashboard" as const,
+    capturedAt,
+    staleAt,
+    userId: session.user.id,
+    version: PWA_SNAPSHOT_VERSION,
+    payload: {
+      user: {
+        userId: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+        image: session.user.image ?? null,
+      },
+      reviewAttentionCount: openReviewCount,
+      monthSpendLabel: formatCurrency(spendMinor, reportingCurrency),
+      monthIncomeLabel: formatCurrency(incomeMinor, reportingCurrency),
+      netFlowLabel: formatCurrency(netFlowMinor, reportingCurrency),
+      refundsLabel: formatCurrency(refundMinor, reportingCurrency),
+      setupBlockerTitle: setupBlocker?.title ?? null,
+      categories: topCategories.map((item) => ({
+        label: item.name,
+        amountLabel: formatCurrency(item.totalOutflowMinor, reportingCurrency),
+      })),
+      recentTransactions: recentEvents.map(({ event, merchant }) => ({
+        id: event.id,
+        title: merchant?.displayName ?? event.description ?? "Unmapped event",
+        subtitle: formatInUserTimeZone(
+          event.eventOccurredAt,
+          settings.timeZone,
+          {
+            day: "numeric",
+            month: "short",
+            hour: "numeric",
+            minute: "2-digit",
+          }
+        ),
+        amountLabel: formatCurrency(event.amountMinor, event.currency),
+        tone:
+          event.direction === "inflow"
+            ? "positive"
+            : event.direction === "outflow"
+              ? "negative"
+              : "neutral",
+      })),
+      advice: adviceRailItems.map((item) => ({
+        id: item.id,
+        title: item.title,
+        summary: item.summary,
+        updatedAtLabel: item.updatedAtLabel,
+      })),
+    },
+  } satisfies PwaRouteSnapshot<"dashboard">
 
   return (
     <section className="grid gap-6">
+      <PwaSnapshotHydrator snapshot={pwaSnapshot} />
       <div className="grid gap-6">
         <div>
           <h1 className="mt-4 max-w-[14ch] font-display text-[3rem] leading-[0.92] text-white md:text-[4.2rem]">

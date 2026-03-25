@@ -56,10 +56,14 @@ export {
 } from "./forecast"
 export {
   jobRuns,
+  pwaMutationReceipts,
   userSettings,
   type JobRunInsert,
   type JobRunSelect,
   type JobRunStatus,
+  type PwaMutationReceiptInsert,
+  type PwaMutationReceiptSelect,
+  type PwaMutationReceiptStatus,
   type UserSettingsInsert,
 } from "./app"
 export {
@@ -191,7 +195,7 @@ import {
   goalContributionSnapshots,
 } from "./advice"
 import { authSchema } from "./auth"
-import { jobRuns, userSettings } from "./app"
+import { jobRuns, pwaMutationReceipts, userSettings } from "./app"
 import { feedbackEvents } from "./feedback"
 import { memoryFacts } from "./memory"
 import { extractedSignals, modelRuns } from "./extraction"
@@ -238,6 +242,7 @@ export const schema = {
   goalContributionSnapshots,
   userSettings,
   jobRuns,
+  pwaMutationReceipts,
   memoryFacts,
   feedbackEvents,
   oauthConnections,

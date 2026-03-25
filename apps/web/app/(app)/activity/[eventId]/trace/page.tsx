@@ -58,10 +58,7 @@ function formatCurrency(amountMinor: number, currency: string) {
   }
 }
 
-function formatDateTime(
-  value: Date | null | undefined,
-  timeZone: string,
-) {
+function formatDateTime(value: Date | null | undefined, timeZone: string) {
   if (!value) return "not available"
 
   return formatInUserTimeZone(value, timeZone, {
@@ -70,10 +67,7 @@ function formatDateTime(
   })
 }
 
-function formatShortDate(
-  value: Date | null | undefined,
-  timeZone: string,
-) {
+function formatShortDate(value: Date | null | undefined, timeZone: string) {
   if (!value) return ""
 
   return formatInUserTimeZone(value, timeZone, {
@@ -160,7 +154,14 @@ export default async function EventTracePage({
   const statusParam = Array.isArray(routeSearchParams.status)
     ? routeSearchParams.status[0]
     : routeSearchParams.status
-  const [settings, trace, categories, merchants, paymentInstruments, feedbackEvents] = await Promise.all([
+  const [
+    settings,
+    trace,
+    categories,
+    merchants,
+    paymentInstruments,
+    feedbackEvents,
+  ] = await Promise.all([
     getUserSettings(session.user.id),
     getFinancialEventTraceForUser({
       userId: session.user.id,
@@ -201,7 +202,7 @@ export default async function EventTracePage({
       } catch {
         return [entry.source.id, null] as const
       }
-    }),
+    })
   )
 
   const htmlByTraceId = new Map(htmlEntries)
@@ -211,7 +212,8 @@ export default async function EventTracePage({
     trace.event.merchantDescriptorRaw ??
     "Unmapped event"
   const selectedCategory =
-    categories.find((category) => category.id === trace.event.categoryId) ?? null
+    categories.find((category) => category.id === trace.event.categoryId) ??
+    null
   const accent = getAccentStyles(selectedCategory?.colorToken)
   const processorLine = trace.paymentProcessor?.displayName
     ? `via ${trace.paymentProcessor.displayName}`
@@ -224,424 +226,440 @@ export default async function EventTracePage({
   return (
     <section className="mx-auto max-w-2xl">
       <div
-        className="pointer-events-none absolute left-1/2 top-[-10rem] h-[24rem] w-[100vw] -translate-x-1/2 blur-3xl"
+        className="pointer-events-none absolute top-[-10rem] left-1/2 h-[24rem] w-[100vw] -translate-x-1/2 blur-3xl"
         style={{
           background: `radial-gradient(circle at 50% 0%, ${accent.glow}, transparent 72%)`,
         }}
       />
       <div
-        className="pointer-events-none absolute left-1/2 top-[-2rem] h-[20rem] w-[100vw] -translate-x-1/2 blur-[120px]"
+        className="pointer-events-none absolute top-[-2rem] left-1/2 h-[20rem] w-[100vw] -translate-x-1/2 blur-[120px]"
         style={{
           background: `radial-gradient(circle at 50% 0%, ${accent.soft}, transparent 74%)`,
         }}
       />
       <div className="relative">
-      {/* Back */}
-      <Link
-        href="/activity"
-        className="inline-flex py-6 text-white/50 transition hover:text-white"
-      >
-        <RiArrowLeftLine className="size-5" />
-      </Link>
+        {/* Back */}
+        <Link
+          href="/activity"
+          className="inline-flex py-6 text-white/50 transition hover:text-white"
+        >
+          <RiArrowLeftLine className="size-5" />
+        </Link>
 
-      {/* Event header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          {trace.merchant?.id ? (
-            <MerchantLogoPicker
-              merchantId={trace.merchant.id}
-              merchantName={merchantName}
-              currentLogoUrl={trace.merchant.logoUrl ?? null}
-            />
-          ) : null}
-          {trace.merchant?.id ? (
-            <Link
-              href={`/activity/merchants/${trace.merchant.id}`}
-              className="min-w-0 transition hover:text-white/82"
-            >
+        {/* Event header */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            {trace.merchant?.id ? (
+              <MerchantLogoPicker
+                userId={session.user.id}
+                merchantId={trace.merchant.id}
+                merchantName={merchantName}
+                currentLogoUrl={trace.merchant.logoUrl ?? null}
+              />
+            ) : null}
+            {trace.merchant?.id ? (
+              <Link
+                href={`/activity/merchants/${trace.merchant.id}`}
+                className="min-w-0 transition hover:text-white/82"
+              >
+                <h1 className="min-w-0 text-[1.65rem] font-semibold tracking-tight text-white">
+                  {merchantName}
+                </h1>
+              </Link>
+            ) : (
               <h1 className="min-w-0 text-[1.65rem] font-semibold tracking-tight text-white">
                 {merchantName}
               </h1>
-            </Link>
-          ) : (
-            <h1 className="min-w-0 text-[1.65rem] font-semibold tracking-tight text-white">
-              {merchantName}
-            </h1>
-          )}
-        </div>
-        <ActivityEventActions
-          redirectTo={`/activity/${trace.event.id}/trace`}
-          event={{
-            id: trace.event.id,
-            status: trace.event.status,
-            amountMinor: trace.event.amountMinor,
-            eventOccurredAt: trace.event.eventOccurredAt,
-            eventType: trace.event.eventType,
-            merchantId: trace.event.merchantId,
-            categoryId: trace.event.categoryId,
-            paymentInstrumentId: trace.event.paymentInstrumentId,
-            description: trace.event.description,
-            notes: trace.event.notes,
-          }}
-          merchant={
-            trace.merchant
-              ? {
-                  id: trace.merchant.id,
-                  displayName: trace.merchant.displayName,
-                  defaultCategory: trace.merchant.defaultCategory,
-                }
-              : null
-          }
-          paymentInstrument={
-            trace.paymentInstrument
-              ? {
-                  id: trace.paymentInstrument.id,
-                  displayName: trace.paymentInstrument.displayName,
-                  instrumentType: trace.paymentInstrument.instrumentType,
-                  status: trace.paymentInstrument.status,
-                  creditLimitMinor: trace.paymentInstrument.creditLimitMinor,
-                }
-              : null
-          }
-          merchants={merchants.map((merchant) => ({
-            id: merchant.id,
-            displayName: merchant.displayName,
-          }))}
-          categories={categories.map((category) => ({
-            id: category.id,
-            displayName: category.name,
-          }))}
-          paymentInstruments={paymentInstruments.map((instrument) => ({
-            id: instrument.id,
-            displayName: instrument.displayName,
-            subtitle: instrument.maskedIdentifier
-              ? `${instrument.instrumentType.replace("_", " ")} • ${instrument.maskedIdentifier}`
-              : instrument.instrumentType.replace("_", " "),
-          }))}
-        />
-      </div>
-
-      {latestFeedback ? (
-        <div className="mt-4">
-          <div
-            className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm"
-            style={{
-              borderColor: accent.border,
-              background: `linear-gradient(180deg, rgba(255,255,255,0.03), ${accent.soft})`,
-              boxShadow: `0 0 24px ${accent.soft}`,
-            }}
-          >
-            <span
-              className="size-2 rounded-full"
-              style={{ backgroundColor: accent.glow }}
-            />
-            <span className="text-white/78">{getCorrectionLabel(latestFeedback.correctionType)}</span>
-          </div>
-        </div>
-      ) : null}
-      {secondaryLine ? (
-        <p className="mt-1 text-sm text-white/48">{secondaryLine}</p>
-      ) : null}
-      <p className="mt-1 text-sm text-white/36">
-        {formatCurrency(trace.event.amountMinor, trace.event.currency)} ·{" "}
-        {formatShortDate(trace.event.eventOccurredAt, settings.timeZone)} ·{" "}
-        {trace.event.eventType}
-      </p>
-      {selectedCategory ? (
-        <Link
-          href={`/activity/categories/${selectedCategory.id}`}
-          className="mt-4 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.18)]"
-          style={{
-            borderColor: accent.border,
-            background:
-              "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02))",
-          }}
-        >
-          <span
-            className="inline-flex size-7 items-center justify-center rounded-full bg-white/[0.03]"
-            style={{
-              boxShadow: `0 0 28px ${accent.soft}`,
-            }}
-          >
-            <CategoryBadge
-              categoryName={selectedCategory.name}
-              iconName={selectedCategory.iconName}
-              colorToken={selectedCategory.colorToken}
-              className="size-4"
-            />
-          </span>
-          <span
-            className={cn(
-              "text-sm font-medium tracking-[-0.02em]",
-              resolveCategoryBadgeToneClassName(selectedCategory.colorToken),
             )}
-          >
-            {selectedCategory.name}
-          </span>
-        </Link>
-      ) : null}
-      {statusMessage ? (
-        <div className="mt-5 border-l-2 border-[var(--neo-green)] bg-[rgba(111,247,184,0.04)] px-4 py-3">
-          <p className="text-sm leading-relaxed text-white/68">{statusMessage}</p>
-        </div>
-      ) : null}
-
-      {/* Event summary */}
-      <div className="mt-8 divide-y divide-white/[0.06]">
-        <InfoRow label="amount" value={formatCurrency(trace.event.amountMinor, trace.event.currency)} />
-        <InfoRow label="direction" value={trace.event.direction} />
-        <InfoRow label="date" value={formatDateTime(trace.event.eventOccurredAt, settings.timeZone)} />
-        <InfoRow label="type" value={trace.event.eventType} />
-        <InfoRow label="status" value={trace.event.status} />
-        <InfoRow label="processor" value={trace.paymentProcessor?.displayName ?? "unlinked"} />
-        <InfoRow label="instrument" value={trace.paymentInstrument?.displayName ?? "unlinked"} />
-        <InfoRow
-          label="descriptor"
-          value={trace.event.merchantDescriptorRaw ?? "unavailable"}
-        />
-        <InfoRow
-          label="source paths"
-          value={`${trace.traces.length} ${trace.traces.length === 1 ? "path" : "paths"}`}
-        />
-      </div>
-
-      {trace.eventModelRuns.length > 0 && (
-        <div className="mt-10">
-          <SectionLabel>Event processing</SectionLabel>
-          <ModelRunList
-            modelRuns={trace.eventModelRuns.map((modelRun) => ({
-              ...modelRun,
-              retryAction: null,
+          </div>
+          <ActivityEventActions
+            redirectTo={`/activity/${trace.event.id}/trace`}
+            event={{
+              id: trace.event.id,
+              status: trace.event.status,
+              amountMinor: trace.event.amountMinor,
+              eventOccurredAt: trace.event.eventOccurredAt,
+              eventType: trace.event.eventType,
+              merchantId: trace.event.merchantId,
+              categoryId: trace.event.categoryId,
+              paymentInstrumentId: trace.event.paymentInstrumentId,
+              description: trace.event.description,
+              notes: trace.event.notes,
+            }}
+            merchant={
+              trace.merchant
+                ? {
+                    id: trace.merchant.id,
+                    displayName: trace.merchant.displayName,
+                    defaultCategory: trace.merchant.defaultCategory,
+                  }
+                : null
+            }
+            paymentInstrument={
+              trace.paymentInstrument
+                ? {
+                    id: trace.paymentInstrument.id,
+                    displayName: trace.paymentInstrument.displayName,
+                    instrumentType: trace.paymentInstrument.instrumentType,
+                    status: trace.paymentInstrument.status,
+                    creditLimitMinor: trace.paymentInstrument.creditLimitMinor,
+                  }
+                : null
+            }
+            merchants={merchants.map((merchant) => ({
+              id: merchant.id,
+              displayName: merchant.displayName,
+            }))}
+            categories={categories.map((category) => ({
+              id: category.id,
+              displayName: category.name,
+            }))}
+            paymentInstruments={paymentInstruments.map((instrument) => ({
+              id: instrument.id,
+              displayName: instrument.displayName,
+              subtitle: instrument.maskedIdentifier
+                ? `${instrument.instrumentType.replace("_", " ")} • ${instrument.maskedIdentifier}`
+                : instrument.instrumentType.replace("_", " "),
             }))}
           />
         </div>
-      )}
 
-      {/* Trace paths */}
-      {trace.traces.length > 0 ? (
-        <div className="mt-10">
-          <p className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-white/28">
-            Provenance
-          </p>
-
-          <Accordion
-            type="single"
-            collapsible
-            className="gap-0 divide-y divide-white/[0.06]"
+        {latestFeedback ? (
+          <div className="mt-4">
+            <div
+              className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm"
+              style={{
+                borderColor: accent.border,
+                background: `linear-gradient(180deg, rgba(255,255,255,0.03), ${accent.soft})`,
+                boxShadow: `0 0 24px ${accent.soft}`,
+              }}
+            >
+              <span
+                className="size-2 rounded-full"
+                style={{ backgroundColor: accent.glow }}
+              />
+              <span className="text-white/78">
+                {getCorrectionLabel(latestFeedback.correctionType)}
+              </span>
+            </div>
+          </div>
+        ) : null}
+        {secondaryLine ? (
+          <p className="mt-1 text-sm text-white/48">{secondaryLine}</p>
+        ) : null}
+        <p className="mt-1 text-sm text-white/36">
+          {formatCurrency(trace.event.amountMinor, trace.event.currency)} ·{" "}
+          {formatShortDate(trace.event.eventOccurredAt, settings.timeZone)} ·{" "}
+          {trace.event.eventType}
+        </p>
+        {selectedCategory ? (
+          <Link
+            href={`/activity/categories/${selectedCategory.id}`}
+            className="mt-4 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.18)]"
+            style={{
+              borderColor: accent.border,
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02))",
+            }}
           >
-            {trace.traces.map((entry, index) => {
-              const emailHtml =
-                htmlByTraceId.get(entry.source.id) ?? null
+            <span
+              className="inline-flex size-7 items-center justify-center rounded-full bg-white/[0.03]"
+              style={{
+                boxShadow: `0 0 28px ${accent.soft}`,
+              }}
+            >
+              <CategoryBadge
+                categoryName={selectedCategory.name}
+                iconName={selectedCategory.iconName}
+                colorToken={selectedCategory.colorToken}
+                className="size-4"
+              />
+            </span>
+            <span
+              className={cn(
+                "text-sm font-medium tracking-[-0.02em]",
+                resolveCategoryBadgeToneClassName(selectedCategory.colorToken)
+              )}
+            >
+              {selectedCategory.name}
+            </span>
+          </Link>
+        ) : null}
+        {statusMessage ? (
+          <div className="mt-5 border-l-2 border-[var(--neo-green)] bg-[rgba(111,247,184,0.04)] px-4 py-3">
+            <p className="text-sm leading-relaxed text-white/68">
+              {statusMessage}
+            </p>
+          </div>
+        ) : null}
 
-              return (
-                <AccordionItem
-                  key={entry.source.id}
-                  value={entry.source.id}
-                  className="border-0 bg-transparent"
-                >
-                  <AccordionTrigger className="px-0 [&>span:last-child]:border-0 [&>span:last-child]:bg-transparent">
-                    <div className="grid gap-1 text-left">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white/28">
-                          path {index + 1}
-                        </span>
-                        {entry.extractedSignal?.signalType && (
-                          <Badge variant="violet" className="text-[0.6rem]">
-                            {entry.extractedSignal.signalType}
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-[15px] font-medium text-white">
-                        {entry.rawDocument?.subject ??
-                          "No subject on source email"}
-                      </p>
-                      <p className="text-sm text-white/32">
-                        {entry.rawDocument?.fromAddress ??
-                          "Unknown sender"}{" "}
-                        ·{" "}
-                        {formatDateTime(
-                          entry.rawDocument?.messageTimestamp,
-                          settings.timeZone,
-                        )}
-                      </p>
-                    </div>
-                  </AccordionTrigger>
+        {/* Event summary */}
+        <div className="mt-8 divide-y divide-white/[0.06]">
+          <InfoRow
+            label="amount"
+            value={formatCurrency(
+              trace.event.amountMinor,
+              trace.event.currency
+            )}
+          />
+          <InfoRow label="direction" value={trace.event.direction} />
+          <InfoRow
+            label="date"
+            value={formatDateTime(
+              trace.event.eventOccurredAt,
+              settings.timeZone
+            )}
+          />
+          <InfoRow label="type" value={trace.event.eventType} />
+          <InfoRow label="status" value={trace.event.status} />
+          <InfoRow
+            label="processor"
+            value={trace.paymentProcessor?.displayName ?? "unlinked"}
+          />
+          <InfoRow
+            label="instrument"
+            value={trace.paymentInstrument?.displayName ?? "unlinked"}
+          />
+          <InfoRow
+            label="descriptor"
+            value={trace.event.merchantDescriptorRaw ?? "unavailable"}
+          />
+          <InfoRow
+            label="source paths"
+            value={`${trace.traces.length} ${trace.traces.length === 1 ? "path" : "paths"}`}
+          />
+        </div>
 
-                  <AccordionContent className="grid gap-8 border-t-0 px-0 pb-6">
-                    {/* Source email */}
-                    <div>
-                      <SectionLabel>Source email</SectionLabel>
-                      <div className="divide-y divide-white/[0.06]">
-                        <InfoRow
-                          label="sender"
-                          value={
-                            entry.rawDocument?.fromAddress ??
-                            "Unknown"
-                          }
-                        />
-                        <InfoRow
-                          label="recipient"
-                          value={
-                            entry.rawDocument?.toAddress ?? "Unknown"
-                          }
-                        />
-                        <InfoRow
-                          label="subject"
-                          value={
-                            entry.rawDocument?.subject ??
-                            "(no subject)"
-                          }
-                        />
-                        <InfoRow
-                          label="time"
-                          value={formatDateTime(
-                            entry.rawDocument?.messageTimestamp,
-                            settings.timeZone,
+        {trace.eventModelRuns.length > 0 && (
+          <div className="mt-10">
+            <SectionLabel>Event processing</SectionLabel>
+            <ModelRunList
+              modelRuns={trace.eventModelRuns.map((modelRun) => ({
+                ...modelRun,
+                retryAction: null,
+              }))}
+            />
+          </div>
+        )}
+
+        {/* Trace paths */}
+        {trace.traces.length > 0 ? (
+          <div className="mt-10">
+            <p className="mb-3 text-[0.68rem] font-semibold tracking-[0.22em] text-white/28 uppercase">
+              Provenance
+            </p>
+
+            <Accordion
+              type="single"
+              collapsible
+              className="gap-0 divide-y divide-white/[0.06]"
+            >
+              {trace.traces.map((entry, index) => {
+                const emailHtml = htmlByTraceId.get(entry.source.id) ?? null
+
+                return (
+                  <AccordionItem
+                    key={entry.source.id}
+                    value={entry.source.id}
+                    className="border-0 bg-transparent"
+                  >
+                    <AccordionTrigger className="px-0 [&>span:last-child]:border-0 [&>span:last-child]:bg-transparent">
+                      <div className="grid gap-1 text-left">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold tracking-[0.18em] text-white/28 uppercase">
+                            path {index + 1}
+                          </span>
+                          {entry.extractedSignal?.signalType && (
+                            <Badge variant="violet" className="text-[0.6rem]">
+                              {entry.extractedSignal.signalType}
+                            </Badge>
                           )}
-                        />
-                        <InfoRow
-                          label="provider id"
-                          value={
-                            entry.rawDocument?.providerMessageId ??
-                            "unavailable"
-                          }
-                        />
-                        <InfoRow
-                          label="thread"
-                          value={
-                            entry.rawDocument?.threadId ??
-                            "unavailable"
-                          }
-                        />
+                        </div>
+                        <p className="text-[15px] font-medium text-white">
+                          {entry.rawDocument?.subject ??
+                            "No subject on source email"}
+                        </p>
+                        <p className="text-sm text-white/32">
+                          {entry.rawDocument?.fromAddress ?? "Unknown sender"} ·{" "}
+                          {formatDateTime(
+                            entry.rawDocument?.messageTimestamp,
+                            settings.timeZone
+                          )}
+                        </p>
                       </div>
-                    </div>
+                    </AccordionTrigger>
 
-                    {/* Signal */}
-                    <div>
-                      <SectionLabel>Signal</SectionLabel>
-                      <div className="divide-y divide-white/[0.06]">
-                        <InfoRow
-                          label="candidate"
-                          value={
-                            entry.extractedSignal
-                              ?.candidateEventType ??
-                            "no candidate"
-                          }
-                        />
-                        <InfoRow
-                          label="confidence"
-                          value={
-                            entry.extractedSignal
-                              ? `${Math.round(Number(entry.extractedSignal.confidence) * 100)}%`
-                              : "unavailable"
-                          }
-                        />
-                        <InfoRow
-                          label="event date"
-                          value={
-                            entry.extractedSignal?.eventDate ??
-                            "unavailable"
-                          }
-                        />
-                        <InfoRow
-                          label="merchant hint"
-                          value={
-                            entry.extractedSignal?.merchantNameCandidate ??
-                            entry.extractedSignal?.merchantHint ??
-                            entry.extractedSignal?.merchantRaw ??
-                            "unavailable"
-                          }
-                        />
-                        <InfoRow
-                          label="processor hint"
-                          value={
-                            entry.extractedSignal?.processorNameCandidate ?? "unavailable"
-                          }
-                        />
-                        <InfoRow
-                          label="issuer hint"
-                          value={entry.extractedSignal?.issuerNameHint ?? "unavailable"}
-                        />
-                        <InfoRow
-                          label="descriptor"
-                          value={
-                            entry.extractedSignal?.merchantDescriptorRaw ?? "unavailable"
-                          }
-                        />
-                        <InfoRow
-                          label="link reason"
-                          value={entry.source.linkReason}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Model runs */}
-                    {entry.modelRuns.length > 0 && (
+                    <AccordionContent className="grid gap-8 border-t-0 px-0 pb-6">
+                      {/* Source email */}
                       <div>
-                        <SectionLabel>Processing steps</SectionLabel>
-                        <ModelRunList
-                          modelRuns={entry.modelRuns.map((modelRun) => ({
-                            ...modelRun,
-                            retryAction:
-                              modelRun.status === "failed" &&
-                              (
-                                (modelRun.taskType === "reconciliation_resolution" &&
+                        <SectionLabel>Source email</SectionLabel>
+                        <div className="divide-y divide-white/[0.06]">
+                          <InfoRow
+                            label="sender"
+                            value={entry.rawDocument?.fromAddress ?? "Unknown"}
+                          />
+                          <InfoRow
+                            label="recipient"
+                            value={entry.rawDocument?.toAddress ?? "Unknown"}
+                          />
+                          <InfoRow
+                            label="subject"
+                            value={entry.rawDocument?.subject ?? "(no subject)"}
+                          />
+                          <InfoRow
+                            label="time"
+                            value={formatDateTime(
+                              entry.rawDocument?.messageTimestamp,
+                              settings.timeZone
+                            )}
+                          />
+                          <InfoRow
+                            label="provider id"
+                            value={
+                              entry.rawDocument?.providerMessageId ??
+                              "unavailable"
+                            }
+                          />
+                          <InfoRow
+                            label="thread"
+                            value={entry.rawDocument?.threadId ?? "unavailable"}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Signal */}
+                      <div>
+                        <SectionLabel>Signal</SectionLabel>
+                        <div className="divide-y divide-white/[0.06]">
+                          <InfoRow
+                            label="candidate"
+                            value={
+                              entry.extractedSignal?.candidateEventType ??
+                              "no candidate"
+                            }
+                          />
+                          <InfoRow
+                            label="confidence"
+                            value={
+                              entry.extractedSignal
+                                ? `${Math.round(Number(entry.extractedSignal.confidence) * 100)}%`
+                                : "unavailable"
+                            }
+                          />
+                          <InfoRow
+                            label="event date"
+                            value={
+                              entry.extractedSignal?.eventDate ?? "unavailable"
+                            }
+                          />
+                          <InfoRow
+                            label="merchant hint"
+                            value={
+                              entry.extractedSignal?.merchantNameCandidate ??
+                              entry.extractedSignal?.merchantHint ??
+                              entry.extractedSignal?.merchantRaw ??
+                              "unavailable"
+                            }
+                          />
+                          <InfoRow
+                            label="processor hint"
+                            value={
+                              entry.extractedSignal?.processorNameCandidate ??
+                              "unavailable"
+                            }
+                          />
+                          <InfoRow
+                            label="issuer hint"
+                            value={
+                              entry.extractedSignal?.issuerNameHint ??
+                              "unavailable"
+                            }
+                          />
+                          <InfoRow
+                            label="descriptor"
+                            value={
+                              entry.extractedSignal?.merchantDescriptorRaw ??
+                              "unavailable"
+                            }
+                          />
+                          <InfoRow
+                            label="link reason"
+                            value={entry.source.linkReason}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Model runs */}
+                      {entry.modelRuns.length > 0 && (
+                        <div>
+                          <SectionLabel>Processing steps</SectionLabel>
+                          <ModelRunList
+                            modelRuns={entry.modelRuns.map((modelRun) => ({
+                              ...modelRun,
+                              retryAction:
+                                modelRun.status === "failed" &&
+                                ((modelRun.taskType ===
+                                  "reconciliation_resolution" &&
                                   entry.extractedSignal?.id &&
                                   entry.rawDocument?.id) ||
-                                ((modelRun.taskType === "document_extraction" ||
-                                  modelRun.taskType === "balance_inference") &&
-                                  entry.rawDocument?.id) ||
-                                (modelRun.taskType === "category_resolution" &&
-                                  trace.event.id)
-                              )
-                                ? {
-                                    extractedSignalId: entry.extractedSignal?.id ?? null,
-                                    rawDocumentId: entry.rawDocument?.id ?? null,
-                                    financialEventId:
-                                      modelRun.taskType === "category_resolution"
-                                        ? trace.event.id
-                                        : null,
-                                  }
-                                : null,
-                          }))}
-                        />
-                      </div>
-                    )}
-
-                    {/* Email body */}
-                    <div>
-                      <SectionLabel>Email body</SectionLabel>
-                      {emailHtml ? (
-                        <iframe
-                          title={
-                            entry.rawDocument?.subject ??
-                            `trace-${index + 1}`
-                          }
-                          sandbox=""
-                          srcDoc={emailHtml}
-                          className="mt-2 min-h-[400px] w-full border border-white/8 bg-white"
-                        />
-                      ) : (
-                        <p className="mt-2 text-sm leading-7 whitespace-pre-wrap text-white/44">
-                          {entry.rawDocument?.bodyText ??
-                            entry.rawDocument?.snippet ??
-                            "No stored email body available."}
-                        </p>
+                                  ((modelRun.taskType ===
+                                    "document_extraction" ||
+                                    modelRun.taskType ===
+                                      "balance_inference") &&
+                                    entry.rawDocument?.id) ||
+                                  (modelRun.taskType ===
+                                    "category_resolution" &&
+                                    trace.event.id))
+                                  ? {
+                                      extractedSignalId:
+                                        entry.extractedSignal?.id ?? null,
+                                      rawDocumentId:
+                                        entry.rawDocument?.id ?? null,
+                                      financialEventId:
+                                        modelRun.taskType ===
+                                        "category_resolution"
+                                          ? trace.event.id
+                                          : null,
+                                    }
+                                  : null,
+                            }))}
+                          />
+                        </div>
                       )}
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              )
-            })}
-          </Accordion>
-        </div>
-      ) : (
-        <div className="mt-10 py-12 text-center">
-          <p className="text-sm text-white/32">
-            no source paths are attached to this transaction yet.
-          </p>
-        </div>
-      )}
+
+                      {/* Email body */}
+                      <div>
+                        <SectionLabel>Email body</SectionLabel>
+                        {emailHtml ? (
+                          <iframe
+                            title={
+                              entry.rawDocument?.subject ?? `trace-${index + 1}`
+                            }
+                            sandbox=""
+                            srcDoc={emailHtml}
+                            className="mt-2 min-h-[400px] w-full border border-white/8 bg-white"
+                          />
+                        ) : (
+                          <p className="mt-2 text-sm leading-7 whitespace-pre-wrap text-white/44">
+                            {entry.rawDocument?.bodyText ??
+                              entry.rawDocument?.snippet ??
+                              "No stored email body available."}
+                          </p>
+                        )}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                )
+              })}
+            </Accordion>
+          </div>
+        ) : (
+          <div className="mt-10 py-12 text-center">
+            <p className="text-sm text-white/32">
+              no source paths are attached to this transaction yet.
+            </p>
+          </div>
+        )}
       </div>
     </section>
   )
@@ -668,7 +686,7 @@ function getStatusMessage(value: string | undefined) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-white/28">
+    <p className="mb-1 text-[0.68rem] font-semibold tracking-[0.22em] text-white/28 uppercase">
       {children}
     </p>
   )

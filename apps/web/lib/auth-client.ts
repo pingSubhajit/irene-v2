@@ -1,5 +1,7 @@
 "use client"
 
+import { clearPwaClientState } from "@/lib/pwa/client-mutations"
+
 type SignInResult = {
   redirect?: boolean
   url?: string
@@ -51,4 +53,5 @@ export async function signInWithGoogle() {
 
 export async function signOut() {
   await postAuth("/api/auth/sign-out", {})
+  await clearPwaClientState()
 }

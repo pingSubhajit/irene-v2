@@ -4,15 +4,18 @@ import { useRouter } from "next/navigation"
 import { useMemo, useState, type ChangeEvent } from "react"
 
 import type { MemoryAuthoringResult } from "@workspace/ai"
+import { submitJsonPwaMutation } from "@/lib/pwa/client-mutations"
 
 type SettingsMemoryEditorProps = {
   mode: "create" | "edit"
+  userId: string
   memoryFactId?: string
   initialAuthoredText?: string | null
 }
 
 export function SettingsMemoryEditor({
   mode,
+  userId,
   memoryFactId,
   initialAuthoredText,
 }: SettingsMemoryEditorProps) {
@@ -26,9 +29,9 @@ export function SettingsMemoryEditor({
   const canSave = useMemo(() => {
     return Boolean(
       preview &&
-        !preview.needsClarification &&
-        preview.memories.length > 0 &&
-        authoredText.trim().length >= 8,
+      !preview.needsClarification &&
+      preview.memories.length > 0 &&
+      authoredText.trim().length >= 8
     )
   }, [authoredText, preview])
 
@@ -59,7 +62,11 @@ export function SettingsMemoryEditor({
       }
 
       setPreview(data.result)
-      setError(data.result.needsClarification ? data.result.clarificationMessage ?? null : null)
+      setError(
+        data.result.needsClarification
+          ? (data.result.clarificationMessage ?? null)
+          : null
+      )
     } catch {
       setPreview(null)
       setError("I couldn't interpret that memory yet. Try again in a moment.")
@@ -77,28 +84,34 @@ export function SettingsMemoryEditor({
     setError(null)
 
     try {
-      const response = await fetch("/api/settings/memory", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
+      const { queued, result } = await submitJsonPwaMutation({
+        userId,
+        kind:
+          mode === "edit"
+            ? "settings.memory.replace"
+            : "settings.memory.create",
+        routePath: "/api/settings/memory",
+        json: {
           action: mode === "edit" ? "replace" : "create",
           memoryFactId,
           authoredText,
           candidates: preview.memories,
-        }),
+        },
       })
-      const data = (await response.json()) as
-        | { ok: true; redirectTo: string }
-        | { ok: false; error: string }
 
-      if (!response.ok || !data.ok) {
-        setError(data.ok ? "I couldn't save that memory." : data.error)
+      if (queued) {
+        setError("Memory queued. Irene will save it when you are back online.")
         return
       }
 
-      router.push(data.redirectTo)
+      if (!result?.ok) {
+        setError(result?.message ?? "I couldn't save that memory.")
+        return
+      }
+
+      if (result.redirectTo) {
+        router.push(result.redirectTo)
+      }
       router.refresh()
     } catch {
       setError("I couldn't save that memory yet. Try again in a moment.")
@@ -113,7 +126,8 @@ export function SettingsMemoryEditor({
         <div className="py-5">
           <p className="neo-kicker">Your note</p>
           <p className="mt-2 max-w-[34ch] text-sm leading-relaxed text-white/32">
-            Keep it focused and natural. Irene will translate it into structured memory behind the scenes.
+            Keep it focused and natural. Irene will translate it into structured
+            memory behind the scenes.
           </p>
         </div>
         <textarea
@@ -123,7 +137,7 @@ export function SettingsMemoryEditor({
           }
           placeholder="Amazon charges on card 1008 are usually subscriptions."
           rows={5}
-          className="w-full resize-none border border-white/[0.08] bg-transparent px-4 py-3 text-[15px] leading-7 text-white outline-none transition placeholder:text-white/18 focus:border-white/20"
+          className="w-full resize-none border border-white/[0.08] bg-transparent px-4 py-3 text-[15px] leading-7 text-white transition outline-none placeholder:text-white/18 focus:border-white/20"
         />
       </section>
 
@@ -143,10 +157,17 @@ export function SettingsMemoryEditor({
           </div>
           <div className="divide-y divide-white/[0.06]">
             {preview.memories.map((candidate, index) => (
-              <div key={`${candidate.factType}-${index}`} className="py-4 first:pt-0">
-                <p className="text-[15px] leading-6 text-white">{candidate.summaryText}</p>
+              <div
+                key={`${candidate.factType}-${index}`}
+                className="py-4 first:pt-0"
+              >
+                <p className="text-[15px] leading-6 text-white">
+                  {candidate.summaryText}
+                </p>
                 {candidate.detailText ? (
-                  <p className="mt-1 text-sm leading-6 text-white/30">{candidate.detailText}</p>
+                  <p className="mt-1 text-sm leading-6 text-white/30">
+                    {candidate.detailText}
+                  </p>
                 ) : null}
               </div>
             ))}
@@ -161,7 +182,11 @@ export function SettingsMemoryEditor({
           disabled={isInterpreting || authoredText.trim().length < 8}
           className="min-h-11 border border-white/[0.08] px-4 text-sm text-white/72 transition hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:text-white/18"
         >
-          {isInterpreting ? "Interpreting..." : mode === "edit" ? "Rewrite memory" : "Teach Irene"}
+          {isInterpreting
+            ? "Interpreting..."
+            : mode === "edit"
+              ? "Rewrite memory"
+              : "Teach Irene"}
         </button>
         <button
           type="button"

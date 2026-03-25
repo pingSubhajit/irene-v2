@@ -1,11 +1,14 @@
 "use client"
 
-import { startTransition, useEffect, useMemo, useState, type ChangeEvent } from "react"
-
 import {
-  RiLoader4Line,
-  RiSearchLine,
-} from "@remixicon/react"
+  startTransition,
+  useEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+} from "react"
+
+import { RiLoader4Line, RiSearchLine } from "@remixicon/react"
 import { useRouter } from "next/navigation"
 import {
   Avatar,
@@ -21,6 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@workspace/ui/components/sheet"
+import { submitJsonPwaMutation } from "@/lib/pwa/client-mutations"
 
 type LogoSearchResult = {
   name: string
@@ -29,6 +33,7 @@ type LogoSearchResult = {
 }
 
 type MerchantLogoPickerProps = {
+  userId: string
   merchantId: string
   merchantName: string
   currentLogoUrl: string | null
@@ -47,6 +52,7 @@ function getInitials(name: string) {
 }
 
 export function MerchantLogoPicker({
+  userId,
   merchantId,
   merchantName,
   currentLogoUrl,
@@ -55,7 +61,9 @@ export function MerchantLogoPicker({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(merchantName)
   const [results, setResults] = useState<LogoSearchResult[]>([])
-  const [selectedLogoUrl, setSelectedLogoUrl] = useState<string | null>(currentLogoUrl)
+  const [selectedLogoUrl, setSelectedLogoUrl] = useState<string | null>(
+    currentLogoUrl
+  )
   const [isSearching, setIsSearching] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,9 +88,12 @@ export function MerchantLogoPicker({
       setError(null)
 
       try {
-        const response = await fetch(`/api/logo/search?query=${encodeURIComponent(trimmedQuery)}`, {
-          cache: "no-store",
-        })
+        const response = await fetch(
+          `/api/logo/search?query=${encodeURIComponent(trimmedQuery)}`,
+          {
+            cache: "no-store",
+          }
+        )
         const payload = (await response.json()) as {
           error?: string
           results?: LogoSearchResult[]
@@ -112,7 +123,11 @@ export function MerchantLogoPicker({
       } catch (searchError) {
         setResults([])
         setSelectedLogoUrl(currentLogoUrl)
-        setError(searchError instanceof Error ? searchError.message : "Logo search failed.")
+        setError(
+          searchError instanceof Error
+            ? searchError.message
+            : "Logo search failed."
+        )
       } finally {
         setIsSearching(false)
       }
@@ -133,17 +148,26 @@ export function MerchantLogoPicker({
     setError(null)
 
     try {
-      const response = await fetch(`/api/merchants/${merchantId}/logo`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const { queued, result } = await submitJsonPwaMutation({
+        userId,
+        kind: "merchant.logo.update",
+        routePath: `/api/merchants/${merchantId}/logo`,
+        routeParams: {
+          merchantId,
         },
-        body: JSON.stringify({ logoUrl: selectedLogoUrl }),
+        json: { logoUrl: selectedLogoUrl },
       })
-      const payload = (await response.json()) as { error?: string }
 
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Could not update merchant logo.")
+      if (queued) {
+        setOpen(false)
+        startTransition(() => {
+          router.refresh()
+        })
+        return
+      }
+
+      if (!result?.ok) {
+        throw new Error(result?.message ?? "Could not update merchant logo.")
       }
 
       setOpen(false)
@@ -151,7 +175,11 @@ export function MerchantLogoPicker({
         router.refresh()
       })
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not update merchant logo.")
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Could not update merchant logo."
+      )
     } finally {
       setIsSaving(false)
     }
@@ -241,7 +269,7 @@ export function MerchantLogoPicker({
           </div>
 
           <div className="relative mt-5">
-            <RiSearchLine className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-white/28" />
+            <RiSearchLine className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-white/28" />
             <Input
               value={query}
               onChange={(event: ChangeEvent<HTMLInputElement>) =>
@@ -251,11 +279,13 @@ export function MerchantLogoPicker({
               className="h-14 border-white/8 bg-[rgba(18,18,20,0.98)] pl-11 text-base"
             />
             {isSearching ? (
-              <RiLoader4Line className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 animate-spin text-white/32" />
+              <RiLoader4Line className="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 animate-spin text-white/32" />
             ) : null}
           </div>
 
-          {error && <p className="mt-3 text-sm text-[var(--neo-coral)]">{error}</p>}
+          {error && (
+            <p className="mt-3 text-sm text-[var(--neo-coral)]">{error}</p>
+          )}
 
           <Button
             type="button"

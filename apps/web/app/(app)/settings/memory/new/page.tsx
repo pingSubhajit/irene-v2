@@ -14,7 +14,7 @@ export const metadata: Metadata = createPrivateMetadata({
 })
 
 export default async function MemoryNewPage() {
-  await requireSession()
+  const session = await requireSession()
 
   return (
     <SettingsSubpageShell
@@ -22,9 +22,10 @@ export default async function MemoryNewPage() {
       title="teach Irene"
       description="Write one plain-language note and Irene will turn it into reusable memory behind the scenes."
     >
-      <SettingsMemoryEditor mode="create" />
+      <SettingsMemoryEditor mode="create" userId={session.user.id} />
       <SettingsFootnote>
-        Keep each note focused. If you mean two unrelated things, teach them as separate memories.
+        Keep each note focused. If you mean two unrelated things, teach them as
+        separate memories.
       </SettingsFootnote>
     </SettingsSubpageShell>
   )

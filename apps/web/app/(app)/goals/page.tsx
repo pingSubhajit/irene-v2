@@ -7,8 +7,13 @@ import {
   listLatestGoalContributionSnapshotsForGoalIds,
 } from "@workspace/db"
 
+import { PwaSnapshotHydrator } from "@/components/pwa-snapshot-hydrator"
 import { requireSession } from "@/lib/session"
 import { createPrivateMetadata } from "@/lib/metadata"
+import {
+  PWA_SNAPSHOT_VERSION,
+  type PwaRouteSnapshot,
+} from "@/lib/pwa/contracts"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = createPrivateMetadata({
@@ -68,18 +73,62 @@ export default async function GoalsPage({ searchParams }: GoalsPageProps) {
   ])
 
   const snapshots = await listLatestGoalContributionSnapshotsForGoalIds(
-    goals.map((row) => row.goal.id),
+    goals.map((row) => row.goal.id)
   )
   const snapshotsByGoalId = new Map(
-    snapshots.map((row) => [row.snapshot.financialGoalId, row.snapshot]),
+    snapshots.map((row) => [row.snapshot.financialGoalId, row.snapshot])
   )
 
   const message = getStatusMessage(asSingleValue(params.goals))
   const active = goals.filter((row) => row.goal.status === "active")
   const closed = goals.filter((row) => row.goal.status !== "active")
+  const capturedDate = new Date()
+  const capturedAt = capturedDate.toISOString()
+  const staleAt = new Date(
+    capturedDate.getTime() + 12 * 60 * 60 * 1000
+  ).toISOString()
+  const pwaSnapshot = {
+    routeKey: "goals" as const,
+    capturedAt,
+    staleAt,
+    userId: session.user.id,
+    version: PWA_SNAPSHOT_VERSION,
+    payload: {
+      user: {
+        userId: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+        image: session.user.image ?? null,
+      },
+      active: active.map(({ goal }) => {
+        const snapshot = snapshotsByGoalId.get(goal.id)
+        const projectedAmountMinor =
+          snapshot?.projectedAmountMinor ?? goal.startingAmountMinor
+        const gapAmountMinor =
+          snapshot?.gapAmountMinor ??
+          Math.max(goal.targetAmountMinor - projectedAmountMinor, 0)
+
+        return {
+          id: goal.id,
+          name: goal.name,
+          projectedLabel: formatCurrency(projectedAmountMinor, goal.currency),
+          gapLabel: `${formatCurrency(gapAmountMinor, goal.currency)} gap`,
+          targetDateLabel: goal.targetDate,
+          currency: goal.currency,
+        }
+      }),
+      closed: closed.map(({ goal }) => ({
+        id: goal.id,
+        name: goal.name,
+        status: goal.status.replace("_", " "),
+        targetDateLabel: goal.targetDate,
+      })),
+    },
+  } satisfies PwaRouteSnapshot<"goals">
 
   return (
     <section className="grid gap-8">
+      <PwaSnapshotHydrator snapshot={pwaSnapshot} />
       <div>
         <p className="neo-kicker">Goals</p>
         <h1 className="mt-4 max-w-[14ch] font-display text-[3rem] leading-[0.92] text-white md:text-[4rem]">
@@ -88,7 +137,8 @@ export default async function GoalsPage({ searchParams }: GoalsPageProps) {
           planning.
         </h1>
         <p className="mt-4 max-w-2xl text-sm leading-6 text-white/58">
-          Set concrete targets and let Irene compare them with current savings and forecast surplus.
+          Set concrete targets and let Irene compare them with current savings
+          and forecast surplus.
         </p>
       </div>
 
@@ -226,9 +276,12 @@ export default async function GoalsPage({ searchParams }: GoalsPageProps) {
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-[18px] font-medium text-white">{goal.name}</p>
+                        <p className="text-[18px] font-medium text-white">
+                          {goal.name}
+                        </p>
                         <p className="mt-2 text-sm leading-6 text-white/46">
-                          {formatCurrency(projectedAmountMinor, goal.currency)} projected by {goal.targetDate}
+                          {formatCurrency(projectedAmountMinor, goal.currency)}{" "}
+                          projected by {goal.targetDate}
                         </p>
                       </div>
                       <div className="text-right">
@@ -257,9 +310,12 @@ export default async function GoalsPage({ searchParams }: GoalsPageProps) {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-[18px] font-medium text-white">{goal.name}</p>
+                      <p className="text-[18px] font-medium text-white">
+                        {goal.name}
+                      </p>
                       <p className="mt-2 text-sm leading-6 text-white/46">
-                        {goal.status.replace("_", " ")} · target {goal.targetDate}
+                        {goal.status.replace("_", " ")} · target{" "}
+                        {goal.targetDate}
                       </p>
                     </div>
                   </div>

@@ -3,15 +3,20 @@
 import { useState, useTransition } from "react"
 
 import { RiArrowRightSLine } from "@remixicon/react"
+import { submitJsonPwaMutation } from "@/lib/pwa/client-mutations"
 
 const rowClassName =
   "flex w-full items-center justify-between py-4 text-left transition hover:bg-white/[0.02] disabled:opacity-40"
 
 type InboxSettingsRowsProps = {
+  userId: string
   connected: boolean
 }
 
-export function InboxSettingsRows({ connected }: InboxSettingsRowsProps) {
+export function InboxSettingsRows({
+  userId,
+  connected,
+}: InboxSettingsRowsProps) {
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
 
@@ -32,20 +37,21 @@ export function InboxSettingsRows({ connected }: InboxSettingsRowsProps) {
             onClick={() => {
               setMessage(null)
               startTransition(async () => {
-                const response = await fetch(
-                  "/api/integrations/email/google/sync",
-                  { method: "POST" },
-                )
+                const { queued, result } = await submitJsonPwaMutation({
+                  userId,
+                  kind: "gmail.sync",
+                  routePath: "/api/integrations/email/google/sync",
+                })
 
-                if (!response.ok) {
-                  setMessage("could not queue a sync. try again in a moment.")
+                if (!queued && !result?.ok) {
+                  setMessage(
+                    result?.message ??
+                      "could not queue a sync. try again in a moment."
+                  )
                   return
                 }
 
-                await response.json()
-                setMessage(
-                  "sync queued. Irene will refresh the inbox shortly.",
-                )
+                setMessage("sync queued. Irene will refresh the inbox shortly.")
               })
             }}
           >
@@ -61,13 +67,16 @@ export function InboxSettingsRows({ connected }: InboxSettingsRowsProps) {
             onClick={() => {
               setMessage(null)
               startTransition(async () => {
-                const response = await fetch(
-                  "/api/integrations/email/google/disconnect",
-                  { method: "POST" },
-                )
+                const { queued, result } = await submitJsonPwaMutation({
+                  userId,
+                  kind: "gmail.disconnect",
+                  routePath: "/api/integrations/email/google/disconnect",
+                })
 
-                if (!response.ok) {
-                  setMessage("could not disconnect Gmail right now.")
+                if (!queued && !result?.ok) {
+                  setMessage(
+                    result?.message ?? "could not disconnect Gmail right now."
+                  )
                   return
                 }
 

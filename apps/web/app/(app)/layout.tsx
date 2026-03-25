@@ -32,13 +32,16 @@ export default async function AuthenticatedLayout({
     getGmailIntegrationState(session.user.id),
   ])
   const backfillRunning = Boolean(
-    gmailState.cursor?.backfillStartedAt && !gmailState.cursor?.backfillCompletedAt,
+    gmailState.cursor?.backfillStartedAt &&
+    !gmailState.cursor?.backfillCompletedAt
   )
 
   return (
     <AppShell
       user={{
+        id: session.user.id,
         name: session.user.name,
+        email: session.user.email,
         image: authUser?.image ?? session.user.image,
       }}
       reviewAttentionCount={reviewAttentionCount}

@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Manrope } from "next/font/google"
 import localFont from "next/font/local"
 
@@ -20,6 +20,9 @@ const fontDisplay = localFont({
 })
 
 export const metadata: Metadata = rootMetadata
+export const viewport: Viewport = {
+  themeColor: "#0c0c0e",
+}
 
 export default function RootLayout({
   children,
@@ -30,7 +33,11 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("dark antialiased", fontSans.variable, fontDisplay.variable)}
+      className={cn(
+        "dark antialiased",
+        fontSans.variable,
+        fontDisplay.variable
+      )}
     >
       <body className="bg-background font-sans text-foreground">
         <ThemeProvider>{children}</ThemeProvider>
