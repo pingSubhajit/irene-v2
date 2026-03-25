@@ -30,7 +30,7 @@ export const documentRouteResultSchema = z.object({
   routeLabel: documentRouteLabelSchema,
   confidence: z.number().min(0).max(1),
   reasons: z.array(z.string()).min(1).max(4),
-  summary: z.string().max(240).optional(),
+  summary: z.string().max(240).nullable(),
 })
 
 const extractedSignalSchema = z.object({
@@ -54,70 +54,64 @@ const extractedSignalSchema = z.object({
       "refund",
       "transfer",
     ])
-    .nullable()
-    .optional(),
-  amountMinor: z.number().int().nonnegative().nullable().optional(),
+    .nullable(),
+  amountMinor: z.number().int().nonnegative().nullable(),
   currency: z
     .string()
     .regex(/^[A-Z]{3}$/)
-    .nullable()
-    .optional(),
+    .nullable(),
   eventDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullable()
-    .optional(),
-  issuerNameHint: z.string().max(160).nullable().optional(),
-  instrumentLast4Hint: z.string().max(16).nullable().optional(),
-  availableBalanceMinor: z.number().int().nonnegative().nullable().optional(),
-  availableCreditLimitMinor: z.number().int().nonnegative().nullable().optional(),
+    .nullable(),
+  issuerNameHint: z.string().max(160).nullable(),
+  instrumentLast4Hint: z.string().max(16).nullable(),
+  availableBalanceMinor: z.number().int().nonnegative().nullable(),
+  availableCreditLimitMinor: z.number().int().nonnegative().nullable(),
   balanceAsOfDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullable()
-    .optional(),
-  balanceInstrumentLast4Hint: z.string().max(16).nullable().optional(),
-  backingAccountLast4Hint: z.string().max(16).nullable().optional(),
-  backingAccountNameHint: z.string().max(160).nullable().optional(),
+    .nullable(),
+  balanceInstrumentLast4Hint: z.string().max(16).nullable(),
+  backingAccountLast4Hint: z.string().max(16).nullable(),
+  backingAccountNameHint: z.string().max(160).nullable(),
   accountRelationshipHint: z
     .enum(["direct_account", "linked_card_account", "unknown"])
-    .nullable()
-    .optional(),
-  balanceEvidenceStrength: z.enum(["explicit", "strong", "weak"]).nullable().optional(),
-  merchantDescriptorRaw: z.string().max(240).nullable().optional(),
-  merchantNameCandidate: z.string().max(240).nullable().optional(),
-  processorNameCandidate: z.string().max(160).nullable().optional(),
+    .nullable(),
+  balanceEvidenceStrength: z.enum(["explicit", "strong", "weak"]).nullable(),
+  merchantDescriptorRaw: z.string().max(240).nullable(),
+  merchantNameCandidate: z.string().max(240).nullable(),
+  processorNameCandidate: z.string().max(160).nullable(),
   channelHint: z
     .enum(["card", "wallet", "upi", "bank_transfer", "other"])
-    .nullable()
-    .optional(),
-  merchantRaw: z.string().max(240).nullable().optional(),
-  merchantHint: z.string().max(240).nullable().optional(),
-  paymentInstrumentHint: z.string().max(120).nullable().optional(),
-  categoryHint: z.string().max(120).nullable().optional(),
-  categoryCandidates: z.array(z.string().max(120)).max(4).default([]),
-  isRecurringHint: z.boolean().default(false),
-  isEmiHint: z.boolean().default(false),
+    .nullable(),
+  merchantRaw: z.string().max(240).nullable(),
+  merchantHint: z.string().max(240).nullable(),
+  paymentInstrumentHint: z.string().max(120).nullable(),
+  categoryHint: z.string().max(120).nullable(),
+  categoryCandidates: z.array(z.string().max(120)).max(4),
+  isRecurringHint: z.boolean(),
+  isEmiHint: z.boolean(),
   confidence: z.number().min(0).max(1),
-  roleConfidence: z.number().min(0).max(1).nullable().optional(),
+  roleConfidence: z.number().min(0).max(1).nullable(),
   evidenceSnippets: z.array(z.string().max(280)).max(4),
-  explanation: z.string().max(240).optional(),
+  explanation: z.string().max(240).nullable(),
 })
 
 export const structuredExtractionResultSchema = z.object({
   signals: z.array(extractedSignalSchema).max(4),
-  extractionSummary: z.string().max(280).optional(),
+  extractionSummary: z.string().max(280).nullable(),
 })
 
 export const merchantHintExtractionResultSchema = z.object({
-  merchantDescriptorRaw: z.string().max(240).nullable().optional(),
-  merchantNameCandidate: z.string().max(240).nullable().optional(),
-  merchantHint: z.string().max(240).nullable().optional(),
-  merchantRaw: z.string().max(240).nullable().optional(),
-  processorNameCandidate: z.string().max(160).nullable().optional(),
+  merchantDescriptorRaw: z.string().max(240).nullable(),
+  merchantNameCandidate: z.string().max(240).nullable(),
+  merchantHint: z.string().max(240).nullable(),
+  merchantRaw: z.string().max(240).nullable(),
+  processorNameCandidate: z.string().max(160).nullable(),
   confidence: z.number().min(0).max(1),
   evidenceSnippets: z.array(z.string().max(280)).max(4),
-  explanation: z.string().max(240).optional(),
+  explanation: z.string().max(240).nullable(),
 })
 
 export type DocumentRouteLabel = z.infer<typeof documentRouteLabelSchema>
@@ -154,29 +148,27 @@ function buildMemoryContext(memorySummary?: string[]) {
 type ModelRunMetadata = GeneratedObjectMetadata
 
 const balanceRecoverySchema = z.object({
-  containsAvailableBalance: z.boolean().default(false),
-  containsAvailableCreditLimit: z.boolean().default(false),
-  availableBalanceMinor: z.number().int().nonnegative().nullable().optional(),
-  availableCreditLimitMinor: z.number().int().nonnegative().nullable().optional(),
+  containsAvailableBalance: z.boolean(),
+  containsAvailableCreditLimit: z.boolean(),
+  availableBalanceMinor: z.number().int().nonnegative().nullable(),
+  availableCreditLimitMinor: z.number().int().nonnegative().nullable(),
   balanceAsOfDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullable()
-    .optional(),
-  balanceInstrumentLast4Hint: z.string().max(16).nullable().optional(),
-  backingAccountLast4Hint: z.string().max(16).nullable().optional(),
-  backingAccountNameHint: z.string().max(160).nullable().optional(),
+    .nullable(),
+  balanceInstrumentLast4Hint: z.string().max(16).nullable(),
+  backingAccountLast4Hint: z.string().max(16).nullable(),
+  backingAccountNameHint: z.string().max(160).nullable(),
   accountRelationshipHint: z
     .enum(["direct_account", "linked_card_account", "unknown"])
-    .nullable()
-    .optional(),
-  balanceEvidenceStrength: z.enum(["explicit", "strong", "weak"]).nullable().optional(),
-  explanation: z.string().max(240).optional(),
+    .nullable(),
+  balanceEvidenceStrength: z.enum(["explicit", "strong", "weak"]).nullable(),
+  explanation: z.string().max(240).nullable(),
 })
 
 const balanceInferenceSchema = balanceRecoverySchema.extend({
-  institutionIssued: z.boolean().default(false),
-  reason: z.string().max(240).optional(),
+  institutionIssued: z.boolean(),
+  reason: z.string().max(240).nullable(),
 })
 
 export type DocumentBalanceInferenceResult = z.infer<typeof balanceInferenceSchema>
@@ -378,7 +370,7 @@ function coerceBalanceInferenceResult(raw: unknown): DocumentBalanceInferenceRes
     accountRelationshipHint: normalizeAccountRelationshipHint(record.accountRelationshipHint),
     balanceEvidenceStrength: normalizeBalanceEvidenceStrength(record.balanceEvidenceStrength),
     institutionIssued: normalizeBoolean(record.institutionIssued),
-    reason: normalizeString(record.reason, 240) ?? undefined,
+    reason: normalizeString(record.reason, 240),
     explanation:
       normalizeString(record.explanation, 240) ??
       "Recovered balance evidence from schema-mismatch model output.",
@@ -819,7 +811,9 @@ function coerceStructuredExtractionResult(
     signals,
     extractionSummary:
       normalizeString(rawRecord?.extractionSummary, 280) ??
-      (signals.length > 0 ? "Recovered structured extraction from schema-mismatch model output." : undefined),
+      (signals.length > 0
+        ? "Recovered structured extraction from schema-mismatch model output."
+        : null),
   }
 }
 

@@ -24,10 +24,10 @@ export const authoredCandidateSchema = z.discriminatedUnion("factType", [
   z.object({
     factType: z.literal("merchant_category_default"),
     merchantName: z.string().max(160),
-    categoryName: z.string().max(120).nullable().optional(),
-    categorySlug: z.string().max(120).nullable().optional(),
+    categoryName: z.string().max(120).nullable(),
+    categorySlug: z.string().max(120).nullable(),
     summaryText: z.string().max(220),
-    detailText: z.string().max(320).nullable().optional(),
+    detailText: z.string().max(320).nullable(),
     confidence: z.number().min(0).max(1),
   }),
   z.object({
@@ -35,15 +35,15 @@ export const authoredCandidateSchema = z.discriminatedUnion("factType", [
     merchantName: z.string().max(160),
     aliasText: z.string().max(160),
     summaryText: z.string().max(220),
-    detailText: z.string().max(320).nullable().optional(),
+    detailText: z.string().max(320).nullable(),
     confidence: z.number().min(0).max(1),
   }),
   z.object({
     factType: z.literal("merchant_recurring_hint"),
     merchantName: z.string().max(160),
-    obligationType: z.string().max(120).nullable().optional(),
+    obligationType: z.string().max(120).nullable(),
     summaryText: z.string().max(220),
-    detailText: z.string().max(320).nullable().optional(),
+    detailText: z.string().max(320).nullable(),
     confidence: z.number().min(0).max(1),
   }),
   z.object({
@@ -51,7 +51,7 @@ export const authoredCandidateSchema = z.discriminatedUnion("factType", [
     merchantName: z.string().max(160),
     processorName: z.string().max(160),
     summaryText: z.string().max(220),
-    detailText: z.string().max(320).nullable().optional(),
+    detailText: z.string().max(320).nullable(),
     confidence: z.number().min(0).max(1),
   }),
   z.object({
@@ -67,7 +67,7 @@ export const authoredCandidateSchema = z.discriminatedUnion("factType", [
       "transfer",
     ]),
     summaryText: z.string().max(220),
-    detailText: z.string().max(320).nullable().optional(),
+    detailText: z.string().max(320).nullable(),
     confidence: z.number().min(0).max(1),
   }),
   z.object({
@@ -75,7 +75,7 @@ export const authoredCandidateSchema = z.discriminatedUnion("factType", [
     institutionName: z.string().max(160),
     aliasText: z.string().max(160),
     summaryText: z.string().max(220),
-    detailText: z.string().max(320).nullable().optional(),
+    detailText: z.string().max(320).nullable(),
     confidence: z.number().min(0).max(1),
   }),
   z.object({
@@ -90,9 +90,9 @@ export const authoredCandidateSchema = z.discriminatedUnion("factType", [
       "loan_account",
       "other",
     ]),
-    instrumentDisplayName: z.string().max(200).nullable().optional(),
+    instrumentDisplayName: z.string().max(200).nullable(),
     summaryText: z.string().max(220),
-    detailText: z.string().max(320).nullable().optional(),
+    detailText: z.string().max(320).nullable(),
     confidence: z.number().min(0).max(1),
   }),
   z.object({
@@ -100,7 +100,7 @@ export const authoredCandidateSchema = z.discriminatedUnion("factType", [
     instrumentLast4: z.string().max(32),
     backingInstrumentLast4: z.string().max(32),
     summaryText: z.string().max(220),
-    detailText: z.string().max(320).nullable().optional(),
+    detailText: z.string().max(320).nullable(),
     confidence: z.number().min(0).max(1),
   }),
   z.object({
@@ -108,10 +108,10 @@ export const authoredCandidateSchema = z.discriminatedUnion("factType", [
     incomeStreamName: z.string().max(160),
     cadence: z.enum(["daily", "weekly", "monthly", "quarterly", "yearly", "custom"]),
     intervalCount: z.number().int().min(1).max(12),
-    expectedDayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
-    secondaryDayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+    expectedDayOfMonth: z.number().int().min(1).max(31).nullable(),
+    secondaryDayOfMonth: z.number().int().min(1).max(31).nullable(),
     summaryText: z.string().max(220),
-    detailText: z.string().max(320).nullable().optional(),
+    detailText: z.string().max(320).nullable(),
     confidence: z.number().min(0).max(1),
   }),
 ])
@@ -119,7 +119,7 @@ export const authoredCandidateSchema = z.discriminatedUnion("factType", [
 export const memoryAuthoringResultSchema = z.object({
   overallConfidence: z.number().min(0).max(1),
   needsClarification: z.boolean().default(false),
-  clarificationMessage: z.string().max(240).nullable().optional(),
+  clarificationMessage: z.string().max(240).nullable(),
   memories: z.array(authoredCandidateSchema).min(1).max(3),
 })
 
@@ -135,7 +135,7 @@ export const memorySummaryResultSchema = z.object({
     z.object({
       id: z.string().min(1),
       summaryText: z.string().max(220),
-      detailText: z.string().max(320).nullable().optional(),
+      detailText: z.string().max(320).nullable(),
     }),
   ).max(12),
 })

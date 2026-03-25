@@ -31,12 +31,12 @@ export const canonicalInstrumentTypeSchema = z.enum([
 export const instrumentResolutionResultSchema = z.object({
   decision: instrumentResolutionDecisionSchema,
   confidence: z.number().min(0).max(1),
-  canonicalInstitutionName: z.string().max(160).nullable().optional(),
+  canonicalInstitutionName: z.string().max(160).nullable(),
   canonicalInstrumentType: canonicalInstrumentTypeSchema,
-  targetPaymentInstrumentId: z.string().uuid().nullable().optional(),
-  instrumentDisplayName: z.string().max(200).nullable().optional(),
+  targetPaymentInstrumentId: z.string().uuid().nullable(),
+  instrumentDisplayName: z.string().max(200).nullable(),
   reason: z.string().max(320),
-  ignoredHints: z.array(z.string().max(160)).max(8).default([]),
+  ignoredHints: z.array(z.string().max(160)).max(8),
   supportingObservationIds: z.array(z.string().uuid()).min(1).max(50),
 })
 
