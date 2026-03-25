@@ -4,7 +4,7 @@ const modelCatalog = {
   financeRelevanceClassifier: "openai/gpt-5-nano",
   financeDocumentRouter: "gemini-3-flash",
   financeSignalExtractor: "openai/gpt-5-nano",
-  financeMerchantHintExtractor: "openai/gpt-5-nano",
+  financeMerchantHintExtractor: "gemini-3-flash",
   financeBalanceExtractor: "openai/gpt-5-nano",
   financeMemoryAuthoring: "gemini-3-flash",
   financeMemorySummarizer: "openai/gpt-5-nano",
