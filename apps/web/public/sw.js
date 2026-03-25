@@ -1,5 +1,5 @@
-const PWA_CACHE = "irene-pwa-v2"
-const RUNTIME_CACHE = "irene-runtime-v2"
+const PWA_CACHE = "irene-pwa-v3"
+const RUNTIME_CACHE = "irene-runtime-v3"
 const OFFLINE_URL = "/offline"
 
 self.addEventListener("install", (event) => {
@@ -11,11 +11,6 @@ self.addEventListener("install", (event) => {
           OFFLINE_URL,
           "/manifest.webmanifest",
           "/favicon.ico",
-          "/pwa-icons/icon-192.png",
-          "/pwa-icons/icon-512.png",
-          "/pwa-icons/icon-maskable-512.png",
-          "/pwa-icons/icon-180.png",
-          "/pwa-icons/shortcut-96.png",
         ])
       )
   )
@@ -50,7 +45,6 @@ self.addEventListener("fetch", (event) => {
     url.origin === self.location.origin &&
     (url.pathname.startsWith("/_next/static/") ||
       url.pathname.startsWith("/_next/image") ||
-      url.pathname.startsWith("/pwa-icons/") ||
       url.pathname === "/manifest.webmanifest" ||
       url.pathname === "/favicon.ico")
   ) {

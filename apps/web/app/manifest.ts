@@ -1,9 +1,16 @@
 import type { MetadataRoute } from "next"
 
+import {
+  pwaIcon192Url,
+  pwaIcon512Url,
+  pwaIconMaskable512Url,
+  pwaShortcut96Url,
+} from "@/lib/pwa/icon-urls"
+
 export default function manifest(): MetadataRoute.Manifest {
   const shortcutIcon = [
     {
-      src: "/pwa-icons/shortcut-96.png",
+      src: pwaShortcut96Url,
       sizes: "96x96",
       type: "image/png",
     },
@@ -21,17 +28,17 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "portrait",
     icons: [
       {
-        src: "/pwa-icons/icon-192.png",
+        src: pwaIcon192Url,
         sizes: "192x192",
         type: "image/png",
       },
       {
-        src: "/pwa-icons/icon-512.png",
+        src: pwaIcon512Url,
         sizes: "512x512",
         type: "image/png",
       },
       {
-        src: "/pwa-icons/icon-maskable-512.png",
+        src: pwaIconMaskable512Url,
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

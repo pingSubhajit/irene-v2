@@ -1,5 +1,11 @@
 import type { Metadata } from "next"
 
+import {
+  pwaIcon180Url,
+  pwaIcon192Url,
+  pwaIcon512Url,
+} from "@/lib/pwa/icon-urls"
+
 const rawSiteUrl =
   process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
   process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
@@ -42,19 +48,19 @@ export const rootMetadata: Metadata = {
   icons: {
     icon: [
       {
-        url: "/pwa-icons/icon-192.png",
+        url: pwaIcon192Url,
         sizes: "192x192",
         type: "image/png",
       },
       {
-        url: "/pwa-icons/icon-512.png",
+        url: pwaIcon512Url,
         sizes: "512x512",
         type: "image/png",
       },
     ],
     apple: [
       {
-        url: "/pwa-icons/icon-180.png",
+        url: pwaIcon180Url,
         sizes: "180x180",
         type: "image/png",
       },
