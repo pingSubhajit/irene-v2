@@ -17,7 +17,7 @@ export function SnapshotStatStrip({ stats }: { stats: SnapshotStat[] }) {
           <p className="neo-kicker">{stat.label}</p>
           <p
             className={[
-              "mt-3 text-xl font-semibold tracking-tight",
+              "mt-3 text-xl font-semibold tracking-tight tabular-nums",
               stat.tone === "positive"
                 ? "text-[var(--neo-green)]"
                 : stat.tone === "violet"

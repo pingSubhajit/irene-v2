@@ -35,7 +35,7 @@ test("TransactionCard renders category badge and merchant fallback initials", ()
       merchantLogoUrl={null}
       merchantId="mer_123"
       amount="₹899.00"
-      dateLabel="2026-03-22T00:00:00.000Z"
+      occurredAt={new Date("2026-03-22T00:00:00.000Z")}
       categoryName="Healthcare"
       categoryId="cat_123"
       categoryIconName="stethoscope-line"

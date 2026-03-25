@@ -182,10 +182,18 @@ function countAppliedFilterGroups(input: {
   let count = 0
 
   if (isCanonicalView(input.feed) && input.direction !== "all") count += 1
-  if (isCanonicalView(input.feed) && (input.datePreset || input.dateFrom || input.dateTo)) count += 1
+  if (
+    isCanonicalView(input.feed) &&
+    (input.datePreset || input.dateFrom || input.dateTo)
+  )
+    count += 1
   if (isCanonicalView(input.feed) && input.categories.length > 0) count += 1
   if (input.merchants.length > 0) count += 1
-  if (isCanonicalView(input.feed) && (typeof input.amountMin === "number" || typeof input.amountMax === "number")) count += 1
+  if (
+    isCanonicalView(input.feed) &&
+    (typeof input.amountMin === "number" || typeof input.amountMax === "number")
+  )
+    count += 1
   if (isCanonicalView(input.feed) && input.types.length > 0) count += 1
   if (isCanonicalView(input.feed) && input.instruments.length > 0) count += 1
   if (isCanonicalView(input.feed) && input.processors.length > 0) count += 1
@@ -224,18 +232,32 @@ export function ActivityToolbar({
   const [activePanel, setActivePanel] = useState<FilterPanel>("root")
   const [panelSearch, setPanelSearch] = useState("")
   const [draftFeed, setDraftFeed] = useState<FeedValue>(viewState.feed)
-  const [draftDirection, setDraftDirection] = useState<DirectionValue>(viewState.direction)
-  const [draftSort, setDraftSort] = useState<SortValue>((sortOptions.find((option) => option.value === sort)?.value ?? "recent"))
-  const [draftDatePreset, setDraftDatePreset] = useState<string | undefined>(datePreset)
+  const [draftDirection, setDraftDirection] = useState<DirectionValue>(
+    viewState.direction
+  )
+  const [draftSort, setDraftSort] = useState<SortValue>(
+    sortOptions.find((option) => option.value === sort)?.value ?? "recent"
+  )
+  const [draftDatePreset, setDraftDatePreset] = useState<string | undefined>(
+    datePreset
+  )
   const [draftDateFrom, setDraftDateFrom] = useState(dateFrom ?? "")
   const [draftDateTo, setDraftDateTo] = useState(dateTo ?? "")
-  const [draftCategories, setDraftCategories] = useState<string[]>(selectedCategories)
-  const [draftMerchants, setDraftMerchants] = useState<string[]>(selectedMerchants)
-  const [draftInstruments, setDraftInstruments] = useState<string[]>(selectedInstruments)
-  const [draftProcessors, setDraftProcessors] = useState<string[]>(selectedProcessors)
+  const [draftCategories, setDraftCategories] =
+    useState<string[]>(selectedCategories)
+  const [draftMerchants, setDraftMerchants] =
+    useState<string[]>(selectedMerchants)
+  const [draftInstruments, setDraftInstruments] =
+    useState<string[]>(selectedInstruments)
+  const [draftProcessors, setDraftProcessors] =
+    useState<string[]>(selectedProcessors)
   const [draftTypes, setDraftTypes] = useState<string[]>(selectedTypes)
-  const [draftAmountMin, setDraftAmountMin] = useState(amountMin ? String(amountMin) : "")
-  const [draftAmountMax, setDraftAmountMax] = useState(amountMax ? String(amountMax) : "")
+  const [draftAmountMin, setDraftAmountMin] = useState(
+    amountMin ? String(amountMin) : ""
+  )
+  const [draftAmountMax, setDraftAmountMax] = useState(
+    amountMax ? String(amountMax) : ""
+  )
   const [draftCrossCurrency, setDraftCrossCurrency] = useState(crossCurrency)
 
   useEffect(() => {
@@ -252,7 +274,9 @@ export function ActivityToolbar({
         query: searchValue,
         feed: appliedViewState.feed,
         direction: appliedViewState.direction,
-        sort: (sortOptions.find((option) => option.value === sort)?.value ?? "recent"),
+        sort:
+          sortOptions.find((option) => option.value === sort)?.value ??
+          "recent",
         datePreset,
         dateFrom: dateFrom ?? "",
         dateTo: dateTo ?? "",
@@ -266,7 +290,9 @@ export function ActivityToolbar({
         crossCurrency,
       })
       const currentQuery = searchParams.toString()
-      const currentHref = currentQuery ? `${pathname}?${currentQuery}` : pathname
+      const currentHref = currentQuery
+        ? `${pathname}?${currentQuery}`
+        : pathname
 
       if (nextHref !== currentHref) {
         router.replace(nextHref)
@@ -314,27 +340,30 @@ export function ActivityToolbar({
 
   const categorySearch = panelSearch.toLowerCase()
   const filteredCategories = categories.filter((option) =>
-    option.name.toLowerCase().includes(categorySearch),
+    option.name.toLowerCase().includes(categorySearch)
   )
   const filteredMerchants = merchants.filter((option) =>
-    option.name.toLowerCase().includes(categorySearch),
+    option.name.toLowerCase().includes(categorySearch)
   )
   const filteredInstruments = paymentInstruments.filter((option) =>
-    option.name.toLowerCase().includes(categorySearch),
+    option.name.toLowerCase().includes(categorySearch)
   )
   const filteredProcessors = paymentProcessors.filter((option) =>
-    option.name.toLowerCase().includes(categorySearch),
+    option.name.toLowerCase().includes(categorySearch)
   )
   const filteredTypes = typeOptions.filter((option) =>
-    option.label.toLowerCase().includes(categorySearch),
+    option.label.toLowerCase().includes(categorySearch)
   )
 
   const currentFeedLabel =
-    feedOptions.find((option) => option.value === draftFeed)?.label ?? "Transactions"
+    feedOptions.find((option) => option.value === draftFeed)?.label ??
+    "Transactions"
   const currentDirectionLabel =
-    directionOptions.find((option) => option.value === draftDirection)?.label ?? "All directions"
+    directionOptions.find((option) => option.value === draftDirection)?.label ??
+    "All directions"
   const currentSortLabel =
-    sortOptions.find((option) => option.value === draftSort)?.label ?? "Most recent"
+    sortOptions.find((option) => option.value === draftSort)?.label ??
+    "Most recent"
 
   const categorySummary = summarizeSelectedValues({
     values: draftCategories,
@@ -398,7 +427,9 @@ export function ActivityToolbar({
 
     setDraftFeed(nextViewState.feed)
     setDraftDirection(nextViewState.direction)
-    setDraftSort((sortOptions.find((option) => option.value === sort)?.value ?? "recent"))
+    setDraftSort(
+      sortOptions.find((option) => option.value === sort)?.value ?? "recent"
+    )
     setDraftDatePreset(datePreset)
     setDraftDateFrom(dateFrom ?? "")
     setDraftDateTo(dateTo ?? "")
@@ -446,10 +477,10 @@ export function ActivityToolbar({
 
   return (
     <>
-      <div className="sticky top-0 z-30 -mx-4 border-b border-white/[0.06] bg-[rgba(10,10,12,0.94)] px-4 pb-4 pt-3 backdrop-blur md:-mx-6 md:px-6">
+      <div className="sticky top-0 z-30 -mx-4 border-b border-white/[0.06] bg-[rgba(10,10,12,0.94)] px-4 pt-3 pb-4 backdrop-blur md:-mx-6 md:px-6">
         <div className="flex items-center gap-3">
           <div className="relative min-w-0 flex-1">
-            <RiSearchLine className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-white/28" />
+            <RiSearchLine className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-white/28" />
             <Input
               type="search"
               value={searchValue}
@@ -469,7 +500,7 @@ export function ActivityToolbar({
           >
             <RiFilter3Line className="size-4" />
             {appliedFilterCount > 0 ? (
-              <span className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--neo-yellow)] text-[0.65rem] font-semibold text-[var(--neo-black)]">
+              <span className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--neo-yellow)] text-[0.65rem] font-semibold text-[var(--neo-black)]">
                 {appliedFilterCount}
               </span>
             ) : null}
@@ -480,7 +511,7 @@ export function ActivityToolbar({
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
           side="bottom"
-          className="border-t border-white/8 bg-[rgba(12,12,14,0.98)] pb-6"
+          className="flex max-h-[85svh] flex-col overflow-hidden border-t border-white/8 bg-[rgba(12,12,14,0.98)] pb-0"
           showCloseButton
         >
           <SheetHeader className="px-5 pt-0 sm:px-6">
@@ -505,455 +536,482 @@ export function ActivityToolbar({
             </SheetDescription>
           </SheetHeader>
 
-          <div className="space-y-5 px-5 pt-5 sm:px-6">
-            {activePanel === "root" ? (
-              <>
-                <div className="space-y-3">
-                  <FilterRow
-                    label="Feed"
-                    value={currentFeedLabel}
-                    onClick={() => setActivePanel("feed")}
-                  />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 sm:px-6">
+              <div className="space-y-5 pb-5">
+                {activePanel === "root" ? (
+                  <>
+                    <div className="space-y-3">
+                      <FilterRow
+                        label="Feed"
+                        value={currentFeedLabel}
+                        onClick={() => setActivePanel("feed")}
+                      />
 
-                  {showingCanonicalFilters ? (
-                    <>
-                      <FilterRow
-                        label="Date range"
-                        value={dateSummary}
-                        onClick={() => setActivePanel("date")}
-                      />
-                      <FilterRow
-                        label="Direction"
-                        value={currentDirectionLabel}
-                        onClick={() => setActivePanel("direction")}
-                      />
-                      <FilterRow
-                        label="Category"
-                        value={categorySummary}
-                        onClick={() => setActivePanel("category")}
-                      />
-                    </>
-                  ) : null}
+                      {showingCanonicalFilters ? (
+                        <>
+                          <FilterRow
+                            label="Date range"
+                            value={dateSummary}
+                            onClick={() => setActivePanel("date")}
+                          />
+                          <FilterRow
+                            label="Direction"
+                            value={currentDirectionLabel}
+                            onClick={() => setActivePanel("direction")}
+                          />
+                          <FilterRow
+                            label="Category"
+                            value={categorySummary}
+                            onClick={() => setActivePanel("category")}
+                          />
+                        </>
+                      ) : null}
 
-                  <FilterRow
-                    label="Merchant"
-                    value={merchantSummary}
-                    onClick={() => setActivePanel("merchant")}
-                  />
+                      <FilterRow
+                        label="Merchant"
+                        value={merchantSummary}
+                        onClick={() => setActivePanel("merchant")}
+                      />
 
-                  {showingCanonicalFilters ? (
-                    <>
-                      <FilterRow
-                        label="Amount range"
-                        value={amountSummary}
-                        onClick={() => setActivePanel("amount")}
-                      />
-                      <FilterRow
-                        label="Type"
-                        value={typeSummary}
-                        onClick={() => setActivePanel("type")}
-                      />
-                      <FilterRow
-                        label="Instrument"
-                        value={instrumentSummary}
-                        onClick={() => setActivePanel("instrument")}
-                      />
-                      <FilterRow
-                        label="Processor"
-                        value={processorSummary}
-                        onClick={() => setActivePanel("processor")}
-                      />
-                      <FilterRow
-                        label="Cross-currency"
-                        value={draftCrossCurrency ? "Only cross-currency" : "Any currency"}
-                        onClick={() => setActivePanel("cross_currency")}
-                      />
-                    </>
-                  ) : null}
-                </div>
+                      {showingCanonicalFilters ? (
+                        <>
+                          <FilterRow
+                            label="Amount range"
+                            value={amountSummary}
+                            onClick={() => setActivePanel("amount")}
+                          />
+                          <FilterRow
+                            label="Type"
+                            value={typeSummary}
+                            onClick={() => setActivePanel("type")}
+                          />
+                          <FilterRow
+                            label="Instrument"
+                            value={instrumentSummary}
+                            onClick={() => setActivePanel("instrument")}
+                          />
+                          <FilterRow
+                            label="Processor"
+                            value={processorSummary}
+                            onClick={() => setActivePanel("processor")}
+                          />
+                          <FilterRow
+                            label="Cross-currency"
+                            value={
+                              draftCrossCurrency
+                                ? "Only cross-currency"
+                                : "Any currency"
+                            }
+                            onClick={() => setActivePanel("cross_currency")}
+                          />
+                        </>
+                      ) : null}
+                    </div>
 
-                {showingCanonicalFilters ? (
-                  <div className="space-y-3 border-t border-white/8 pt-4">
-                    <FilterRow
-                      label="Sort"
-                      value={currentSortLabel}
-                      onClick={() => setActivePanel("sort")}
-                    />
+                    {showingCanonicalFilters ? (
+                      <div className="space-y-3 border-t border-white/8 pt-4">
+                        <FilterRow
+                          label="Sort"
+                          value={currentSortLabel}
+                          onClick={() => setActivePanel("sort")}
+                        />
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {activePanel === "feed" ? (
+                  <div className="grid gap-2">
+                    {feedOptions.map((option) => (
+                      <SelectionButton
+                        key={option.value}
+                        active={draftFeed === option.value}
+                        onClick={() => {
+                          setDraftFeed(option.value)
+                          if (
+                            option.value !== "all" &&
+                            option.value !== "review"
+                          ) {
+                            setDraftDirection("all")
+                          }
+                          closePanelToRoot()
+                        }}
+                      >
+                        {option.label}
+                      </SelectionButton>
+                    ))}
                   </div>
                 ) : null}
-              </>
-            ) : null}
 
-            {activePanel === "feed" ? (
-              <div className="grid gap-2">
-                {feedOptions.map((option) => (
-                  <SelectionButton
-                    key={option.value}
-                    active={draftFeed === option.value}
-                    onClick={() => {
-                      setDraftFeed(option.value)
-                      if (option.value !== "all" && option.value !== "review") {
-                        setDraftDirection("all")
-                      }
-                      closePanelToRoot()
-                    }}
-                  >
-                    {option.label}
-                  </SelectionButton>
-                ))}
-              </div>
-            ) : null}
+                {activePanel === "direction" ? (
+                  <div className="grid gap-2">
+                    {directionOptions.map((option) => (
+                      <SelectionButton
+                        key={option.value}
+                        active={draftDirection === option.value}
+                        onClick={() => {
+                          setDraftDirection(option.value)
+                          closePanelToRoot()
+                        }}
+                      >
+                        {option.label}
+                      </SelectionButton>
+                    ))}
+                  </div>
+                ) : null}
 
-            {activePanel === "direction" ? (
-              <div className="grid gap-2">
-                {directionOptions.map((option) => (
-                  <SelectionButton
-                    key={option.value}
-                    active={draftDirection === option.value}
-                    onClick={() => {
-                      setDraftDirection(option.value)
-                      closePanelToRoot()
-                    }}
-                  >
-                    {option.label}
-                  </SelectionButton>
-                ))}
-              </div>
-            ) : null}
+                {activePanel === "date" ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-2">
+                      <SelectionButton
+                        active={
+                          !draftDatePreset && !draftDateFrom && !draftDateTo
+                        }
+                        onClick={() => {
+                          setDraftDatePreset(undefined)
+                          setDraftDateFrom("")
+                          setDraftDateTo("")
+                          closePanelToRoot()
+                        }}
+                      >
+                        Any time
+                      </SelectionButton>
+                      {datePresetOptions.map((option) => (
+                        <SelectionButton
+                          key={option.value}
+                          active={draftDatePreset === option.value}
+                          onClick={() => {
+                            setDraftDatePreset(option.value)
+                            setDraftDateFrom("")
+                            setDraftDateTo("")
+                            closePanelToRoot()
+                          }}
+                        >
+                          {option.label}
+                        </SelectionButton>
+                      ))}
+                    </div>
 
-            {activePanel === "date" ? (
-              <div className="space-y-3">
-                <div className="grid gap-2">
-                  <SelectionButton
-                    active={!draftDatePreset && !draftDateFrom && !draftDateTo}
-                    onClick={() => {
-                      setDraftDatePreset(undefined)
-                      setDraftDateFrom("")
-                      setDraftDateTo("")
-                      closePanelToRoot()
-                    }}
-                  >
-                    Any time
-                  </SelectionButton>
-                  {datePresetOptions.map((option) => (
+                    <button
+                      type="button"
+                      onClick={() => setActivePanel("date_custom")}
+                      className="flex w-full items-center justify-between border border-white/8 bg-[rgba(255,255,255,0.02)] px-4 py-4 text-left text-sm text-white/72 transition hover:bg-[rgba(255,255,255,0.04)]"
+                    >
+                      <span>Custom range</span>
+                      <RiArrowRightSLine className="size-4 shrink-0" />
+                    </button>
+                  </div>
+                ) : null}
+
+                {activePanel === "date_custom" ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-3">
+                      <label className="grid gap-2 text-sm text-white/56">
+                        <span>Start date</span>
+                        <Input
+                          type="date"
+                          value={draftDateFrom}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            setDraftDateFrom(event.target.value)
+                          }
+                          className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm text-white/56">
+                        <span>End date</span>
+                        <Input
+                          type="date"
+                          value={draftDateTo}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            setDraftDateTo(event.target.value)
+                          }
+                          className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setDraftDatePreset(undefined)
+                          setDraftDateFrom("")
+                          setDraftDateTo("")
+                          closePanelToRoot()
+                        }}
+                      >
+                        Clear
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => {
+                          setDraftDatePreset(undefined)
+                          closePanelToRoot()
+                        }}
+                      >
+                        Use range
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activePanel === "category" ? (
+                  <SearchableOptionList
+                    value={panelSearch}
+                    onValueChange={setPanelSearch}
+                    placeholder="Search categories"
+                    options={filteredCategories.map((option) => ({
+                      key: option.slug,
+                      label: option.name,
+                      selected: draftCategories.includes(option.slug),
+                      onSelect: () => {
+                        setDraftCategories(
+                          toggleValue(draftCategories, option.slug)
+                        )
+                        closePanelToRoot()
+                      },
+                    }))}
+                  />
+                ) : null}
+
+                {activePanel === "merchant" ? (
+                  <SearchableOptionList
+                    value={panelSearch}
+                    onValueChange={setPanelSearch}
+                    placeholder="Search merchants"
+                    options={filteredMerchants.map((option) => ({
+                      key: option.id,
+                      label: option.name,
+                      selected: draftMerchants.includes(option.id),
+                      onSelect: () => {
+                        setDraftMerchants(
+                          toggleValue(draftMerchants, option.id)
+                        )
+                        closePanelToRoot()
+                      },
+                    }))}
+                  />
+                ) : null}
+
+                {activePanel === "type" ? (
+                  <SearchableOptionList
+                    value={panelSearch}
+                    onValueChange={setPanelSearch}
+                    placeholder="Search types"
+                    options={filteredTypes.map((option) => ({
+                      key: option.value,
+                      label: option.label,
+                      selected: draftTypes.includes(option.value),
+                      onSelect: () => {
+                        setDraftTypes(toggleValue(draftTypes, option.value))
+                        closePanelToRoot()
+                      },
+                    }))}
+                  />
+                ) : null}
+
+                {activePanel === "instrument" ? (
+                  <SearchableOptionList
+                    value={panelSearch}
+                    onValueChange={setPanelSearch}
+                    placeholder="Search instruments"
+                    options={filteredInstruments.map((option) => ({
+                      key: option.id,
+                      label: option.name,
+                      selected: draftInstruments.includes(option.id),
+                      onSelect: () => {
+                        setDraftInstruments(
+                          toggleValue(draftInstruments, option.id)
+                        )
+                        closePanelToRoot()
+                      },
+                    }))}
+                  />
+                ) : null}
+
+                {activePanel === "processor" ? (
+                  <SearchableOptionList
+                    value={panelSearch}
+                    onValueChange={setPanelSearch}
+                    placeholder="Search processors"
+                    options={filteredProcessors.map((option) => ({
+                      key: option.id,
+                      label: option.name,
+                      selected: draftProcessors.includes(option.id),
+                      onSelect: () => {
+                        setDraftProcessors(
+                          toggleValue(draftProcessors, option.id)
+                        )
+                        closePanelToRoot()
+                      },
+                    }))}
+                  />
+                ) : null}
+
+                {activePanel === "amount" ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-3">
+                      <label className="grid gap-2 text-sm text-white/56">
+                        <span>Minimum ({reportingCurrency})</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={draftAmountMin}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            setDraftAmountMin(event.target.value)
+                          }
+                          placeholder="0.00"
+                          className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm text-white/56">
+                        <span>Maximum ({reportingCurrency})</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={draftAmountMax}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            setDraftAmountMax(event.target.value)
+                          }
+                          placeholder="0.00"
+                          className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setDraftAmountMin("")
+                          setDraftAmountMax("")
+                          closePanelToRoot()
+                        }}
+                      >
+                        Clear
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={closePanelToRoot}
+                      >
+                        Use range
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activePanel === "cross_currency" ? (
+                  <div className="grid gap-2">
                     <SelectionButton
-                      key={option.value}
-                      active={draftDatePreset === option.value}
+                      active={!draftCrossCurrency}
                       onClick={() => {
-                        setDraftDatePreset(option.value)
-                        setDraftDateFrom("")
-                        setDraftDateTo("")
+                        setDraftCrossCurrency(false)
                         closePanelToRoot()
                       }}
                     >
-                      {option.label}
+                      Any currency
                     </SelectionButton>
-                  ))}
-                </div>
+                    <SelectionButton
+                      active={draftCrossCurrency}
+                      onClick={() => {
+                        setDraftCrossCurrency(true)
+                        closePanelToRoot()
+                      }}
+                    >
+                      Only cross-currency
+                    </SelectionButton>
+                  </div>
+                ) : null}
 
+                {activePanel === "sort" ? (
+                  <div className="grid gap-2">
+                    {sortOptions.map((option) => (
+                      <SelectionButton
+                        key={option.value}
+                        active={draftSort === option.value}
+                        onClick={() => {
+                          setDraftSort(option.value)
+                          closePanelToRoot()
+                        }}
+                      >
+                        {option.label}
+                      </SelectionButton>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="border-t border-white/8 bg-[rgba(12,12,14,0.98)] px-5 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6">
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    clearFilters()
+                    router.push(
+                      buildHref({
+                        pathname,
+                        query: searchValue,
+                        feed: draftFeed,
+                        direction: "all",
+                        sort: "recent",
+                        datePreset: undefined,
+                        dateFrom: "",
+                        dateTo: "",
+                        categories: [],
+                        merchants: [],
+                        amountMin: "",
+                        amountMax: "",
+                        types: [],
+                        instruments: [],
+                        processors: [],
+                        crossCurrency: false,
+                      })
+                    )
+                    setOpen(false)
+                  }}
+                >
+                  Clear all
+                </Button>
                 <button
                   type="button"
-                  onClick={() => setActivePanel("date_custom")}
-                  className="flex w-full items-center justify-between border border-white/8 bg-[rgba(255,255,255,0.02)] px-4 py-4 text-left text-sm text-white/72 transition hover:bg-[rgba(255,255,255,0.04)]"
+                  className="flex h-12 w-full items-center justify-center border border-[rgba(255,231,90,0.35)] bg-[var(--neo-yellow)] px-5 text-sm font-semibold text-[var(--neo-black)] transition hover:brightness-[1.03] active:translate-y-px"
+                  onClick={() => {
+                    router.push(
+                      buildHref({
+                        pathname,
+                        query: searchValue,
+                        feed: draftFeed,
+                        direction: draftDirection,
+                        sort: draftSort,
+                        datePreset: draftDatePreset,
+                        dateFrom: draftDateFrom,
+                        dateTo: draftDateTo,
+                        categories: draftCategories,
+                        merchants: draftMerchants,
+                        amountMin: draftAmountMin,
+                        amountMax: draftAmountMax,
+                        types: draftTypes,
+                        instruments: draftInstruments,
+                        processors: draftProcessors,
+                        crossCurrency: draftCrossCurrency,
+                      })
+                    )
+                    setOpen(false)
+                  }}
                 >
-                  <span>Custom range</span>
-                  <RiArrowRightSLine className="size-4 shrink-0" />
+                  Apply
                 </button>
               </div>
-            ) : null}
-
-            {activePanel === "date_custom" ? (
-              <div className="space-y-3">
-                <div className="grid gap-3">
-                  <label className="grid gap-2 text-sm text-white/56">
-                    <span>Start date</span>
-                    <Input
-                      type="date"
-                      value={draftDateFrom}
-                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                        setDraftDateFrom(event.target.value)
-                      }
-                      className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
-                    />
-                  </label>
-                  <label className="grid gap-2 text-sm text-white/56">
-                    <span>End date</span>
-                    <Input
-                      type="date"
-                      value={draftDateTo}
-                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                        setDraftDateTo(event.target.value)
-                      }
-                      className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
-                    />
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setDraftDatePreset(undefined)
-                      setDraftDateFrom("")
-                      setDraftDateTo("")
-                      closePanelToRoot()
-                    }}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      setDraftDatePreset(undefined)
-                      closePanelToRoot()
-                    }}
-                  >
-                    Use range
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {activePanel === "category" ? (
-              <SearchableOptionList
-                value={panelSearch}
-                onValueChange={setPanelSearch}
-                placeholder="Search categories"
-                options={filteredCategories.map((option) => ({
-                  key: option.slug,
-                  label: option.name,
-                  selected: draftCategories.includes(option.slug),
-                  onSelect: () => {
-                    setDraftCategories(toggleValue(draftCategories, option.slug))
-                    closePanelToRoot()
-                  },
-                }))}
-              />
-            ) : null}
-
-            {activePanel === "merchant" ? (
-              <SearchableOptionList
-                value={panelSearch}
-                onValueChange={setPanelSearch}
-                placeholder="Search merchants"
-                options={filteredMerchants.map((option) => ({
-                  key: option.id,
-                  label: option.name,
-                  selected: draftMerchants.includes(option.id),
-                  onSelect: () => {
-                    setDraftMerchants(toggleValue(draftMerchants, option.id))
-                    closePanelToRoot()
-                  },
-                }))}
-              />
-            ) : null}
-
-            {activePanel === "type" ? (
-              <SearchableOptionList
-                value={panelSearch}
-                onValueChange={setPanelSearch}
-                placeholder="Search types"
-                options={filteredTypes.map((option) => ({
-                  key: option.value,
-                  label: option.label,
-                  selected: draftTypes.includes(option.value),
-                  onSelect: () => {
-                    setDraftTypes(toggleValue(draftTypes, option.value))
-                    closePanelToRoot()
-                  },
-                }))}
-              />
-            ) : null}
-
-            {activePanel === "instrument" ? (
-              <SearchableOptionList
-                value={panelSearch}
-                onValueChange={setPanelSearch}
-                placeholder="Search instruments"
-                options={filteredInstruments.map((option) => ({
-                  key: option.id,
-                  label: option.name,
-                  selected: draftInstruments.includes(option.id),
-                  onSelect: () => {
-                    setDraftInstruments(toggleValue(draftInstruments, option.id))
-                    closePanelToRoot()
-                  },
-                }))}
-              />
-            ) : null}
-
-            {activePanel === "processor" ? (
-              <SearchableOptionList
-                value={panelSearch}
-                onValueChange={setPanelSearch}
-                placeholder="Search processors"
-                options={filteredProcessors.map((option) => ({
-                  key: option.id,
-                  label: option.name,
-                  selected: draftProcessors.includes(option.id),
-                  onSelect: () => {
-                    setDraftProcessors(toggleValue(draftProcessors, option.id))
-                    closePanelToRoot()
-                  },
-                }))}
-              />
-            ) : null}
-
-            {activePanel === "amount" ? (
-              <div className="space-y-3">
-                <div className="grid gap-3">
-                  <label className="grid gap-2 text-sm text-white/56">
-                    <span>Minimum ({reportingCurrency})</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={draftAmountMin}
-                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                        setDraftAmountMin(event.target.value)
-                      }
-                      placeholder="0.00"
-                      className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
-                    />
-                  </label>
-                  <label className="grid gap-2 text-sm text-white/56">
-                    <span>Maximum ({reportingCurrency})</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={draftAmountMax}
-                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                        setDraftAmountMax(event.target.value)
-                      }
-                      placeholder="0.00"
-                      className="h-11 border-white/[0.06] bg-white/[0.03] text-sm"
-                    />
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setDraftAmountMin("")
-                      setDraftAmountMax("")
-                      closePanelToRoot()
-                    }}
-                  >
-                    Clear
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={closePanelToRoot}>
-                    Use range
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {activePanel === "cross_currency" ? (
-              <div className="grid gap-2">
-                <SelectionButton
-                  active={!draftCrossCurrency}
-                  onClick={() => {
-                    setDraftCrossCurrency(false)
-                    closePanelToRoot()
-                  }}
-                >
-                  Any currency
-                </SelectionButton>
-                <SelectionButton
-                  active={draftCrossCurrency}
-                  onClick={() => {
-                    setDraftCrossCurrency(true)
-                    closePanelToRoot()
-                  }}
-                >
-                  Only cross-currency
-                </SelectionButton>
-              </div>
-            ) : null}
-
-            {activePanel === "sort" ? (
-              <div className="grid gap-2">
-                {sortOptions.map((option) => (
-                  <SelectionButton
-                    key={option.value}
-                    active={draftSort === option.value}
-                    onClick={() => {
-                      setDraftSort(option.value)
-                      closePanelToRoot()
-                    }}
-                  >
-                    {option.label}
-                  </SelectionButton>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  clearFilters()
-                  router.push(
-                    buildHref({
-                      pathname,
-                      query: searchValue,
-                      feed: draftFeed,
-                      direction: "all",
-                      sort: "recent",
-                      datePreset: undefined,
-                      dateFrom: "",
-                      dateTo: "",
-                      categories: [],
-                      merchants: [],
-                      amountMin: "",
-                      amountMax: "",
-                      types: [],
-                      instruments: [],
-                      processors: [],
-                      crossCurrency: false,
-                    }),
-                  )
-                  setOpen(false)
-                }}
-              >
-                Clear all
-              </Button>
-              <button
-                type="button"
-                className="flex h-12 w-full items-center justify-center border border-[rgba(255,231,90,0.35)] bg-[var(--neo-yellow)] px-5 text-sm font-semibold text-[var(--neo-black)] transition hover:brightness-[1.03] active:translate-y-px"
-                onClick={() => {
-                  router.push(
-                    buildHref({
-                      pathname,
-                      query: searchValue,
-                      feed: draftFeed,
-                      direction: draftDirection,
-                      sort: draftSort,
-                      datePreset: draftDatePreset,
-                      dateFrom: draftDateFrom,
-                      dateTo: draftDateTo,
-                      categories: draftCategories,
-                      merchants: draftMerchants,
-                      amountMin: draftAmountMin,
-                      amountMax: draftAmountMax,
-                      types: draftTypes,
-                      instruments: draftInstruments,
-                      processors: draftProcessors,
-                      crossCurrency: draftCrossCurrency,
-                    }),
-                  )
-                  setOpen(false)
-                }}
-              >
-                Apply
-              </button>
             </div>
           </div>
         </SheetContent>
@@ -992,7 +1050,8 @@ function buildHref(input: {
 
   if (nextQuery) searchParams.set("query", nextQuery)
   if (nextView !== "all") searchParams.set("view", nextView)
-  if (canonicalView && input.sort !== "recent") searchParams.set("sort", input.sort)
+  if (canonicalView && input.sort !== "recent")
+    searchParams.set("sort", input.sort)
 
   if (canonicalView && input.datePreset) {
     searchParams.set("datePreset", input.datePreset)
@@ -1012,8 +1071,10 @@ function buildHref(input: {
   }
 
   if (canonicalView) {
-    if (input.amountMin?.trim()) searchParams.set("amountMin", input.amountMin.trim())
-    if (input.amountMax?.trim()) searchParams.set("amountMax", input.amountMax.trim())
+    if (input.amountMin?.trim())
+      searchParams.set("amountMin", input.amountMin.trim())
+    if (input.amountMax?.trim())
+      searchParams.set("amountMax", input.amountMax.trim())
 
     for (const type of input.types) {
       searchParams.append("type", type)
@@ -1043,8 +1104,8 @@ function getDateSummary(input: {
 }) {
   if (input.preset) {
     return (
-      datePresetOptions.find((option) => option.value === input.preset)?.label ??
-      "Date range"
+      datePresetOptions.find((option) => option.value === input.preset)
+        ?.label ?? "Date range"
     )
   }
 
@@ -1145,7 +1206,7 @@ function SearchableOptionList({
   return (
     <div className="space-y-3">
       <div className="relative">
-        <RiSearchLine className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-white/28" />
+        <RiSearchLine className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-white/28" />
         <Input
           type="search"
           value={value}
@@ -1171,7 +1232,9 @@ function SearchableOptionList({
             ].join(" ")}
           >
             <span>{option.label}</span>
-            {option.selected ? <RiCheckLine className="size-4 shrink-0 text-[var(--neo-yellow)]" /> : null}
+            {option.selected ? (
+              <RiCheckLine className="size-4 shrink-0 text-[var(--neo-yellow)]" />
+            ) : null}
           </button>
         ))}
         {options.length === 0 ? (

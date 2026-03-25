@@ -457,7 +457,7 @@ export default async function CategoryDetailPage({
                   row.reportingAmountMinor ?? row.event.amountMinor,
                   row.reportingAmountMinor ? settings.reportingCurrency : row.event.currency,
                 )}
-                dateLabel={row.event.eventOccurredAt.toISOString()}
+                occurredAt={row.event.eventOccurredAt}
                 categoryName={row.category?.name ?? detail.category.name}
                 categoryId={row.category?.id ?? row.event.categoryId ?? detail.category.id}
                 categoryIconName={row.category?.iconName ?? detail.category.iconName}

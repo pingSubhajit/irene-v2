@@ -1642,6 +1642,23 @@ async function handleGmailBackfillPage(job: Job) {
     }
   }
 
+  const startingCursor = await getEmailSyncCursorById(payload.cursorId)
+
+  if (!startingCursor) {
+    throw new Error(`Missing email sync cursor ${payload.cursorId}`)
+  }
+
+  if (startingCursor.backfillCompletedAt) {
+    await markJobSucceeded(job, payload, {
+      skipped: true,
+      reason: "backfill_completed",
+    })
+    return {
+      skipped: true,
+      reason: "backfill_completed",
+    }
+  }
+
   const onTokenUpdate = createTokenPersister(connection.id)
   const page = await listGmailMessageIds(
     connection,
@@ -1668,13 +1685,19 @@ async function handleGmailBackfillPage(job: Job) {
     throw new Error(`Missing email sync cursor ${payload.cursorId}`)
   }
 
+  const externallyCompleted = Boolean(cursor.backfillCompletedAt)
+
   await updateEmailSyncCursor(cursor.id, {
     providerCursor: processed.latestHistoryId ?? cursor.providerCursor ?? null,
     lastSeenMessageAt: processed.lastSeenMessageAt ?? cursor.lastSeenMessageAt ?? null,
-    backfillCompletedAt: page.nextPageToken ? null : new Date(),
+    backfillCompletedAt: externallyCompleted
+      ? cursor.backfillCompletedAt
+      : page.nextPageToken
+        ? null
+        : new Date(),
   })
 
-  if (page.nextPageToken) {
+  if (page.nextPageToken && !externallyCompleted) {
     await enqueueTrackedBackfillPage({
       userId: payload.userId,
       oauthConnectionId: payload.oauthConnectionId,
@@ -1685,7 +1708,7 @@ async function handleGmailBackfillPage(job: Job) {
       windowStartAt: payload.windowStartAt ? new Date(payload.windowStartAt) : undefined,
       pageToken: page.nextPageToken,
     })
-  } else if (shouldScheduleReconciliationRepair(processed)) {
+  } else if (!externallyCompleted && shouldScheduleReconciliationRepair(processed)) {
     await enqueueTrackedReconciliationRepairBatch({
       userId: payload.userId,
       cursorId: payload.cursorId,
@@ -1706,6 +1729,7 @@ async function handleGmailBackfillPage(job: Job) {
     skippedNonFinanceCount: processed.skippedNonFinanceCount,
     skippedMissingCount: processed.skippedMissingCount,
     nextPageToken: page.nextPageToken ?? null,
+    externallyCompleted,
   })
 
   return {
@@ -1715,6 +1739,7 @@ async function handleGmailBackfillPage(job: Job) {
     skippedNonFinanceCount: processed.skippedNonFinanceCount,
     skippedMissingCount: processed.skippedMissingCount,
     nextPageToken: page.nextPageToken ?? null,
+    externallyCompleted,
   }
 }
 

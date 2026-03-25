@@ -19,7 +19,7 @@ export function DailySpendChart({
   data,
   currency,
 }: {
-  data: { day: number; amount: number; originalCurrencies: string[] }[]
+  data: { label: string; amount: number; originalCurrencies: string[] }[]
   currency: string
 }) {
   const formatter = new Intl.NumberFormat("en-IN", {
@@ -45,12 +45,11 @@ export function DailySpendChart({
                 _label: unknown,
                 payload?: Array<{
                   payload?: {
-                    day?: number
+                    label?: string
                   }
-                }>,
+                }>
               ) => {
-                const day = payload?.[0]?.payload?.day
-                return day ? `Day ${day}` : ""
+                return payload?.[0]?.payload?.label ?? ""
               }}
               formatter={(
                 _value: unknown,
@@ -60,7 +59,7 @@ export function DailySpendChart({
                     amount: number
                     originalCurrencies: string[]
                   }
-                },
+                }
               ) => {
                 const point = item.payload
 
@@ -69,7 +68,7 @@ export function DailySpendChart({
                 }
 
                 const currencies = point.originalCurrencies.filter(
-                  (code) => code !== currency,
+                  (code) => code !== currency
                 )
 
                 return (
@@ -83,8 +82,8 @@ export function DailySpendChart({
                     </div>
                     {currencies.length > 0 ? (
                       <div className="text-[0.7rem] text-muted-foreground">
-                        Includes {Array.from(new Set(currencies)).join(", ")} normalized
-                        to {currency}.
+                        Includes {Array.from(new Set(currencies)).join(", ")}{" "}
+                        normalized to {currency}.
                       </div>
                     ) : null}
                   </div>

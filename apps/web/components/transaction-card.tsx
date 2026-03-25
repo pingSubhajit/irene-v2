@@ -27,7 +27,7 @@ type TransactionCardProps = {
   merchantId?: string | null
   processor?: string | null
   amount: string
-  dateLabel: string
+  occurredAt: Date
   categoryName: string
   categoryId?: string | null
   categoryIconName?: CategoryIconName | null
@@ -74,18 +74,13 @@ function DirectionIcon({
   return <RiArrowRightUpLine className="size-3.5 text-[var(--neo-coral)]" />
 }
 
-function formatRowTime(isoString: string, timeZone: string | undefined) {
-  try {
-    const date = new Date(isoString)
-    return formatInUserTimeZone(date, timeZone, {
-      day: "numeric",
-      month: "short",
-      hour: "numeric",
-      minute: "2-digit",
-    })
-  } catch {
-    return isoString
-  }
+function formatRowTime(value: Date, timeZone: string | undefined) {
+  return formatInUserTimeZone(value, timeZone, {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  })
 }
 
 export function TransactionCard({
@@ -95,7 +90,7 @@ export function TransactionCard({
   merchantId,
   processor,
   amount,
-  dateLabel,
+  occurredAt,
   categoryName,
   categoryId,
   categoryIconName,
@@ -185,7 +180,7 @@ export function TransactionCard({
             <DirectionIcon direction={direction} needsReview={needsReview} />
             <p className="truncate text-sm text-white/32">
               {processor ? `via ${processor} · ` : ""}
-              {formatRowTime(dateLabel, timeZone)}
+              {formatRowTime(occurredAt, timeZone)}
             </p>
           </div>
         </div>

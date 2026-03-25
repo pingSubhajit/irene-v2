@@ -101,8 +101,10 @@ function buildHref(input: {
   if (input.status !== "all") searchParams.set("status", input.status)
   if (input.sort !== "recent") searchParams.set("sort", input.sort)
   if (input.pinnedOnly) searchParams.set("pinned", "true")
-  for (const source of input.selectedSources) searchParams.append("source", source)
-  for (const family of input.selectedFamilies) searchParams.append("family", family)
+  for (const source of input.selectedSources)
+    searchParams.append("source", source)
+  for (const family of input.selectedFamilies)
+    searchParams.append("family", family)
 
   const search = searchParams.toString()
   return search ? `${input.pathname}?${search}` : input.pathname
@@ -123,8 +125,10 @@ export function MemoryToolbar({
   const [activePanel, setActivePanel] = useState<Panel>("root")
   const [searchValue, setSearchValue] = useState(query ?? "")
   const [draftStatus, setDraftStatus] = useState<StatusValue>(status)
-  const [draftSources, setDraftSources] = useState<SourceValue[]>(selectedSources)
-  const [draftFamilies, setDraftFamilies] = useState<FamilyValue[]>(selectedFamilies)
+  const [draftSources, setDraftSources] =
+    useState<SourceValue[]>(selectedSources)
+  const [draftFamilies, setDraftFamilies] =
+    useState<FamilyValue[]>(selectedFamilies)
   const [draftPinnedOnly, setDraftPinnedOnly] = useState(pinnedOnly)
   const [draftSort, setDraftSort] = useState<SortValue>(sort)
 
@@ -140,7 +144,9 @@ export function MemoryToolbar({
         sort,
       })
       const currentSearch = searchParams.toString()
-      const currentHref = currentSearch ? `${pathname}?${currentSearch}` : pathname
+      const currentHref = currentSearch
+        ? `${pathname}?${currentSearch}`
+        : pathname
 
       if (nextHref !== currentHref) {
         router.replace(nextHref)
@@ -148,7 +154,17 @@ export function MemoryToolbar({
     }, 250)
 
     return () => window.clearTimeout(timeoutId)
-  }, [pathname, pinnedOnly, router, searchParams, searchValue, selectedFamilies, selectedSources, sort, status])
+  }, [
+    pathname,
+    pinnedOnly,
+    router,
+    searchParams,
+    searchValue,
+    selectedFamilies,
+    selectedSources,
+    sort,
+    status,
+  ])
 
   const appliedFilterCount = countAppliedFilterGroups({
     status,
@@ -158,18 +174,26 @@ export function MemoryToolbar({
     sort,
   })
 
-  const statusSummary = statusOptions.find((option) => option.value === draftStatus)?.label ?? "All memories"
-  const sourceSummary = draftSources.length === 0
-    ? "Any source"
-    : draftSources.length === 1
-      ? sourceOptions.find((option) => option.value === draftSources[0])?.label ?? "1 selected"
-      : `${draftSources.length} selected`
-  const familySummary = draftFamilies.length === 0
-    ? "Any type"
-    : draftFamilies.length === 1
-      ? familyOptions.find((option) => option.value === draftFamilies[0])?.label ?? "1 selected"
-      : `${draftFamilies.length} selected`
-  const sortSummary = sortOptions.find((option) => option.value === draftSort)?.label ?? "Most recent"
+  const statusSummary =
+    statusOptions.find((option) => option.value === draftStatus)?.label ??
+    "All memories"
+  const sourceSummary =
+    draftSources.length === 0
+      ? "Any source"
+      : draftSources.length === 1
+        ? (sourceOptions.find((option) => option.value === draftSources[0])
+            ?.label ?? "1 selected")
+        : `${draftSources.length} selected`
+  const familySummary =
+    draftFamilies.length === 0
+      ? "Any type"
+      : draftFamilies.length === 1
+        ? (familyOptions.find((option) => option.value === draftFamilies[0])
+            ?.label ?? "1 selected")
+        : `${draftFamilies.length} selected`
+  const sortSummary =
+    sortOptions.find((option) => option.value === draftSort)?.label ??
+    "Most recent"
 
   function closePanelToRoot() {
     setActivePanel("root")
@@ -186,10 +210,10 @@ export function MemoryToolbar({
 
   return (
     <>
-      <div className="sticky top-0 z-30 -mx-4 border-b border-white/[0.06] bg-[rgba(10,10,12,0.94)] px-4 pb-4 pt-3 backdrop-blur md:-mx-6 md:px-6">
+      <div className="sticky top-0 z-30 -mx-4 border-b border-white/[0.06] bg-[rgba(10,10,12,0.94)] px-4 pt-3 pb-4 backdrop-blur md:-mx-6 md:px-6">
         <div className="flex items-center gap-3">
           <div className="relative min-w-0 flex-1">
-            <RiSearchLine className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-white/28" />
+            <RiSearchLine className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-white/28" />
             <Input
               type="search"
               value={searchValue}
@@ -209,7 +233,7 @@ export function MemoryToolbar({
           >
             <RiFilter3Line className="size-4" />
             {appliedFilterCount > 0 ? (
-              <span className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--neo-yellow)] text-[0.65rem] font-semibold text-[var(--neo-black)]">
+              <span className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--neo-yellow)] text-[0.65rem] font-semibold text-[var(--neo-black)]">
                 {appliedFilterCount}
               </span>
             ) : null}
@@ -218,7 +242,11 @@ export function MemoryToolbar({
       </div>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="bottom" className="border-t border-white/8 bg-[rgba(12,12,14,0.98)] pb-6" showCloseButton>
+        <SheetContent
+          side="bottom"
+          className="flex max-h-[85svh] flex-col overflow-hidden border-t border-white/8 bg-[rgba(12,12,14,0.98)] pb-0"
+          showCloseButton
+        >
           <SheetHeader className="px-5 pt-0 sm:px-6">
             <div className="flex items-center gap-2">
               {activePanel !== "root" ? (
@@ -233,151 +261,187 @@ export function MemoryToolbar({
               ) : null}
               <SheetTitle>Filter</SheetTitle>
             </div>
-            <SheetDescription>Refine the memory list without leaving settings.</SheetDescription>
+            <SheetDescription>
+              Refine the memory list without leaving settings.
+            </SheetDescription>
           </SheetHeader>
 
-          <div className="space-y-5 px-5 pt-5 sm:px-6">
-            {activePanel === "root" ? (
-              <div className="space-y-3">
-                <FilterRow label="Status" value={statusSummary} onClick={() => setActivePanel("status")} />
-                <FilterRow label="Source" value={sourceSummary} onClick={() => setActivePanel("source")} />
-                <FilterRow label="Type" value={familySummary} onClick={() => setActivePanel("family")} />
-                <FilterRow label="Pinned" value={draftPinnedOnly ? "Only pinned" : "Any"} onClick={() => setActivePanel("pinned")} />
-                <FilterRow label="Sort" value={sortSummary} onClick={() => setActivePanel("sort")} />
-              </div>
-            ) : null}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 sm:px-6">
+              <div className="space-y-5 pb-5">
+                {activePanel === "root" ? (
+                  <div className="space-y-3">
+                    <FilterRow
+                      label="Status"
+                      value={statusSummary}
+                      onClick={() => setActivePanel("status")}
+                    />
+                    <FilterRow
+                      label="Source"
+                      value={sourceSummary}
+                      onClick={() => setActivePanel("source")}
+                    />
+                    <FilterRow
+                      label="Type"
+                      value={familySummary}
+                      onClick={() => setActivePanel("family")}
+                    />
+                    <FilterRow
+                      label="Pinned"
+                      value={draftPinnedOnly ? "Only pinned" : "Any"}
+                      onClick={() => setActivePanel("pinned")}
+                    />
+                    <FilterRow
+                      label="Sort"
+                      value={sortSummary}
+                      onClick={() => setActivePanel("sort")}
+                    />
+                  </div>
+                ) : null}
 
-            {activePanel === "status" ? (
-              <div className="grid gap-2">
-                {statusOptions.map((option) => (
-                  <SelectionButton
-                    key={option.value}
-                    active={draftStatus === option.value}
-                    onClick={() => {
-                      setDraftStatus(option.value)
-                      closePanelToRoot()
-                    }}
-                  >
-                    {option.label}
-                  </SelectionButton>
-                ))}
-              </div>
-            ) : null}
+                {activePanel === "status" ? (
+                  <div className="grid gap-2">
+                    {statusOptions.map((option) => (
+                      <SelectionButton
+                        key={option.value}
+                        active={draftStatus === option.value}
+                        onClick={() => {
+                          setDraftStatus(option.value)
+                          closePanelToRoot()
+                        }}
+                      >
+                        {option.label}
+                      </SelectionButton>
+                    ))}
+                  </div>
+                ) : null}
 
-            {activePanel === "source" ? (
-              <div className="grid gap-2">
-                {sourceOptions.map((option) => (
-                  <SelectionButton
-                    key={option.value}
-                    active={draftSources.includes(option.value)}
-                    onClick={() => setDraftSources(toggleValue(draftSources, option.value))}
-                  >
-                    {option.label}
-                  </SelectionButton>
-                ))}
-              </div>
-            ) : null}
+                {activePanel === "source" ? (
+                  <div className="grid gap-2">
+                    {sourceOptions.map((option) => (
+                      <SelectionButton
+                        key={option.value}
+                        active={draftSources.includes(option.value)}
+                        onClick={() =>
+                          setDraftSources(
+                            toggleValue(draftSources, option.value)
+                          )
+                        }
+                      >
+                        {option.label}
+                      </SelectionButton>
+                    ))}
+                  </div>
+                ) : null}
 
-            {activePanel === "family" ? (
-              <div className="grid gap-2">
-                {familyOptions.map((option) => (
-                  <SelectionButton
-                    key={option.value}
-                    active={draftFamilies.includes(option.value)}
-                    onClick={() => setDraftFamilies(toggleValue(draftFamilies, option.value))}
-                  >
-                    {option.label}
-                  </SelectionButton>
-                ))}
-              </div>
-            ) : null}
+                {activePanel === "family" ? (
+                  <div className="grid gap-2">
+                    {familyOptions.map((option) => (
+                      <SelectionButton
+                        key={option.value}
+                        active={draftFamilies.includes(option.value)}
+                        onClick={() =>
+                          setDraftFamilies(
+                            toggleValue(draftFamilies, option.value)
+                          )
+                        }
+                      >
+                        {option.label}
+                      </SelectionButton>
+                    ))}
+                  </div>
+                ) : null}
 
-            {activePanel === "pinned" ? (
-              <div className="grid gap-2">
-                <SelectionButton
-                  active={!draftPinnedOnly}
+                {activePanel === "pinned" ? (
+                  <div className="grid gap-2">
+                    <SelectionButton
+                      active={!draftPinnedOnly}
+                      onClick={() => {
+                        setDraftPinnedOnly(false)
+                        closePanelToRoot()
+                      }}
+                    >
+                      Any memory
+                    </SelectionButton>
+                    <SelectionButton
+                      active={draftPinnedOnly}
+                      onClick={() => {
+                        setDraftPinnedOnly(true)
+                        closePanelToRoot()
+                      }}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <RiPushpin2Fill className="size-3.5" />
+                        Only pinned
+                      </span>
+                    </SelectionButton>
+                  </div>
+                ) : null}
+
+                {activePanel === "sort" ? (
+                  <div className="grid gap-2">
+                    {sortOptions.map((option) => (
+                      <SelectionButton
+                        key={option.value}
+                        active={draftSort === option.value}
+                        onClick={() => {
+                          setDraftSort(option.value)
+                          closePanelToRoot()
+                        }}
+                      >
+                        {option.label}
+                      </SelectionButton>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="border-t border-white/8 bg-[rgba(12,12,14,0.98)] px-5 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6">
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
                   onClick={() => {
-                    setDraftPinnedOnly(false)
-                    closePanelToRoot()
+                    clearFilters()
+                    router.push(
+                      buildHref({
+                        pathname,
+                        query: searchValue,
+                        status: "all",
+                        selectedSources: [],
+                        selectedFamilies: [],
+                        pinnedOnly: false,
+                        sort: "recent",
+                      })
+                    )
+                    setOpen(false)
                   }}
                 >
-                  Any memory
-                </SelectionButton>
-                <SelectionButton
-                  active={draftPinnedOnly}
+                  Clear all
+                </Button>
+                <button
+                  type="button"
+                  className="flex h-12 w-full items-center justify-center border border-[rgba(255,231,90,0.35)] bg-[var(--neo-yellow)] px-5 text-sm font-semibold text-[var(--neo-black)] transition hover:brightness-[1.03] active:translate-y-px"
                   onClick={() => {
-                    setDraftPinnedOnly(true)
-                    closePanelToRoot()
+                    router.push(
+                      buildHref({
+                        pathname,
+                        query: searchValue,
+                        status: draftStatus,
+                        selectedSources: draftSources,
+                        selectedFamilies: draftFamilies,
+                        pinnedOnly: draftPinnedOnly,
+                        sort: draftSort,
+                      })
+                    )
+                    setOpen(false)
                   }}
                 >
-                  <span className="inline-flex items-center gap-2">
-                    <RiPushpin2Fill className="size-3.5" />
-                    Only pinned
-                  </span>
-                </SelectionButton>
+                  Apply
+                </button>
               </div>
-            ) : null}
-
-            {activePanel === "sort" ? (
-              <div className="grid gap-2">
-                {sortOptions.map((option) => (
-                  <SelectionButton
-                    key={option.value}
-                    active={draftSort === option.value}
-                    onClick={() => {
-                      setDraftSort(option.value)
-                      closePanelToRoot()
-                    }}
-                  >
-                    {option.label}
-                  </SelectionButton>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  clearFilters()
-                  router.push(
-                    buildHref({
-                      pathname,
-                      query: searchValue,
-                      status: "all",
-                      selectedSources: [],
-                      selectedFamilies: [],
-                      pinnedOnly: false,
-                      sort: "recent",
-                    }),
-                  )
-                  setOpen(false)
-                }}
-              >
-                Clear all
-              </Button>
-              <button
-                type="button"
-                className="flex h-12 w-full items-center justify-center border border-[rgba(255,231,90,0.35)] bg-[var(--neo-yellow)] px-5 text-sm font-semibold text-[var(--neo-black)] transition hover:brightness-[1.03] active:translate-y-px"
-                onClick={() => {
-                  router.push(
-                    buildHref({
-                      pathname,
-                      query: searchValue,
-                      status: draftStatus,
-                      selectedSources: draftSources,
-                      selectedFamilies: draftFamilies,
-                      pinnedOnly: draftPinnedOnly,
-                      sort: draftSort,
-                    }),
-                  )
-                  setOpen(false)
-                }}
-              >
-                Apply
-              </button>
             </div>
           </div>
         </SheetContent>
@@ -431,7 +495,9 @@ function SelectionButton({
       ].join(" ")}
     >
       <span>{children}</span>
-      {active ? <RiCheckLine className="size-4 shrink-0 text-white/72" /> : null}
+      {active ? (
+        <RiCheckLine className="size-4 shrink-0 text-white/72" />
+      ) : null}
     </button>
   )
 }

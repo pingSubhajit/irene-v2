@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import Link from "next/link"
 
 import {
@@ -16,11 +17,12 @@ type HeroBalanceCardProps = {
   headline: string
   amount: string
   amountCaption?: string
+  headerAccessory?: ReactNode
   income: string
   netFlow: string
   netFlowDirection: "positive" | "negative" | "zero"
   refunds: string
-  dailySpend: { day: number; amount: number; originalCurrencies: string[] }[]
+  dailySpend: { label: string; amount: number; originalCurrencies: string[] }[]
   reportingCurrency: string
   actionHref?: string
   actionLabel?: string
@@ -32,6 +34,7 @@ export function HeroBalanceCard({
   headline,
   amount,
   amountCaption,
+  headerAccessory,
   income,
   netFlow,
   netFlowDirection,
@@ -44,17 +47,20 @@ export function HeroBalanceCard({
 }: HeroBalanceCardProps) {
   return (
     <Card variant="spotlight" className="overflow-hidden">
-      <div className="relative z-10 p-6 pb-0">
-        <p className="text-[0.6rem] font-bold tracking-[0.34em] uppercase text-white/50">
-          {label}
-        </p>
-        <h1 className="mt-1 max-w-[16ch] font-display text-[1.8rem] leading-[0.95] text-white md:text-[2.4rem]">
-          {headline}
-        </h1>
+      <div className="relative z-10 flex items-start justify-between gap-4 p-6 pb-0">
+        <div className="min-w-0 flex-1">
+          <p className="text-[0.6rem] font-bold tracking-[0.34em] text-white/50 uppercase">
+            {label}
+          </p>
+          <h1 className="mt-1 max-w-[12ch] font-display text-[1.8rem] leading-[0.95] text-white md:text-[2.4rem]">
+            {headline}
+          </h1>
+        </div>
+        {headerAccessory}
       </div>
 
       <div className="relative z-10 px-6 pt-2 pb-6">
-        <p className="font-display text-[3.4rem] leading-none tracking-tight text-white md:text-[4.2rem]">
+        <p className="font-display text-[3.4rem] leading-none tracking-tight text-white tabular-nums md:text-[4.2rem]">
           {amount}
         </p>
         {amountCaption ? (
@@ -77,7 +83,13 @@ export function HeroBalanceCard({
           <MetricCell
             icon={<RiSwapLine className="size-4" />}
             value={netFlow}
-            tone={netFlowDirection === "positive" ? "positive" : netFlowDirection === "negative" ? "negative" : "neutral"}
+            tone={
+              netFlowDirection === "positive"
+                ? "positive"
+                : netFlowDirection === "negative"
+                  ? "negative"
+                  : "neutral"
+            }
           />
           <div className="w-[3px] bg-white/[0.08]" />
           <MetricCell
@@ -107,7 +119,7 @@ export function HeroBalanceCard({
 
       {/* Brutalist geometric blocks */}
       <div className="pointer-events-none absolute -top-8 -right-8 size-36 rotate-12 bg-white/[0.06] md:size-44" />
-      <div className="pointer-events-none absolute -right-4 top-12 size-20 -rotate-6 bg-white/[0.04] md:size-24" />
+      <div className="pointer-events-none absolute top-12 -right-4 size-20 -rotate-6 bg-white/[0.04] md:size-24" />
       <div className="pointer-events-none absolute -bottom-10 -left-6 h-16 w-28 rotate-3 bg-white/[0.05]" />
     </Card>
   )
@@ -118,7 +130,7 @@ function MetricCell({
   value,
   tone,
 }: {
-  icon: React.ReactNode
+  icon: ReactNode
   value: string
   tone: "positive" | "negative" | "neutral"
 }) {
@@ -132,7 +144,9 @@ function MetricCell({
   return (
     <div className="flex flex-1 flex-col items-center gap-1.5">
       <span className={toneColor}>{icon}</span>
-      <span className="text-sm font-semibold text-white">{value}</span>
+      <span className="text-sm font-semibold text-white tabular-nums">
+        {value}
+      </span>
     </div>
   )
 }

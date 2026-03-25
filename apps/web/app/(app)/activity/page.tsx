@@ -475,7 +475,7 @@ export default async function ActivityPage({
                       merchantLogoUrl={merchant?.logoUrl ?? null}
                       merchantId={merchant?.id ?? event.merchantId}
                       amount={formatCurrency(event.amountMinor, event.currency)}
-                      dateLabel={event.eventOccurredAt.toISOString()}
+                      occurredAt={event.eventOccurredAt}
                       categoryName={category?.name ?? "Uncategorized"}
                       categoryId={category?.id ?? event.categoryId}
                       categoryIconName={category?.iconName ?? null}

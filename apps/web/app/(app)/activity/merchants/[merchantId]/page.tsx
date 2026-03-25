@@ -449,7 +449,7 @@ export default async function MerchantDetailPage({
                   row.reportingAmountMinor ?? row.event.amountMinor,
                     row.reportingAmountMinor ? settings.reportingCurrency : row.event.currency,
                 )}
-                dateLabel={row.event.eventOccurredAt.toISOString()}
+                occurredAt={row.event.eventOccurredAt}
                 categoryName={row.category?.name ?? "Uncategorized"}
                 categoryId={row.category?.id ?? row.event.categoryId}
                 categoryIconName={row.category?.iconName}
