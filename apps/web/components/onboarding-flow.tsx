@@ -188,7 +188,7 @@ export function OnboardingFlow({
 
   if (step === 2) {
     return (
-      <main className="relative h-svh overflow-hidden bg-[#06070a] text-white">
+      <main className="relative h-svh overflow-hidden bg-[#08080A] text-white">
         <div className="relative mx-auto flex h-svh w-full max-w-[28rem] flex-col px-7 pt-12 pb-12">
           <button
             type="button"
