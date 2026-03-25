@@ -2,8 +2,7 @@ import { headers } from "next/headers"
 import { NextResponse } from "next/server"
 
 import { getCronEnv } from "@workspace/config/server"
-
-import { FX_WARM_LOOKBACK_DAYS, triggerFxRateWarmup } from "@/lib/fx-valuation"
+import { enqueueScheduledFxRateWarmup } from "@/lib/cron-jobs"
 
 export const runtime = "nodejs"
 
@@ -34,11 +33,5 @@ export async function GET() {
     )
   }
 
-  const { jobRun } = await triggerFxRateWarmup(FX_WARM_LOOKBACK_DAYS)
-
-  return NextResponse.json({
-    ok: true,
-    jobRunId: jobRun.id,
-    lookbackDays: FX_WARM_LOOKBACK_DAYS,
-  })
+  return NextResponse.json(await enqueueScheduledFxRateWarmup())
 }
