@@ -14,10 +14,16 @@ import {
   enqueueAdviceRebuildUser,
 } from "@workspace/workflows"
 
+import { isAdviceEnabled } from "@/lib/feature-flags"
+
 export async function triggerUserAdviceRefresh(input: {
   userId: string
   reason: "forecast_changed" | "goals_changed" | "manual_refresh"
 }) {
+  if (!isAdviceEnabled()) {
+    return null
+  }
+
   const correlationId = createCorrelationId()
   const jobKey = getAdviceRefreshUserJobKey(input.userId)
 
@@ -49,6 +55,10 @@ export async function triggerUserAdviceRebuild(input: {
   userId: string
   reason: "manual_rebuild" | "logic_change"
 }) {
+  if (!isAdviceEnabled()) {
+    return null
+  }
+
   const correlationId = createCorrelationId()
   const jobKey = getAdviceRebuildUserJobKey(input.userId)
 
@@ -80,6 +90,10 @@ export async function triggerUserAdviceRank(input: {
   userId: string
   reason: "manual_rank"
 }) {
+  if (!isAdviceEnabled()) {
+    return null
+  }
+
   const correlationId = createCorrelationId()
   const jobKey = getAdviceRankUserJobKey(input.userId)
 

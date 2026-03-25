@@ -5,6 +5,7 @@ import {
   triggerUserAdviceRebuild,
   triggerUserAdviceRefresh,
 } from "@/lib/advice"
+import { isAdviceEnabled } from "@/lib/feature-flags"
 import { requireSession } from "@/lib/session"
 
 function redirectToTarget(request: Request, redirectTo: string, status: string) {
@@ -18,6 +19,10 @@ export async function POST(request: Request) {
   const formData = await request.formData()
   const action = String(formData.get("action") ?? "").trim()
   const redirectTo = String(formData.get("redirectTo") ?? "/settings/recovery").trim()
+
+  if (!isAdviceEnabled()) {
+    return redirectToTarget(request, redirectTo, "advice-disabled")
+  }
 
   if (action === "rebuild") {
     await triggerUserAdviceRebuild({

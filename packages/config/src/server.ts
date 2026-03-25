@@ -72,6 +72,35 @@ const cronEnvSchema = z.object({
   CRON_SECRET: z.string().min(1).optional(),
 })
 
+function booleanFlagSchema(defaultValue: boolean) {
+  return z
+    .union([
+      z.boolean(),
+      z
+        .string()
+        .trim()
+        .toLowerCase()
+        .transform((value) => {
+          if (value === "true" || value === "1" || value === "yes" || value === "on") {
+            return true
+          }
+
+          if (value === "false" || value === "0" || value === "no" || value === "off") {
+            return false
+          }
+
+          throw new Error(`Invalid boolean flag value: ${value}`)
+        }),
+    ])
+    .optional()
+    .transform((value) => value ?? defaultValue)
+}
+
+const featureFlagsEnvSchema = z.object({
+  ENABLE_ADVICE: booleanFlagSchema(true),
+  ENABLE_MEMORY_LEARNING: booleanFlagSchema(true),
+})
+
 const serverEnvSchema = runtimeEnvSchema
   .extend(databaseEnvSchema.shape)
   .extend(authEnvSchema.shape)
@@ -81,6 +110,7 @@ const serverEnvSchema = runtimeEnvSchema
   .extend(aiEnvSchema.shape)
   .extend(fxEnvSchema.shape)
   .extend(cronEnvSchema.shape)
+  .extend(featureFlagsEnvSchema.shape)
 
 export type RuntimeEnv = z.infer<typeof runtimeEnvSchema>
 export type DatabaseEnv = z.infer<typeof databaseEnvSchema>
@@ -91,6 +121,7 @@ export type StorageEnv = z.infer<typeof storageEnvSchema>
 export type AiEnv = z.infer<typeof aiEnvSchema>
 export type FxEnv = z.infer<typeof fxEnvSchema>
 export type CronEnv = z.infer<typeof cronEnvSchema>
+export type FeatureFlagsEnv = z.infer<typeof featureFlagsEnvSchema>
 export type ServerEnv = z.infer<typeof serverEnvSchema>
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
@@ -105,6 +136,7 @@ let storageEnvCache: StorageEnv | null = null
 let aiEnvCache: AiEnv | null = null
 let fxEnvCache: FxEnv | null = null
 let cronEnvCache: CronEnv | null = null
+let featureFlagsEnvCache: FeatureFlagsEnv | null = null
 let serverEnvCache: ServerEnv | null = null
 
 function ensureEnvLoaded() {
@@ -250,6 +282,17 @@ export function getCronEnv(): CronEnv {
   return cronEnvCache
 }
 
+export function getFeatureFlagsEnv(): FeatureFlagsEnv {
+  ensureEnvLoaded()
+
+  if (featureFlagsEnvCache) {
+    return featureFlagsEnvCache
+  }
+
+  featureFlagsEnvCache = featureFlagsEnvSchema.parse(process.env)
+  return featureFlagsEnvCache
+}
+
 export function getServerEnv(): ServerEnv {
   ensureEnvLoaded()
 
@@ -270,6 +313,7 @@ export function getEnvSanityChecks() {
   const storage = getStorageEnv()
   const ai = getAiEnv()
   const fx = getFxEnv()
+  const features = getFeatureFlagsEnv()
   return {
     nodeEnv: runtime.NODE_ENV,
     auth: Boolean(
@@ -293,5 +337,7 @@ export function getEnvSanityChecks() {
     ),
     ai: Boolean(ai.AI_GATEWAY_API_KEY),
     fx: Boolean(fx.CURRENCYAPI_API_KEY),
+    adviceEnabled: features.ENABLE_ADVICE,
+    memoryLearningEnabled: features.ENABLE_MEMORY_LEARNING,
   }
 }

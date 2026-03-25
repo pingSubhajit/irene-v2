@@ -11,6 +11,8 @@ import {
   MEMORY_LEARNING_QUEUE_NAME,
 } from "@workspace/workflows"
 
+import { isMemoryLearningEnabled } from "@/lib/feature-flags"
+
 export async function recordFeedbackEvent(input: {
   userId: string
   targetType: FeedbackEventTargetType
@@ -32,6 +34,10 @@ export async function recordFeedbackEvent(input: {
     newValueJson: input.newValue ?? null,
     metadataJson: input.metadata ?? null,
   })
+
+  if (!isMemoryLearningEnabled()) {
+    return feedbackEvent
+  }
 
   const correlationId = createCorrelationId()
   const jobKey = `${FEEDBACK_PROCESS_JOB_NAME}:${feedbackEvent.id}`

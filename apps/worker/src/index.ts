@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 
 import type { Job } from "bullmq"
 import { Worker } from "bullmq"
+import { getFeatureFlagsEnv } from "@workspace/config"
 
 import {
   aiModels,
@@ -230,6 +231,9 @@ import {
 } from "./reconciliation-repair"
 
 const logger = createLogger("worker")
+const featureFlags = getFeatureFlagsEnv()
+const adviceEnabled = featureFlags.ENABLE_ADVICE
+const memoryLearningEnabled = featureFlags.ENABLE_MEMORY_LEARNING
 
 const workerConnection = createWorkerRedisConnection()
 
@@ -1179,6 +1183,15 @@ async function enqueueTrackedAdviceRefresh(input: {
   source: "worker" | "web" | "scheduler" | "startup"
   reason: "forecast_changed" | "goals_changed" | "manual_refresh"
 }) {
+  if (!adviceEnabled) {
+    logger.info("Skipping advice refresh enqueue because advice is disabled", {
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+    })
+    return null
+  }
+
   const jobKey = getAdviceRefreshUserJobKey(input.userId)
   const jobRun = await ensureCoalescedJobRun({
     queueName: ADVICE_QUEUE_NAME,
@@ -1209,6 +1222,15 @@ async function enqueueTrackedAdviceRebuild(input: {
   source: "worker" | "web" | "scheduler" | "startup"
   reason: "nightly_rebuild" | "startup_rebuild" | "manual_rebuild" | "logic_change"
 }) {
+  if (!adviceEnabled) {
+    logger.info("Skipping advice rebuild enqueue because advice is disabled", {
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+    })
+    return null
+  }
+
   const jobKey = getAdviceRebuildUserJobKey(input.userId)
   const jobRun = await ensureCoalescedJobRun({
     queueName: ADVICE_QUEUE_NAME,
@@ -1239,6 +1261,15 @@ async function enqueueTrackedAdviceRank(input: {
   source: "worker" | "web" | "scheduler" | "startup"
   reason: "hourly_rank" | "post_refresh_rank" | "manual_rank"
 }) {
+  if (!adviceEnabled) {
+    logger.info("Skipping advice rank enqueue because advice is disabled", {
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+    })
+    return null
+  }
+
   const jobKey = getAdviceRankUserJobKey(input.userId)
   const jobRun = await ensureCoalescedJobRun({
     queueName: ADVICE_QUEUE_NAME,
@@ -1305,6 +1336,16 @@ async function enqueueTrackedMemoryRebuild(input: {
     | "startup_rebuild"
   sourceReferenceId?: string
 }) {
+  if (!memoryLearningEnabled) {
+    logger.info("Skipping memory rebuild enqueue because memory learning is disabled", {
+      userId: input.userId,
+      source: input.source,
+      reason: input.reason,
+      sourceReferenceId: input.sourceReferenceId ?? null,
+    })
+    return null
+  }
+
   const jobKey = getMemoryRebuildUserJobKey({
     userId: input.userId,
     reason: input.reason,
@@ -1355,6 +1396,14 @@ async function enqueueTrackedMemoryDecayScan(input: {
   source: "startup" | "scheduler"
   reason: "startup_scan" | "nightly_scan"
 }) {
+  if (!memoryLearningEnabled) {
+    logger.info("Skipping memory decay scan enqueue because memory learning is disabled", {
+      source: input.source,
+      reason: input.reason,
+    })
+    return null
+  }
+
   const today = new Date().toISOString().slice(0, 10)
   const jobKey = `${MEMORY_DECAY_SCAN_JOB_NAME}:${input.reason}:${today}`
   const jobRun = await ensureJobRun({
@@ -3179,6 +3228,15 @@ async function handleAdviceRefresh(job: Job) {
   const payload = adviceRefreshUserJobPayloadSchema.parse(job.data)
   await markJobRunning(job, payload)
 
+  if (!adviceEnabled) {
+    const outcome = {
+      skipped: true,
+      skipReason: "advice_disabled",
+    }
+    await markJobSucceeded(job, payload, outcome)
+    return outcome
+  }
+
   const outcome = await refreshAdviceForUser({
     userId: payload.userId,
     reason: payload.reason,
@@ -3198,6 +3256,15 @@ async function handleAdviceRefresh(job: Job) {
 async function handleAdviceRebuild(job: Job) {
   const payload = adviceRebuildUserJobPayloadSchema.parse(job.data)
   await markJobRunning(job, payload)
+
+  if (!adviceEnabled) {
+    const outcome = {
+      skipped: true,
+      skipReason: "advice_disabled",
+    }
+    await markJobSucceeded(job, payload, outcome)
+    return outcome
+  }
 
   const outcome = await refreshAdviceForUser({
     userId: payload.userId,
@@ -3219,6 +3286,15 @@ async function handleAdviceRank(job: Job) {
   const payload = adviceRankUserJobPayloadSchema.parse(job.data)
   await markJobRunning(job, payload)
 
+  if (!adviceEnabled) {
+    const outcome = {
+      skipped: true,
+      skipReason: "advice_disabled",
+    }
+    await markJobSucceeded(job, payload, outcome)
+    return outcome
+  }
+
   const outcome = await rankAdviceForUser({
     userId: payload.userId,
     reason: payload.reason,
@@ -3232,6 +3308,15 @@ async function handleFeedbackProcess(job: Job) {
   const payload = feedbackProcessJobPayloadSchema.parse(job.data)
   await markJobRunning(job, payload)
 
+  if (!memoryLearningEnabled) {
+    const outcome = {
+      skipped: true,
+      skipReason: "memory_learning_disabled",
+    }
+    await markJobSucceeded(job, payload, outcome)
+    return outcome
+  }
+
   const outcome = await processFeedbackMemory(payload.feedbackEventId)
 
   await markJobSucceeded(job, payload, outcome)
@@ -3241,6 +3326,15 @@ async function handleFeedbackProcess(job: Job) {
 async function handleMemoryRebuild(job: Job) {
   const payload = memoryRebuildUserJobPayloadSchema.parse(job.data)
   await markJobRunning(job, payload)
+
+  if (!memoryLearningEnabled) {
+    const outcome = {
+      skipped: true,
+      skipReason: "memory_learning_disabled",
+    }
+    await markJobSucceeded(job, payload, outcome)
+    return outcome
+  }
 
   const outcome = await rebuildMemoryForUser({
     userId: payload.userId,
@@ -3255,6 +3349,16 @@ async function handleMemoryRebuild(job: Job) {
 async function handleMemoryDecayScan(job: Job) {
   const payload = memoryDecayScanJobPayloadSchema.parse(job.data)
   await markJobRunning(job, payload)
+
+  if (!memoryLearningEnabled) {
+    const outcome = {
+      skipped: true,
+      skipReason: "memory_learning_disabled",
+      reason: payload.reason,
+    }
+    await markJobSucceeded(job, payload, outcome)
+    return outcome
+  }
 
   const outcome = await runMemoryDecayScan()
 
@@ -3741,6 +3845,10 @@ const forecastNightlyScheduler = setInterval(() => {
 }, 60 * 60 * 1000)
 
 async function scheduleNightlyAdviceRebuildIfDue() {
+  if (!adviceEnabled) {
+    return
+  }
+
   const today = new Date().toISOString().slice(0, 10)
   if (lastNightlyAdviceRebuildDate === today) {
     return
@@ -3773,6 +3881,10 @@ const adviceNightlyScheduler = setInterval(() => {
 }, 60 * 60 * 1000)
 
 async function scheduleHourlyAdviceRankingIfDue() {
+  if (!adviceEnabled) {
+    return
+  }
+
   const hourKey = new Date().toISOString().slice(0, 13)
   if (lastHourlyAdviceRankHour === hourKey) {
     return
@@ -3805,6 +3917,10 @@ const adviceRankingScheduler = setInterval(() => {
 }, 60 * 60 * 1000)
 
 async function scheduleMemoryDecayScanIfDue() {
+  if (!memoryLearningEnabled) {
+    return
+  }
+
   const today = new Date().toISOString().slice(0, 10)
   if (lastMemoryDecayScanDate === today) {
     return
@@ -3830,8 +3946,8 @@ void (async () => {
     listUserIdsForInstrumentRepair(),
     listUsersForMerchantRepair(),
     listUserIdsForForecasting(),
-    listUserIdsForAdvice(),
-    listUserIdsForMemoryLearning(),
+    adviceEnabled ? listUserIdsForAdvice() : Promise.resolve([]),
+    memoryLearningEnabled ? listUserIdsForMemoryLearning() : Promise.resolve([]),
   ])
 
   await Promise.all(
@@ -3865,37 +3981,45 @@ void (async () => {
     ),
   )
 
-  await Promise.all(
-    adviceUserIds.map((userId) =>
-      enqueueTrackedAdviceRebuild({
-        userId,
-        correlationId: `startup:${userId}`,
-        source: "startup",
-        reason: "startup_rebuild",
-      }),
-    ),
-  )
+  if (adviceEnabled) {
+    await Promise.all(
+      adviceUserIds.map((userId) =>
+        enqueueTrackedAdviceRebuild({
+          userId,
+          correlationId: `startup:${userId}`,
+          source: "startup",
+          reason: "startup_rebuild",
+        }),
+      ),
+    )
+  }
 
-  await Promise.all(
-    memoryUserIds.map((userId) =>
-      enqueueTrackedMemoryRebuild({
-        userId,
-        correlationId: `startup:${userId}`,
-        source: "startup",
-        reason: "startup_rebuild",
-      }),
-    ),
-  )
+  if (memoryLearningEnabled) {
+    await Promise.all(
+      memoryUserIds.map((userId) =>
+        enqueueTrackedMemoryRebuild({
+          userId,
+          correlationId: `startup:${userId}`,
+          source: "startup",
+          reason: "startup_rebuild",
+        }),
+      ),
+    )
 
-  await enqueueTrackedMemoryDecayScan({
-    correlationId: "startup:memory-decay",
-    source: "startup",
-    reason: "startup_scan",
-  })
+    await enqueueTrackedMemoryDecayScan({
+      correlationId: "startup:memory-decay",
+      source: "startup",
+      reason: "startup_scan",
+    })
+  }
 
   lastNightlyForecastRebuildDate = new Date().toISOString().slice(0, 10)
-  lastNightlyAdviceRebuildDate = new Date().toISOString().slice(0, 10)
-  lastMemoryDecayScanDate = new Date().toISOString().slice(0, 10)
+  if (adviceEnabled) {
+    lastNightlyAdviceRebuildDate = new Date().toISOString().slice(0, 10)
+  }
+  if (memoryLearningEnabled) {
+    lastMemoryDecayScanDate = new Date().toISOString().slice(0, 10)
+  }
 })().catch((error) => {
   logger.errorWithCause("Failed to schedule startup repair backfills", error)
 })

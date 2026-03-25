@@ -4,6 +4,7 @@ import { z } from "zod"
 import { getAdviceItemById, updateAdviceItem } from "@workspace/db"
 
 import { triggerUserAdviceRefresh } from "@/lib/advice"
+import { isAdviceEnabled } from "@/lib/feature-flags"
 import { requireSession } from "@/lib/session"
 
 const mutateSchema = z.discriminatedUnion("action", [
@@ -44,6 +45,10 @@ export async function POST(request: Request) {
   })
 
   const redirectPath = parsed.redirectTo ?? "/advice"
+
+  if (!isAdviceEnabled()) {
+    return redirectTo(redirectPath, "disabled")
+  }
 
   if (parsed.action === "refresh") {
     await triggerUserAdviceRefresh({

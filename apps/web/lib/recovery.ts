@@ -47,6 +47,8 @@ import {
   enqueueSignalReconcile,
 } from "@workspace/workflows"
 
+import { isAdviceEnabled, isMemoryLearningEnabled } from "@/lib/feature-flags"
+
 function asString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null
 }
@@ -108,6 +110,10 @@ export async function replayRecoverableJobRun(jobRun: JobRunSelect) {
   const replayKeyBase = `${jobRun.jobName}:replay:${jobRun.id}:${correlationId}`
 
   if (jobRun.queueName === ADVICE_QUEUE_NAME && jobRun.jobName === ADVICE_REFRESH_USER_JOB_NAME) {
+    if (!isAdviceEnabled()) {
+      throw new Error("Advice is disabled")
+    }
+
     const reason =
       asString(jobRun.payloadJson?.reason) === "goals_changed"
         ? "goals_changed"
@@ -135,6 +141,10 @@ export async function replayRecoverableJobRun(jobRun: JobRunSelect) {
   }
 
   if (jobRun.queueName === ADVICE_QUEUE_NAME && jobRun.jobName === ADVICE_REBUILD_USER_JOB_NAME) {
+    if (!isAdviceEnabled()) {
+      throw new Error("Advice is disabled")
+    }
+
     const reason =
       asString(jobRun.payloadJson?.reason) === "logic_change"
         ? "logic_change"
@@ -160,6 +170,10 @@ export async function replayRecoverableJobRun(jobRun: JobRunSelect) {
   }
 
   if (jobRun.queueName === ADVICE_QUEUE_NAME && jobRun.jobName === ADVICE_RANK_USER_JOB_NAME) {
+    if (!isAdviceEnabled()) {
+      throw new Error("Advice is disabled")
+    }
+
     const replayJobRun = await createReplayJobRun({
       original: jobRun,
       userId,
@@ -580,6 +594,10 @@ export async function replayRecoverableJobRun(jobRun: JobRunSelect) {
   }
 
   if (jobRun.queueName === MEMORY_LEARNING_QUEUE_NAME && jobRun.jobName === FEEDBACK_PROCESS_JOB_NAME) {
+    if (!isMemoryLearningEnabled()) {
+      throw new Error("Memory learning is disabled")
+    }
+
     const feedbackEventId = asUuid(jobRun.payloadJson?.feedbackEventId)
 
     if (!feedbackEventId) {
@@ -612,6 +630,10 @@ export async function replayRecoverableJobRun(jobRun: JobRunSelect) {
   }
 
   if (jobRun.queueName === MEMORY_LEARNING_QUEUE_NAME && jobRun.jobName === MEMORY_REBUILD_USER_JOB_NAME) {
+    if (!isMemoryLearningEnabled()) {
+      throw new Error("Memory learning is disabled")
+    }
+
     const reason =
       asString(jobRun.payloadJson?.reason) === "review_resolution"
         ? "review_resolution"

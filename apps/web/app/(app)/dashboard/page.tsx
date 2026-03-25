@@ -31,6 +31,7 @@ import {
   getUtcStartOfUserDay,
 } from "@/lib/date-format"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
+import { isAdviceEnabled } from "@/lib/feature-flags"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { createPrivateMetadata } from "@/lib/metadata"
 import { resolveAdviceContextHref } from "@/lib/advice"
@@ -280,6 +281,7 @@ export default async function DashboardPage({
   const params = searchParams ? await searchParams : undefined
   const session = await requireSession()
   const settings = await getUserSettings(session.user.id)
+  const adviceEnabled = isAdviceEnabled()
   const timeframe = resolveTimeframe(asSingleValue(params?.range))
   const snapshotRange = buildSnapshotRange(timeframe, settings.timeZone)
   const valuationCoverage = await ensureUserFinancialEventValuationCoverage(
@@ -314,10 +316,12 @@ export default async function DashboardPage({
       limit: 6,
     }),
     countRecurringObligationsByType(session.user.id),
-    listHomeRankedAdviceItemsForUser({
-      userId: session.user.id,
-      limit: 3,
-    }),
+    adviceEnabled
+      ? listHomeRankedAdviceItemsForUser({
+          userId: session.user.id,
+          limit: 3,
+        })
+      : Promise.resolve([]),
     getLatestJobRunForUser({
       userId: session.user.id,
       queueName: FORECASTING_QUEUE_NAME,
@@ -519,7 +523,7 @@ export default async function DashboardPage({
           />
         ) : null}
 
-        {adviceRailItems.length > 0 ? (
+        {adviceEnabled && adviceRailItems.length > 0 ? (
           <section className="grid gap-3">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2 text-[0.82rem] tracking-[0.18em] text-white/36 uppercase">

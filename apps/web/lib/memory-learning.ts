@@ -7,11 +7,17 @@ import {
   MEMORY_REBUILD_USER_JOB_NAME,
 } from "@workspace/workflows"
 
+import { isMemoryLearningEnabled } from "@/lib/feature-flags"
+
 export async function triggerUserMemoryRebuild(input: {
   userId: string
   reason: "manual_refresh"
   sourceReferenceId?: string
 }) {
+  if (!isMemoryLearningEnabled()) {
+    return null
+  }
+
   const correlationId = createCorrelationId()
   const jobKey = getMemoryRebuildUserJobKey({
     userId: input.userId,

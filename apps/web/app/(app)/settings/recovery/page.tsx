@@ -17,10 +17,14 @@ import {
   FORECAST_REFRESH_USER_JOB_NAME,
   FORECAST_REBUILD_USER_JOB_NAME,
   GMAIL_INCREMENTAL_POLL_JOB_NAME,
+  MEMORY_LEARNING_QUEUE_NAME,
+  FEEDBACK_PROCESS_JOB_NAME,
+  MEMORY_REBUILD_USER_JOB_NAME,
 } from "@workspace/workflows"
 import { Button } from "@workspace/ui/components/button"
 
 import { AppEmptyState } from "@/components/app-empty-state"
+import { isAdviceEnabled, isMemoryLearningEnabled } from "@/lib/feature-flags"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
 import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
@@ -55,6 +59,8 @@ function getStatusMessage(value: string | undefined) {
       return "Advice rebuild queued."
     case "advice-rank-queued":
       return "Advice ranking queued."
+    case "advice-disabled":
+      return "Advice is currently disabled."
     case "sync-queued":
       return "Recent mail sync queued."
     case "invalid":
@@ -106,6 +112,8 @@ export default async function RecoveryPage({ searchParams }: RecoveryPageProps) 
   const session = await requireSession()
   const params = (await searchParams) ?? {}
   const message = getStatusMessage(asSingleValue(params.recovery))
+  const adviceEnabled = isAdviceEnabled()
+  const memoryLearningEnabled = isMemoryLearningEnabled()
 
   const [gmailState, latestForecast, latestForecastJob, latestAdviceJob, latestSyncJob, adviceRows, recoverableJobs] =
     await Promise.all([
@@ -116,26 +124,54 @@ export default async function RecoveryPage({ searchParams }: RecoveryPageProps) 
         queueName: FORECASTING_QUEUE_NAME,
         jobNames: [FORECAST_REFRESH_USER_JOB_NAME, FORECAST_REBUILD_USER_JOB_NAME],
       }),
-      getLatestJobRunForUser({
-        userId: session.user.id,
-        queueName: ADVICE_QUEUE_NAME,
-        jobNames: [ADVICE_REFRESH_USER_JOB_NAME, ADVICE_REBUILD_USER_JOB_NAME, ADVICE_RANK_USER_JOB_NAME],
-      }),
+      adviceEnabled
+        ? getLatestJobRunForUser({
+            userId: session.user.id,
+            queueName: ADVICE_QUEUE_NAME,
+            jobNames: [ADVICE_REFRESH_USER_JOB_NAME, ADVICE_REBUILD_USER_JOB_NAME, ADVICE_RANK_USER_JOB_NAME],
+          })
+        : Promise.resolve(null),
       getLatestJobRunForUser({
         userId: session.user.id,
         queueName: EMAIL_SYNC_QUEUE_NAME,
         jobNames: [GMAIL_INCREMENTAL_POLL_JOB_NAME],
       }),
-      listAdviceItemsForUser({
-        userId: session.user.id,
-        statuses: ["active", "dismissed", "done", "expired"],
-        limit: 1,
-      }),
+      adviceEnabled
+        ? listAdviceItemsForUser({
+            userId: session.user.id,
+            statuses: ["active", "dismissed", "done", "expired"],
+            limit: 1,
+          })
+        : Promise.resolve([]),
       listRecoverableJobRunsForUser({
         userId: session.user.id,
         limit: 24,
       }),
     ])
+
+  const visibleRecoverableJobs = adviceEnabled
+    ? recoverableJobs
+    : recoverableJobs.filter(
+        (jobRun) =>
+          !(
+            jobRun.queueName === ADVICE_QUEUE_NAME &&
+            [
+              ADVICE_REFRESH_USER_JOB_NAME,
+              ADVICE_REBUILD_USER_JOB_NAME,
+              ADVICE_RANK_USER_JOB_NAME,
+            ].includes(jobRun.jobName)
+          ),
+      )
+
+  const filteredRecoverableJobs = memoryLearningEnabled
+    ? visibleRecoverableJobs
+    : visibleRecoverableJobs.filter(
+        (jobRun) =>
+          !(
+            jobRun.queueName === MEMORY_LEARNING_QUEUE_NAME &&
+            [FEEDBACK_PROCESS_JOB_NAME, MEMORY_REBUILD_USER_JOB_NAME].includes(jobRun.jobName)
+          ),
+      )
 
   const latestAdviceUpdatedAt = adviceRows[0]?.adviceItem.updatedAt ?? null
   const forecastStale = !latestForecast?.run.completedAt
@@ -197,39 +233,41 @@ export default async function RecoveryPage({ searchParams }: RecoveryPageProps) 
             </form>
           }
         />
-        <RecoveryActionRow
-          label="advice"
-          value={
-            latestAdviceJob?.status === "failed" || latestAdviceJob?.status === "dead_lettered"
-              ? latestAdviceJob.status.replace("_", " ")
-              : adviceStale
-                ? "stale"
-                : "healthy"
-          }
-          description={
-            latestAdviceUpdatedAt
-              ? `Last updated ${formatRelativeAge(latestAdviceUpdatedAt)}`
-              : "No advice generated yet"
-          }
-          action={
-            <div className="flex items-center gap-2">
-              <form action="/api/recovery/advice" method="post">
-                <input type="hidden" name="redirectTo" value="/settings/recovery" />
-                <input type="hidden" name="action" value="refresh" />
-                <Button type="submit" variant="outline" size="xs">
-                  Refresh
-                </Button>
-              </form>
-              <form action="/api/recovery/advice" method="post">
-                <input type="hidden" name="redirectTo" value="/settings/recovery" />
-                <input type="hidden" name="action" value="rank" />
-                <Button type="submit" variant="ghost" size="xs">
-                  Rank
-                </Button>
-              </form>
-            </div>
-          }
-        />
+        {adviceEnabled ? (
+          <RecoveryActionRow
+            label="advice"
+            value={
+              latestAdviceJob?.status === "failed" || latestAdviceJob?.status === "dead_lettered"
+                ? latestAdviceJob.status.replace("_", " ")
+                : adviceStale
+                  ? "stale"
+                  : "healthy"
+            }
+            description={
+              latestAdviceUpdatedAt
+                ? `Last updated ${formatRelativeAge(latestAdviceUpdatedAt)}`
+                : "No advice generated yet"
+            }
+            action={
+              <div className="flex items-center gap-2">
+                <form action="/api/recovery/advice" method="post">
+                  <input type="hidden" name="redirectTo" value="/settings/recovery" />
+                  <input type="hidden" name="action" value="refresh" />
+                  <Button type="submit" variant="outline" size="xs">
+                    Refresh
+                  </Button>
+                </form>
+                <form action="/api/recovery/advice" method="post">
+                  <input type="hidden" name="redirectTo" value="/settings/recovery" />
+                  <input type="hidden" name="action" value="rank" />
+                  <Button type="submit" variant="ghost" size="xs">
+                    Rank
+                  </Button>
+                </form>
+              </div>
+            }
+          />
+        ) : null}
         <RecoveryActionRow
           label="recent mail sync"
           value={
@@ -262,8 +300,8 @@ export default async function RecoveryPage({ searchParams }: RecoveryPageProps) 
 
       <SectionHeader>Recent failures</SectionHeader>
       <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]">
-        {recoverableJobs.length > 0 ? (
-          recoverableJobs.map((jobRun) => (
+        {filteredRecoverableJobs.length > 0 ? (
+          filteredRecoverableJobs.map((jobRun) => (
             <RecoveryActionRow
               key={jobRun.id}
               label={describeJobName(jobRun.jobName)}

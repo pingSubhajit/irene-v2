@@ -9,6 +9,7 @@ import {
   listGoalContributionSnapshotsForGoal,
 } from "@workspace/db"
 
+import { isAdviceEnabled } from "@/lib/feature-flags"
 import { createPrivateMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
@@ -63,16 +64,19 @@ export default async function GoalDetailPage({
   const session = await requireSession()
   const { goalId } = await params
   const query = (await searchParams) ?? {}
+  const adviceEnabled = isAdviceEnabled()
 
   const [goalRow, categories, snapshots, adviceRows] = await Promise.all([
     getFinancialGoalById(goalId),
     listCategoriesForUser(session.user.id),
     listGoalContributionSnapshotsForGoal(goalId),
-    listAdviceItemsForUser({
-      userId: session.user.id,
-      statuses: ["active", "dismissed", "done", "expired"],
-      limit: 100,
-    }),
+    adviceEnabled
+      ? listAdviceItemsForUser({
+          userId: session.user.id,
+          statuses: ["active", "dismissed", "done", "expired"],
+          limit: 100,
+        })
+      : Promise.resolve([]),
   ])
 
   if (!goalRow || goalRow.goal.userId !== session.user.id) {
@@ -153,7 +157,7 @@ export default async function GoalDetailPage({
             </div>
           </div>
 
-          {relatedAdvice.length > 0 ? (
+          {adviceEnabled && relatedAdvice.length > 0 ? (
             <div className="mt-8 border-t border-white/[0.06] pt-5">
               <p className="neo-kicker">Advice linked here</p>
               <div className="mt-4 grid gap-4">

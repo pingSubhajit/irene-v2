@@ -12,6 +12,7 @@ import {
   getDateRangeForResetBackfillPreset,
   type ResetBackfillPreset,
 } from "@/lib/date-format"
+import { isAdviceEnabled, isMemoryLearningEnabled } from "@/lib/feature-flags"
 import {
   GMAIL_CURSOR_NAME,
   requireActiveGmailConnection,
@@ -99,12 +100,18 @@ export async function POST(request: Request) {
     windowStartAt: dateFrom,
   })
 
-  const rebuildJobs = await Promise.all([
-    triggerUserMerchantRepairBackfill({ userId: session.user.id }),
-    triggerUserMemoryRebuild({ userId: session.user.id, reason: "manual_refresh" }),
-    triggerUserForecastRebuild({ userId: session.user.id, reason: "manual_rebuild" }),
-    triggerUserAdviceRebuild({ userId: session.user.id, reason: "manual_rebuild" }),
-  ])
+  const rebuildJobs = (
+    await Promise.all([
+      triggerUserMerchantRepairBackfill({ userId: session.user.id }),
+      isMemoryLearningEnabled()
+        ? triggerUserMemoryRebuild({ userId: session.user.id, reason: "manual_refresh" })
+        : Promise.resolve(null),
+      triggerUserForecastRebuild({ userId: session.user.id, reason: "manual_rebuild" }),
+      isAdviceEnabled()
+        ? triggerUserAdviceRebuild({ userId: session.user.id, reason: "manual_rebuild" })
+        : Promise.resolve(null),
+    ])
+  ).filter((job): job is NonNullable<typeof job> => job !== null)
 
   logger.info("Reset scoped ingestion window and queued backfill", {
     userId: session.user.id,

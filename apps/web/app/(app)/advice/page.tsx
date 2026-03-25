@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { RiRefreshLine } from "@remixicon/react"
+import { redirect } from "next/navigation"
 import { getLatestJobRunForUser, getUserSettings, listAdviceItemsForUser } from "@workspace/db"
 import {
   ADVICE_QUEUE_NAME,
@@ -10,6 +11,7 @@ import {
 
 import { AdviceList } from "@/components/advice-rail"
 import { AppEmptyState } from "@/components/app-empty-state"
+import { isAdviceEnabled } from "@/lib/feature-flags"
 import { resolveAdviceContextHref } from "@/lib/advice"
 import { formatInUserTimeZone } from "@/lib/date-format"
 import { createPrivateMetadata } from "@/lib/metadata"
@@ -45,12 +47,19 @@ function getStatusMessage(status: string | null | undefined) {
       return "Advice rebuild queued."
     case "advice-rank-queued":
       return "Advice ranking queued."
+    case "disabled":
+    case "advice-disabled":
+      return "Advice is currently disabled."
     default:
       return null
   }
 }
 
 export default async function AdvicePage({ searchParams }: AdvicePageProps) {
+  if (!isAdviceEnabled()) {
+    redirect("/dashboard")
+  }
+
   const session = await requireSession()
   const params = (await searchParams) ?? {}
   const [rows, settings, latestAdviceJob] = await Promise.all([
