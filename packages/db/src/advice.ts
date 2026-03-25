@@ -3,12 +3,15 @@ import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm"
 import { db } from "./client"
 import {
   adviceItems,
+  adviceRefreshStates,
   categories,
   financialGoals,
   forecastRuns,
   goalContributionSnapshots,
   merchants,
   type AdviceItemInsert,
+  type AdviceRefreshStateInsert,
+  type AdviceRefreshStateSelect,
   type AdviceItemSelect,
   type FinancialGoalInsert,
   type FinancialGoalSelect,
@@ -207,6 +210,89 @@ export async function listAdviceItemsForUser(input: {
       desc(adviceItems.updatedAt),
     )
     .limit(input.limit ?? 100)
+}
+
+export async function getAdviceRefreshStateForUser(userId: string) {
+  const [row] = await db
+    .select()
+    .from(adviceRefreshStates)
+    .where(eq(adviceRefreshStates.userId, userId))
+    .limit(1)
+
+  return row ?? null
+}
+
+type UpsertAdviceRefreshStateInput = Pick<AdviceRefreshStateInsert, "userId"> & {
+  generationInputHash?: string | null
+  generationPromptVersion?: string | null
+  generationModelName?: string | null
+  generationLastModelRunId?: string | null
+  generationLastEvaluatedAt?: Date | null
+  rankingInputHash?: string | null
+  rankingPromptVersion?: string | null
+  rankingModelName?: string | null
+  rankingLastModelRunId?: string | null
+  rankingLastEvaluatedAt?: Date | null
+}
+
+export async function upsertAdviceRefreshState(input: UpsertAdviceRefreshStateInput) {
+  const nextValues: AdviceRefreshStateInsert = {
+    userId: input.userId,
+    generationInputHash: input.generationInputHash ?? null,
+    generationPromptVersion: input.generationPromptVersion ?? null,
+    generationModelName: input.generationModelName ?? null,
+    generationLastModelRunId: input.generationLastModelRunId ?? null,
+    generationLastEvaluatedAt: input.generationLastEvaluatedAt ?? null,
+    rankingInputHash: input.rankingInputHash ?? null,
+    rankingPromptVersion: input.rankingPromptVersion ?? null,
+    rankingModelName: input.rankingModelName ?? null,
+    rankingLastModelRunId: input.rankingLastModelRunId ?? null,
+    rankingLastEvaluatedAt: input.rankingLastEvaluatedAt ?? null,
+  }
+
+  const [row] = await db
+    .insert(adviceRefreshStates)
+    .values(nextValues)
+    .onConflictDoUpdate({
+      target: adviceRefreshStates.userId,
+      set: {
+        generationInputHash: nextValues.generationInputHash,
+        generationPromptVersion: nextValues.generationPromptVersion,
+        generationModelName: nextValues.generationModelName,
+        generationLastModelRunId: nextValues.generationLastModelRunId,
+        generationLastEvaluatedAt: nextValues.generationLastEvaluatedAt,
+        rankingInputHash: nextValues.rankingInputHash,
+        rankingPromptVersion: nextValues.rankingPromptVersion,
+        rankingModelName: nextValues.rankingModelName,
+        rankingLastModelRunId: nextValues.rankingLastModelRunId,
+        rankingLastEvaluatedAt: nextValues.rankingLastEvaluatedAt,
+        updatedAt: new Date(),
+      },
+    })
+    .returning()
+
+  if (!row) {
+    throw new Error("Failed to upsert advice refresh state")
+  }
+
+  return row
+}
+
+export async function clearAdviceRankingRefreshStateForUser(userId: string) {
+  const [row] = await db
+    .update(adviceRefreshStates)
+    .set({
+      rankingInputHash: null,
+      rankingPromptVersion: null,
+      rankingModelName: null,
+      rankingLastModelRunId: null,
+      rankingLastEvaluatedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(adviceRefreshStates.userId, userId))
+    .returning()
+
+  return row ?? null
 }
 
 export async function upsertAdviceItem(input: AdviceItemInsert) {

@@ -4,6 +4,7 @@ import {
   createModelRun,
   categories,
   db,
+  buildMemoryFactSummarySourceHash,
   expireUnpinnedMemoryFactsForUser,
   feedbackEvents,
   financialEvents,
@@ -150,12 +151,36 @@ async function summarizeMemoryFactsForUser(input: {
   userId: string
   facts: MemoryFactSelect[]
 }) {
-  const candidates = input.facts.filter(
-    (fact) => !fact.authoredText && (fact.source === "automation" || fact.source === "system_rebuild"),
-  )
+  const candidates = input.facts.filter((fact) => {
+    if (fact.authoredText) {
+      return false
+    }
+
+    if (fact.source !== "automation" && fact.source !== "system_rebuild") {
+      return false
+    }
+
+    const expectedSummarySourceHash = buildMemoryFactSummarySourceHash({
+      factType: fact.factType,
+      key: fact.key,
+      valueJson: fact.valueJson ?? {},
+      promptVersion: aiPromptVersions.financeMemorySummarizer,
+      modelName: aiModels.financeMemorySummarizer,
+    })
+
+    return fact.summarySourceHash !== expectedSummarySourceHash
+  })
 
   if (candidates.length === 0) {
     return
+  }
+
+  const skippedCount = input.facts.length - candidates.length
+  if (skippedCount > 0) {
+    logger.info("memory_summary_skipped_unchanged", {
+      userId: input.userId,
+      skippedCount,
+    })
   }
 
   const chunkSize = 10
@@ -189,9 +214,20 @@ async function summarizeMemoryFactsForUser(input: {
           continue
         }
 
+        const summarySourceHash = buildMemoryFactSummarySourceHash({
+          factType: target.factType,
+          key: target.key,
+          valueJson: target.valueJson ?? {},
+          promptVersion: aiPromptVersions.financeMemorySummarizer,
+          modelName: aiModels.financeMemorySummarizer,
+        })
+
         await updateMemoryFact(target.id, {
           summaryText: item.summaryText,
           detailText: item.detailText ?? null,
+          summarySourceHash,
+          summaryModelRunId: modelRun.id,
+          summarizedAt: new Date(),
         })
       }
 

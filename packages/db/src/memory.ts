@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm"
 
 import { db } from "./client"
+import { hashCanonicalJson } from "./hash"
 import {
   categories,
   financialInstitutionAliases,
@@ -249,8 +250,55 @@ function uniqueNonEmpty(values: Array<string | null | undefined>) {
   })
 }
 
+export function buildMemoryFactContentHash(input: {
+  factType: MemoryFactType
+  key: string
+  valueJson: Record<string, unknown>
+  subjectType: MemoryFactSelect["subjectType"]
+  subjectId?: string | null
+  source: MemoryFactSelect["source"]
+  sourceReferenceId?: string | null
+}) {
+  return hashCanonicalJson({
+    factType: input.factType,
+    key: input.key,
+    valueJson: input.valueJson,
+    subjectType: input.subjectType,
+    subjectId: input.subjectId ?? null,
+    source: input.source,
+    sourceReferenceId: input.sourceReferenceId ?? null,
+  })
+}
+
+export function buildMemoryFactSummarySourceHash(input: {
+  factType: MemoryFactType
+  key: string
+  valueJson: Record<string, unknown>
+  promptVersion: string
+  modelName: string
+}) {
+  return hashCanonicalJson({
+    factType: input.factType,
+    key: input.key,
+    valueJson: input.valueJson,
+    promptVersion: input.promptVersion,
+    modelName: input.modelName,
+  })
+}
+
 export async function createMemoryFact(input: MemoryFactInsert) {
-  const nextInput = applyMemoryPresentation(input)
+  const nextInput = {
+    ...applyMemoryPresentation(input),
+    contentHash: buildMemoryFactContentHash({
+      factType: input.factType,
+      key: input.key,
+      valueJson: input.valueJson ?? {},
+      subjectType: input.subjectType,
+      subjectId: input.subjectId ?? null,
+      source: input.source,
+      sourceReferenceId: input.sourceReferenceId ?? null,
+    }),
+  }
   const [row] = await db.insert(memoryFacts).values(nextInput).returning()
 
   if (!row) {
@@ -261,7 +309,35 @@ export async function createMemoryFact(input: MemoryFactInsert) {
 }
 
 export async function upsertMemoryFact(input: MemoryFactInsert) {
-  const nextInput = applyMemoryPresentation(input)
+  const presentedInput = applyMemoryPresentation(input)
+  const contentHash = buildMemoryFactContentHash({
+    factType: input.factType,
+    key: input.key,
+    valueJson: input.valueJson ?? {},
+    subjectType: input.subjectType,
+    subjectId: input.subjectId ?? null,
+    source: input.source,
+    sourceReferenceId: input.sourceReferenceId ?? null,
+  })
+
+  const [existing] = await db
+    .select()
+    .from(memoryFacts)
+    .where(
+      and(
+        eq(memoryFacts.userId, input.userId),
+        eq(memoryFacts.factType, input.factType),
+        eq(memoryFacts.key, input.key),
+      ),
+    )
+    .limit(1)
+
+  const nextInput = {
+    ...presentedInput,
+    contentHash,
+  }
+
+  const shouldPreserveExistingSummary = existing?.contentHash === contentHash
   const [row] = await db
     .insert(memoryFacts)
     .values(nextInput)
@@ -270,9 +346,23 @@ export async function upsertMemoryFact(input: MemoryFactInsert) {
       set: {
         subjectType: nextInput.subjectType,
         subjectId: nextInput.subjectId ?? null,
-        summaryText: nextInput.summaryText,
-        detailText: nextInput.detailText ?? null,
+        summaryText: shouldPreserveExistingSummary
+          ? (existing?.summaryText ?? nextInput.summaryText)
+          : nextInput.summaryText,
+        detailText: shouldPreserveExistingSummary
+          ? (existing?.detailText ?? nextInput.detailText ?? null)
+          : (nextInput.detailText ?? null),
         authoredText: nextInput.authoredText ?? null,
+        contentHash,
+        summarySourceHash: shouldPreserveExistingSummary
+          ? (existing?.summarySourceHash ?? null)
+          : null,
+        summaryModelRunId: shouldPreserveExistingSummary
+          ? (existing?.summaryModelRunId ?? null)
+          : null,
+        summarizedAt: shouldPreserveExistingSummary
+          ? (existing?.summarizedAt ?? null)
+          : null,
         valueJson: nextInput.valueJson,
         confidence: nextInput.confidence ?? 1,
         source: nextInput.source,
@@ -307,6 +397,13 @@ export async function updateMemoryFact(
       summaryText: input.summaryText === null ? "" : (input.summaryText ?? undefined),
       detailText: input.detailText === null ? null : (input.detailText ?? undefined),
       authoredText: input.authoredText === null ? null : (input.authoredText ?? undefined),
+      contentHash: input.contentHash === null ? null : (input.contentHash ?? undefined),
+      summarySourceHash:
+        input.summarySourceHash === null ? null : (input.summarySourceHash ?? undefined),
+      summaryModelRunId:
+        input.summaryModelRunId === null ? null : (input.summaryModelRunId ?? undefined),
+      summarizedAt:
+        input.summarizedAt === null ? null : (input.summarizedAt ?? undefined),
       valueJson: input.valueJson ?? undefined,
       confidence: input.confidence ?? undefined,
       source: input.source ?? undefined,

@@ -17,6 +17,7 @@ import {
   financialEventSources,
   financialInstitutionAliases,
   financialInstitutions,
+  gmailMessageRelevanceCaches,
   incomeStreams,
   merchantObservations,
   memoryFacts,
@@ -35,6 +36,7 @@ import {
   type RawDocumentRelevanceLabel,
   type RawDocumentRelevanceStage,
   type DocumentAttachmentParseStatus,
+  type GmailMessageRelevanceCacheInsert,
   type OauthConnectionStatus,
   type RawDocumentSourceType,
 } from "./schema"
@@ -332,6 +334,86 @@ export async function upsertRawDocument(input: UpsertRawDocumentInput) {
     rawDocument: existing,
     created: false,
   }
+}
+
+export async function getRawDocumentForConnectionMessage(input: {
+  oauthConnectionId: string
+  providerMessageId: string
+}) {
+  const [row] = await db
+    .select()
+    .from(rawDocuments)
+    .where(
+      and(
+        eq(rawDocuments.oauthConnectionId, input.oauthConnectionId),
+        eq(rawDocuments.providerMessageId, input.providerMessageId),
+      ),
+    )
+    .limit(1)
+
+  return row ?? null
+}
+
+type UpsertGmailMessageRelevanceCacheInput = Omit<
+  GmailMessageRelevanceCacheInsert,
+  "id" | "createdAt" | "updatedAt"
+>
+
+export async function getGmailMessageRelevanceCache(input: {
+  oauthConnectionId: string
+  providerMessageId: string
+}) {
+  const [row] = await db
+    .select()
+    .from(gmailMessageRelevanceCaches)
+    .where(
+      and(
+        eq(gmailMessageRelevanceCaches.oauthConnectionId, input.oauthConnectionId),
+        eq(gmailMessageRelevanceCaches.providerMessageId, input.providerMessageId),
+      ),
+    )
+    .limit(1)
+
+  return row ?? null
+}
+
+export async function upsertGmailMessageRelevanceCache(
+  input: UpsertGmailMessageRelevanceCacheInput,
+) {
+  const [row] = await db
+    .insert(gmailMessageRelevanceCaches)
+    .values({
+      ...input,
+      reasonsJson: input.reasonsJson ?? [],
+    })
+    .onConflictDoUpdate({
+      target: [
+        gmailMessageRelevanceCaches.oauthConnectionId,
+        gmailMessageRelevanceCaches.providerMessageId,
+      ],
+      set: {
+        userId: input.userId,
+        messageTimestamp: input.messageTimestamp,
+        inputHash: input.inputHash,
+        classification: input.classification,
+        stage: input.stage,
+        score: input.score,
+        reasonsJson: input.reasonsJson ?? [],
+        promptVersion: input.promptVersion,
+        modelName: input.modelName,
+        provider: input.provider,
+        modelRunId: input.modelRunId ?? null,
+        lastEvaluatedAt: input.lastEvaluatedAt,
+        updatedAt: new Date(),
+      },
+    })
+    .returning()
+
+  if (!row) {
+    throw new Error("Failed to upsert Gmail message relevance cache")
+  }
+
+  return row
 }
 
 type UpsertDocumentAttachmentInput = {
@@ -676,6 +758,7 @@ export async function resetGmailIngestionWindowForConnection(input: {
 
   if (rawDocumentIds.length === 0) {
     return {
+      deletedRelevanceCacheRows: 0,
       deletedRawDocuments: 0,
       deletedAttachments: 0,
       deletedStorageObjects: 0,
@@ -703,6 +786,17 @@ export async function resetGmailIngestionWindowForConnection(input: {
   }
 
   return db.transaction(async (tx) => {
+    const relevanceCacheRows = await tx
+      .select({ id: gmailMessageRelevanceCaches.id })
+      .from(gmailMessageRelevanceCaches)
+      .where(
+        and(
+          eq(gmailMessageRelevanceCaches.oauthConnectionId, input.oauthConnectionId),
+          gte(gmailMessageRelevanceCaches.messageTimestamp, input.dateFrom),
+          lte(gmailMessageRelevanceCaches.messageTimestamp, input.dateTo),
+        ),
+      )
+
     const signalRows = await tx
       .select({
         id: extractedSignals.id,
@@ -1100,6 +1194,15 @@ export async function resetGmailIngestionWindowForConnection(input: {
       )
     }
 
+    if (relevanceCacheRows.length > 0) {
+      await tx.delete(gmailMessageRelevanceCaches).where(
+        inArray(
+          gmailMessageRelevanceCaches.id,
+          relevanceCacheRows.map((row) => row.id),
+        ),
+      )
+    }
+
     if (sourceRows.length > 0) {
       await tx.delete(financialEventSources).where(
         inArray(
@@ -1195,6 +1298,7 @@ export async function resetGmailIngestionWindowForConnection(input: {
     }
 
     return {
+      deletedRelevanceCacheRows: relevanceCacheRows.length,
       deletedRawDocuments: rawDocumentIds.length,
       deletedAttachments: attachments.length,
       deletedStorageObjects: [...new Set(storageKeys)].length,

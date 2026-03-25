@@ -19,8 +19,10 @@ import {
   createReviewQueueItem,
   ensureJobRun,
   getEmailSyncCursorById,
+  getGmailMessageRelevanceCache,
   getMemoryBundleForUser,
   getOauthConnectionById,
+  getRawDocumentForConnectionMessage,
   listRecentPaymentInstrumentsForUser,
   listExtractedSignalsForRawDocumentIds,
   getRawDocumentById,
@@ -37,6 +39,7 @@ import {
   updateModelRun,
   updateOauthConnection,
   upsertDocumentAttachment,
+  upsertGmailMessageRelevanceCache,
   upsertRawDocument,
 } from "@workspace/db"
 import { createLogger } from "@workspace/observability"
@@ -400,7 +403,7 @@ async function enqueueTrackedMessageIngest(input: {
   providerMessageId: string
   sourceKind: "backfill" | "incremental"
   historyId?: string | null
-  relevanceModelRunId: string
+  relevanceModelRunId?: string | null
   relevanceLabel: "transactional_finance" | "obligation_finance"
   relevanceStage: "model"
   relevanceScore: number
@@ -420,7 +423,7 @@ async function enqueueTrackedMessageIngest(input: {
       source: "worker",
       sourceKind: input.sourceKind,
       historyId: input.historyId ?? null,
-      relevanceModelRunId: input.relevanceModelRunId,
+      relevanceModelRunId: input.relevanceModelRunId ?? null,
       relevanceLabel: input.relevanceLabel,
       relevanceStage: input.relevanceStage,
       relevanceScore: input.relevanceScore,
@@ -440,7 +443,7 @@ async function enqueueTrackedMessageIngest(input: {
     source: "worker",
     sourceKind: input.sourceKind,
     historyId: input.historyId ?? undefined,
-    relevanceModelRunId: input.relevanceModelRunId,
+    relevanceModelRunId: input.relevanceModelRunId ?? null,
     relevanceLabel: input.relevanceLabel,
     relevanceStage: input.relevanceStage,
     relevanceScore: input.relevanceScore,
@@ -1532,6 +1535,31 @@ async function processCandidateMessages(input: {
           })
         },
         enqueueMessageIngest: enqueueTrackedMessageIngest,
+        getRelevanceCache: async (lookup) => {
+          const row = await getGmailMessageRelevanceCache(lookup)
+          if (!row || row.stage !== "model") {
+            return null
+          }
+
+          return {
+            inputHash: row.inputHash,
+            classification: row.classification as
+              | "transactional_finance"
+              | "obligation_finance"
+              | "marketing_finance"
+              | "non_finance",
+            stage: "model" as const,
+            score: row.score,
+            reasonsJson: row.reasonsJson,
+            promptVersion: row.promptVersion,
+            modelName: row.modelName,
+            provider: row.provider,
+            modelRunId: row.modelRunId ?? null,
+          }
+        },
+        upsertRelevanceCache: upsertGmailMessageRelevanceCache,
+        getExistingRawDocument: getRawDocumentForConnectionMessage,
+        info: (message, context) => logger.info(message, context),
         warn: (message, context) => logger.warn(message, context),
       },
     )

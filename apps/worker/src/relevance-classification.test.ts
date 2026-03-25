@@ -1,10 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import type { FinanceRelevanceDecision } from "@workspace/ai"
+import { aiModels, aiPromptVersions, type FinanceRelevanceDecision } from "@workspace/ai"
 import type { GmailMessageMetadata } from "@workspace/integrations"
 
 import {
+  buildFinanceRelevanceInputHash,
   linkAcceptedRelevanceModelRun,
   processCandidateMessageRelevance,
 } from "./relevance-classification"
@@ -83,6 +84,10 @@ test("accepted classification creates a model run, enqueues ingest, and links th
       enqueueMessageIngest: async (input) => {
         enqueueCalls.push(input)
       },
+      getRelevanceCache: async () => null,
+      upsertRelevanceCache: async () => undefined,
+      getExistingRawDocument: async () => null,
+      info: () => {},
       warn: (message, context) => {
         warnings.push({ message, context })
       },
@@ -95,8 +100,8 @@ test("accepted classification creates a model run, enqueues ingest, and links th
       userId: "user-1",
       taskType: "finance_relevance_classification",
       provider: "ai-gateway",
-      modelName: "google/gemini-3-flash",
-      promptVersion: "finance-relevance-v2",
+      modelName: aiModels.financeRelevanceClassifier,
+      promptVersion: aiPromptVersions.financeRelevanceClassifier,
       status: "running",
     },
   ])
@@ -193,6 +198,10 @@ test("marketing classifications are skipped without enqueueing ingest", async ()
       enqueueMessageIngest: async (input) => {
         enqueueCalls.push(input)
       },
+      getRelevanceCache: async () => null,
+      upsertRelevanceCache: async () => undefined,
+      getExistingRawDocument: async () => null,
+      info: () => {},
       warn: () => {},
     },
   )
@@ -229,6 +238,10 @@ test("classifier failures update the model run and rethrow before the final atte
             throw new Error("Gateway timeout")
           },
           enqueueMessageIngest: async () => undefined,
+          getRelevanceCache: async () => null,
+          upsertRelevanceCache: async () => undefined,
+          getExistingRawDocument: async () => null,
+          info: () => {},
           warn: () => {},
         },
       ),
@@ -272,6 +285,10 @@ test("classifier failures are skipped after retries are exhausted", async () => 
         throw new Error("Gateway timeout")
       },
       enqueueMessageIngest: async () => undefined,
+      getRelevanceCache: async () => null,
+      upsertRelevanceCache: async () => undefined,
+      getExistingRawDocument: async () => null,
+      info: () => {},
       warn: (message, context) => {
         warnings.push({ message, context })
       },
@@ -297,4 +314,179 @@ test("classifier failures are skipped after retries are exhausted", async () => 
       },
     },
   ])
+})
+
+test("cache hit skips classifier and model run for skipped messages", async () => {
+  let classifyCalled = false
+  let createCalled = false
+
+  const metadata = buildMetadata({
+    subject: "Shipping update",
+    snippet: "Out for delivery",
+  })
+
+  const outcome = await processCandidateMessageRelevance(
+    {
+      userId: "user-1",
+      oauthConnectionId: "oauth-1",
+      cursorId: "cursor-1",
+      correlationId: "corr-1",
+      sourceKind: "incremental",
+      metadata,
+      currentAttempt: 1,
+      maxAttempts: 3,
+      jobId: "job-1",
+    },
+    {
+      createModelRun: async () => {
+        createCalled = true
+        return { id: "model-run-cache-miss" }
+      },
+      updateModelRun: async () => undefined,
+      classifyFinanceRelevance: async () => {
+        classifyCalled = true
+        return buildDecision()
+      },
+      enqueueMessageIngest: async () => undefined,
+      getRelevanceCache: async () => ({
+        inputHash: buildFinanceRelevanceInputHash({
+          sender: metadata.fromAddress,
+          subject: metadata.subject,
+          snippet: metadata.snippet,
+          labelIds: metadata.labelIds,
+          timestamp: metadata.internalDate?.toISOString() ?? null,
+          attachmentNames: metadata.attachmentNames,
+        }),
+        classification: "non_finance",
+        stage: "model",
+        score: 99,
+        reasonsJson: ["shipping_update"],
+        promptVersion: "finance-relevance-v2",
+        modelName: "google/gemini-2.5-flash-lite",
+        provider: "ai-gateway",
+        modelRunId: null,
+      }),
+      upsertRelevanceCache: async () => undefined,
+      getExistingRawDocument: async () => null,
+      info: () => {},
+      warn: () => {},
+    },
+  )
+
+  assert.equal(outcome, "skipped_non_finance")
+  assert.equal(classifyCalled, false)
+  assert.equal(createCalled, false)
+})
+
+test("cache hit enqueues accepted message without a fresh model run when raw document is missing", async () => {
+  const enqueueCalls: Array<Record<string, unknown>> = []
+  const metadata = buildMetadata()
+
+  const outcome = await processCandidateMessageRelevance(
+    {
+      userId: "user-1",
+      oauthConnectionId: "oauth-1",
+      cursorId: "cursor-1",
+      correlationId: "corr-1",
+      sourceKind: "backfill",
+      metadata,
+      currentAttempt: 1,
+      maxAttempts: 3,
+      jobId: "job-1",
+    },
+    {
+      createModelRun: async () => {
+        throw new Error("should not create model run")
+      },
+      updateModelRun: async () => undefined,
+      classifyFinanceRelevance: async () => {
+        throw new Error("should not classify")
+      },
+      enqueueMessageIngest: async (payload) => {
+        enqueueCalls.push(payload)
+      },
+      getRelevanceCache: async () => ({
+        inputHash: buildFinanceRelevanceInputHash({
+          sender: metadata.fromAddress,
+          subject: metadata.subject,
+          snippet: metadata.snippet,
+          labelIds: metadata.labelIds,
+          timestamp: metadata.internalDate?.toISOString() ?? null,
+          attachmentNames: metadata.attachmentNames,
+        }),
+        classification: "transactional_finance",
+        stage: "model",
+        score: 93,
+        reasonsJson: ["transaction_signal"],
+        promptVersion: "finance-relevance-v2",
+        modelName: "google/gemini-2.5-flash-lite",
+        provider: "ai-gateway",
+        modelRunId: null,
+      }),
+      upsertRelevanceCache: async () => undefined,
+      getExistingRawDocument: async () => null,
+      info: () => {},
+      warn: () => {},
+    },
+  )
+
+  assert.equal(outcome, "accepted_transactional")
+  assert.equal(enqueueCalls.length, 1)
+  assert.equal(enqueueCalls[0]?.relevanceModelRunId, null)
+})
+
+test("cache hit skips ingest when raw document already exists", async () => {
+  let enqueueCount = 0
+  const metadata = buildMetadata()
+
+  const outcome = await processCandidateMessageRelevance(
+    {
+      userId: "user-1",
+      oauthConnectionId: "oauth-1",
+      cursorId: "cursor-1",
+      correlationId: "corr-1",
+      sourceKind: "incremental",
+      metadata,
+      currentAttempt: 1,
+      maxAttempts: 3,
+      jobId: "job-1",
+    },
+    {
+      createModelRun: async () => {
+        throw new Error("should not create model run")
+      },
+      updateModelRun: async () => undefined,
+      classifyFinanceRelevance: async () => {
+        throw new Error("should not classify")
+      },
+      enqueueMessageIngest: async () => {
+        enqueueCount += 1
+      },
+      getRelevanceCache: async () => ({
+        inputHash: buildFinanceRelevanceInputHash({
+          sender: metadata.fromAddress,
+          subject: metadata.subject,
+          snippet: metadata.snippet,
+          labelIds: metadata.labelIds,
+          timestamp: metadata.internalDate?.toISOString() ?? null,
+          attachmentNames: metadata.attachmentNames,
+        }),
+        classification: "obligation_finance",
+        stage: "model",
+        score: 91,
+        reasonsJson: ["obligation_signal"],
+        promptVersion: "finance-relevance-v2",
+        modelName: "google/gemini-2.5-flash-lite",
+        provider: "ai-gateway",
+        modelRunId: "model-run-existing",
+      }),
+      upsertRelevanceCache: async () => undefined,
+      getExistingRawDocument: async () => ({ id: "raw-1" }),
+      info: () => {},
+      warn: () => {},
+    },
+  )
+
+  assert.equal(outcome, "accepted_obligation")
+  assert.equal(enqueueCount, 0)
 })

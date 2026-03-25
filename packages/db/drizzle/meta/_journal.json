@@ -183,6 +183,13 @@
       "when": 1774327800000,
       "tag": "0025_onboarding_state",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1774384200000,
+      "tag": "0026_cost_reduction_state",
+      "breakpoints": true
     }
   ]
 }

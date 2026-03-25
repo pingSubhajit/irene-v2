@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core"
 
 import { users } from "./auth"
+import { modelRuns } from "./extraction"
 
 export type MemoryFactType =
   | "merchant_category_default"
@@ -53,6 +54,12 @@ export const memoryFacts = pgTable(
     summaryText: text("summary_text").notNull().default(""),
     detailText: text("detail_text"),
     authoredText: text("authored_text"),
+    contentHash: text("content_hash"),
+    summarySourceHash: text("summary_source_hash"),
+    summaryModelRunId: uuid("summary_model_run_id").references(() => modelRuns.id, {
+      onDelete: "set null",
+    }),
+    summarizedAt: timestamp("summarized_at", { withTimezone: true, mode: "date" }),
     valueJson: jsonb("value_json")
       .$type<Record<string, unknown>>()
       .notNull()

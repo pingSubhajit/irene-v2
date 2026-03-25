@@ -254,9 +254,43 @@ export const adviceItems = pgTable(
   ],
 )
 
+export const adviceRefreshStates = pgTable("advice_refresh_state", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  generationInputHash: text("generation_input_hash"),
+  generationPromptVersion: text("generation_prompt_version"),
+  generationModelName: text("generation_model_name"),
+  generationLastModelRunId: uuid("generation_last_model_run_id").references(() => modelRuns.id, {
+    onDelete: "set null",
+  }),
+  generationLastEvaluatedAt: timestamp("generation_last_evaluated_at", {
+    withTimezone: true,
+    mode: "date",
+  }),
+  rankingInputHash: text("ranking_input_hash"),
+  rankingPromptVersion: text("ranking_prompt_version"),
+  rankingModelName: text("ranking_model_name"),
+  rankingLastModelRunId: uuid("ranking_last_model_run_id").references(() => modelRuns.id, {
+    onDelete: "set null",
+  }),
+  rankingLastEvaluatedAt: timestamp("ranking_last_evaluated_at", {
+    withTimezone: true,
+    mode: "date",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+})
+
 export type FinancialGoalInsert = typeof financialGoals.$inferInsert
 export type FinancialGoalSelect = typeof financialGoals.$inferSelect
 export type GoalContributionSnapshotInsert = typeof goalContributionSnapshots.$inferInsert
 export type GoalContributionSnapshotSelect = typeof goalContributionSnapshots.$inferSelect
+export type AdviceRefreshStateInsert = typeof adviceRefreshStates.$inferInsert
+export type AdviceRefreshStateSelect = typeof adviceRefreshStates.$inferSelect
 export type AdviceItemInsert = typeof adviceItems.$inferInsert
 export type AdviceItemSelect = typeof adviceItems.$inferSelect

@@ -1,12 +1,15 @@
 import {
   applyAdviceHomeRanking,
+  clearAdviceRankingRefreshStateForUser,
   clearAdviceHomeRankingForUser,
   countOpenReviewQueueItemsForUser,
   createModelRun,
   expireMissingAdviceItems,
+  getAdviceRefreshStateForUser,
   getLatestForecastRunWithSnapshots,
   getMemoryBundleForUser,
   getUserSettings,
+  hashCanonicalJson,
   listAdviceItemsForUser,
   listFinancialGoalsForUser,
   listIncomeStreamsForUser,
@@ -14,6 +17,7 @@ import {
   listRecurringObligationsForUser,
   updateModelRun,
   upsertAdviceItem,
+  upsertAdviceRefreshState,
   upsertGoalContributionSnapshot,
   type AdviceItemAction,
   type AdviceItemPriority,
@@ -1178,7 +1182,7 @@ export async function refreshAdviceForUser(input: {
   reason: AdviceRefreshReason
 }) {
   const now = new Date()
-  const [settings, forecast, recurring, incomeStreams, events, openReviewCount, goals, currentOpenAdvice] =
+  const [settings, forecast, recurring, incomeStreams, events, openReviewCount, goals, currentOpenAdvice, adviceRefreshState] =
     await Promise.all([
       getUserSettings(input.userId),
       getLatestForecastRunWithSnapshots(input.userId),
@@ -1208,6 +1212,7 @@ export async function refreshAdviceForUser(input: {
         statuses: ["active"],
         limit: 20,
       }),
+      getAdviceRefreshStateForUser(input.userId),
     ])
 
   const candidateIssues: CandidateIssue[] = []
@@ -1290,12 +1295,41 @@ export async function refreshAdviceForUser(input: {
     currentOpenAdvice,
     availableNavigationHrefs,
   })
+  const memorySummary = memory.summaryLines.slice(0, 12)
+  const generationInputHash = buildAdviceGenerationInputHash({
+    promptContext,
+    memorySummary,
+  })
+
+  if (
+    adviceRefreshState?.generationInputHash === generationInputHash &&
+    adviceRefreshState.generationPromptVersion === aiPromptVersions.financeAdviceGenerator &&
+    adviceRefreshState.generationModelName === aiModels.financeAdviceGenerator
+  ) {
+    logger.info("advice_generation_skipped_unchanged", {
+      userId: input.userId,
+      reason: input.reason,
+    })
+
+    return {
+      userId: input.userId,
+      adviceCount: currentOpenAdvice.length,
+      candidateCount: candidateIssues.length,
+      expiredCount: 0,
+      reason: input.reason,
+      forecastRunId: forecast?.run.id ?? null,
+      activeGoalCount: goals.filter((row) => row.goal.status === "active").length,
+      openReviewCount,
+      skipped: true,
+      skipReason: "unchanged_context",
+    }
+  }
 
   const generated = await generatePersistableAdviceWithAi({
     userId: input.userId,
     refreshReason: input.reason,
     promptContext,
-    memorySummary: memory.summaryLines.slice(0, 12),
+    memorySummary,
     candidateIssues,
     validationContext: {
       activeGoalIds: new Set(activeGoalIds),
@@ -1331,6 +1365,20 @@ export async function refreshAdviceForUser(input: {
     activeDedupeKeys: generated.advice.map((advice) => advice.dedupeKey),
   })
 
+  await upsertAdviceRefreshState({
+    userId: input.userId,
+    generationInputHash,
+    generationPromptVersion: aiPromptVersions.financeAdviceGenerator,
+    generationModelName: aiModels.financeAdviceGenerator,
+    generationLastModelRunId: generated.sourceModelRunId,
+    generationLastEvaluatedAt: now,
+    rankingInputHash: adviceRefreshState?.rankingInputHash ?? null,
+    rankingPromptVersion: adviceRefreshState?.rankingPromptVersion ?? null,
+    rankingModelName: adviceRefreshState?.rankingModelName ?? null,
+    rankingLastModelRunId: adviceRefreshState?.rankingLastModelRunId ?? null,
+    rankingLastEvaluatedAt: adviceRefreshState?.rankingLastEvaluatedAt ?? null,
+  })
+
   return {
     userId: input.userId,
     adviceCount: generated.advice.length,
@@ -1340,6 +1388,7 @@ export async function refreshAdviceForUser(input: {
     forecastRunId: forecast?.run.id ?? null,
     activeGoalCount: goals.filter((row) => row.goal.status === "active").length,
     openReviewCount,
+    skipped: false,
   }
 }
 
@@ -1379,11 +1428,33 @@ function buildAdviceRankingPromptContext(input: {
   }
 }
 
+function buildAdviceGenerationInputHash(input: {
+  promptContext: Record<string, unknown>
+  memorySummary: string[]
+}) {
+  return hashCanonicalJson({
+    promptContext: input.promptContext,
+    memorySummary: input.memorySummary,
+    promptVersion: aiPromptVersions.financeAdviceGenerator,
+    modelName: aiModels.financeAdviceGenerator,
+  })
+}
+
+function buildAdviceRankingInputHash(input: {
+  promptContext: Record<string, unknown>
+}) {
+  return hashCanonicalJson({
+    promptContext: input.promptContext,
+    promptVersion: `${aiPromptVersions.financeAdviceGenerator}-ranking-v1`,
+    modelName: aiModels.financeAdviceGenerator,
+  })
+}
+
 export async function rankAdviceForUser(input: {
   userId: string
   reason: "hourly_rank" | "post_refresh_rank" | "manual_rank"
 }) {
-  const [settings, forecast, activeAdvice] = await Promise.all([
+  const [settings, forecast, activeAdvice, adviceRefreshState] = await Promise.all([
     getUserSettings(input.userId),
     getLatestForecastRunWithSnapshots(input.userId),
     listAdviceItemsForUser({
@@ -1391,10 +1462,12 @@ export async function rankAdviceForUser(input: {
       statuses: ["active"],
       limit: 24,
     }),
+    getAdviceRefreshStateForUser(input.userId),
   ])
 
   if (activeAdvice.length === 0) {
     await clearAdviceHomeRankingForUser(input.userId)
+    await clearAdviceRankingRefreshStateForUser(input.userId)
     return {
       userId: input.userId,
       reason: input.reason,
@@ -1409,6 +1482,28 @@ export async function rankAdviceForUser(input: {
     forecast,
     activeAdvice,
   })
+  const rankingInputHash = buildAdviceRankingInputHash({
+    promptContext,
+  })
+
+  if (
+    adviceRefreshState?.rankingInputHash === rankingInputHash &&
+    adviceRefreshState.rankingPromptVersion === `${aiPromptVersions.financeAdviceGenerator}-ranking-v1` &&
+    adviceRefreshState.rankingModelName === aiModels.financeAdviceGenerator
+  ) {
+    logger.info("advice_ranking_skipped_unchanged", {
+      userId: input.userId,
+      reason: input.reason,
+    })
+
+    return {
+      userId: input.userId,
+      reason: input.reason,
+      rankedCount: activeAdvice.filter(({ adviceItem }) => adviceItem.homeRankPosition !== null).length,
+      skipped: true,
+      skipReason: "unchanged_context",
+    }
+  }
 
   let modelRunId: string | null = null
 
@@ -1467,6 +1562,20 @@ export async function rankAdviceForUser(input: {
         rankedAdvice: ranking.ranking.rankedAdvice,
         appliedRankings: normalizedRankings,
       },
+    })
+
+    await upsertAdviceRefreshState({
+      userId: input.userId,
+      generationInputHash: adviceRefreshState?.generationInputHash ?? null,
+      generationPromptVersion: adviceRefreshState?.generationPromptVersion ?? null,
+      generationModelName: adviceRefreshState?.generationModelName ?? null,
+      generationLastModelRunId: adviceRefreshState?.generationLastModelRunId ?? null,
+      generationLastEvaluatedAt: adviceRefreshState?.generationLastEvaluatedAt ?? null,
+      rankingInputHash,
+      rankingPromptVersion: `${aiPromptVersions.financeAdviceGenerator}-ranking-v1`,
+      rankingModelName: aiModels.financeAdviceGenerator,
+      rankingLastModelRunId: modelRun.id,
+      rankingLastEvaluatedAt: new Date(),
     })
 
     return {

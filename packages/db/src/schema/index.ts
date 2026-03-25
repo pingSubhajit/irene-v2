@@ -1,8 +1,11 @@
 export { accounts, authSchema, sessions, users, verifications } from "./auth"
 export {
+  adviceRefreshStates,
   adviceItems,
   financialGoals,
   goalContributionSnapshots,
+  type AdviceRefreshStateInsert,
+  type AdviceRefreshStateSelect,
   type AdviceItemAction,
   type AdviceItemActionType,
   type AdviceItemInsert,
@@ -62,12 +65,15 @@ export {
 export {
   documentAttachments,
   emailSyncCursors,
+  gmailMessageRelevanceCaches,
   oauthConnections,
   rawDocuments,
   type DocumentAttachmentInsert,
   type DocumentAttachmentParseStatus,
   type DocumentAttachmentSelect,
   type EmailSyncCursorSelect,
+  type GmailMessageRelevanceCacheInsert,
+  type GmailMessageRelevanceCacheSelect,
   type OauthConnectionInsert,
   type OauthConnectionSelect,
   type OauthConnectionStatus,
@@ -179,6 +185,7 @@ export {
 } from "./recurring"
 
 import {
+  adviceRefreshStates,
   adviceItems,
   financialGoals,
   goalContributionSnapshots,
@@ -218,6 +225,7 @@ import { emiPlans, incomeStreams, recurringObligations } from "./recurring"
 import {
   documentAttachments,
   emailSyncCursors,
+  gmailMessageRelevanceCaches,
   oauthConnections,
   rawDocuments,
 } from "./ingestion"
@@ -225,6 +233,7 @@ import {
 export const schema = {
   ...authSchema,
   adviceItems,
+  adviceRefreshStates,
   financialGoals,
   goalContributionSnapshots,
   userSettings,
@@ -233,6 +242,7 @@ export const schema = {
   feedbackEvents,
   oauthConnections,
   emailSyncCursors,
+  gmailMessageRelevanceCaches,
   rawDocuments,
   documentAttachments,
   modelRuns,

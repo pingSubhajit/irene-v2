@@ -217,6 +217,67 @@ export const documentAttachments = pgTable(
   ],
 )
 
+export const gmailMessageRelevanceCaches = pgTable(
+  "gmail_message_relevance_cache",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    oauthConnectionId: uuid("oauth_connection_id")
+      .notNull()
+      .references(() => oauthConnections.id, { onDelete: "cascade" }),
+    providerMessageId: text("provider_message_id").notNull(),
+    messageTimestamp: timestamp("message_timestamp", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    inputHash: text("input_hash").notNull(),
+    classification: text("classification").$type<RawDocumentRelevanceLabel>().notNull(),
+    stage: text("stage").$type<RawDocumentRelevanceStage>().notNull(),
+    score: bigint("score", { mode: "number" }).notNull(),
+    reasonsJson: jsonb("reasons_json").$type<string[]>().notNull().default([]),
+    promptVersion: text("prompt_version").notNull(),
+    modelName: text("model_name").notNull(),
+    provider: text("provider").notNull(),
+    modelRunId: uuid("model_run_id"),
+    lastEvaluatedAt: timestamp("last_evaluated_at", {
+      withTimezone: true,
+      mode: "date",
+    })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("gmail_message_relevance_cache_connection_message_unique").on(
+      table.oauthConnectionId,
+      table.providerMessageId,
+    ),
+    index("gmail_message_relevance_cache_connection_timestamp_idx").on(
+      table.oauthConnectionId,
+      table.messageTimestamp,
+    ),
+    index("gmail_message_relevance_cache_user_timestamp_idx").on(
+      table.userId,
+      table.messageTimestamp,
+    ),
+    check(
+      "gmail_message_relevance_cache_classification_check",
+      sql`${table.classification} in ('transactional_finance', 'obligation_finance', 'marketing_finance', 'non_finance')`,
+    ),
+    check(
+      "gmail_message_relevance_cache_stage_check",
+      sql`${table.stage} in ('heuristic', 'model')`,
+    ),
+  ],
+)
+
 export type OauthConnectionInsert = typeof oauthConnections.$inferInsert
 export type OauthConnectionSelect = typeof oauthConnections.$inferSelect
 export type EmailSyncCursorSelect = typeof emailSyncCursors.$inferSelect
@@ -224,3 +285,5 @@ export type RawDocumentSelect = typeof rawDocuments.$inferSelect
 export type RawDocumentInsert = typeof rawDocuments.$inferInsert
 export type DocumentAttachmentInsert = typeof documentAttachments.$inferInsert
 export type DocumentAttachmentSelect = typeof documentAttachments.$inferSelect
+export type GmailMessageRelevanceCacheInsert = typeof gmailMessageRelevanceCaches.$inferInsert
+export type GmailMessageRelevanceCacheSelect = typeof gmailMessageRelevanceCaches.$inferSelect
