@@ -17,6 +17,7 @@ import {
   createModelRun,
   closeDatabase,
   createReviewQueueItem,
+  ensureCoalescedJobRun,
   ensureJobRun,
   getEmailSyncCursorById,
   getGmailMessageRelevanceCache,
@@ -97,6 +98,12 @@ import {
   feedbackProcessJobPayloadSchema,
   enqueueMemoryDecayScan,
   enqueueMemoryRebuildUser,
+  getAdviceRankUserJobKey,
+  getAdviceRebuildUserJobKey,
+  getAdviceRefreshUserJobKey,
+  getForecastRebuildUserJobKey,
+  getForecastRefreshUserJobKey,
+  getMemoryRebuildUserJobKey,
   enqueueReconciliationRepairBatch,
   RECONCILIATION_MODEL_RETRY_JOB_NAME,
   RECONCILIATION_REPAIR_BATCH_JOB_NAME,
@@ -1142,8 +1149,8 @@ async function enqueueTrackedForecastRefresh(input: {
     | "balance_anchor_changed"
     | "manual_refresh"
 }) {
-  const jobKey = `${FORECAST_REFRESH_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
-  const jobRun = await ensureJobRun({
+  const jobKey = getForecastRefreshUserJobKey(input.userId)
+  const jobRun = await ensureCoalescedJobRun({
     queueName: FORECASTING_QUEUE_NAME,
     jobName: FORECAST_REFRESH_USER_JOB_NAME,
     jobKey,
@@ -1172,8 +1179,8 @@ async function enqueueTrackedAdviceRefresh(input: {
   source: "worker" | "web" | "scheduler" | "startup"
   reason: "forecast_changed" | "goals_changed" | "manual_refresh"
 }) {
-  const jobKey = `${ADVICE_REFRESH_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
-  const jobRun = await ensureJobRun({
+  const jobKey = getAdviceRefreshUserJobKey(input.userId)
+  const jobRun = await ensureCoalescedJobRun({
     queueName: ADVICE_QUEUE_NAME,
     jobName: ADVICE_REFRESH_USER_JOB_NAME,
     jobKey,
@@ -1202,8 +1209,8 @@ async function enqueueTrackedAdviceRebuild(input: {
   source: "worker" | "web" | "scheduler" | "startup"
   reason: "nightly_rebuild" | "startup_rebuild" | "manual_rebuild" | "logic_change"
 }) {
-  const jobKey = `${ADVICE_REBUILD_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
-  const jobRun = await ensureJobRun({
+  const jobKey = getAdviceRebuildUserJobKey(input.userId)
+  const jobRun = await ensureCoalescedJobRun({
     queueName: ADVICE_QUEUE_NAME,
     jobName: ADVICE_REBUILD_USER_JOB_NAME,
     jobKey,
@@ -1232,8 +1239,8 @@ async function enqueueTrackedAdviceRank(input: {
   source: "worker" | "web" | "scheduler" | "startup"
   reason: "hourly_rank" | "post_refresh_rank" | "manual_rank"
 }) {
-  const jobKey = `${ADVICE_RANK_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
-  const jobRun = await ensureJobRun({
+  const jobKey = getAdviceRankUserJobKey(input.userId)
+  const jobRun = await ensureCoalescedJobRun({
     queueName: ADVICE_QUEUE_NAME,
     jobName: ADVICE_RANK_USER_JOB_NAME,
     jobKey,
@@ -1262,8 +1269,8 @@ async function enqueueTrackedForecastRebuild(input: {
   source: "worker" | "web" | "scheduler" | "startup"
   reason: "nightly_rebuild" | "startup_rebuild" | "manual_rebuild" | "logic_change"
 }) {
-  const jobKey = `${FORECAST_REBUILD_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.correlationId}`
-  const jobRun = await ensureJobRun({
+  const jobKey = getForecastRebuildUserJobKey(input.userId)
+  const jobRun = await ensureCoalescedJobRun({
     queueName: FORECASTING_QUEUE_NAME,
     jobName: FORECAST_REBUILD_USER_JOB_NAME,
     jobKey,
@@ -1298,8 +1305,27 @@ async function enqueueTrackedMemoryRebuild(input: {
     | "startup_rebuild"
   sourceReferenceId?: string
 }) {
-  const jobKey = `${MEMORY_REBUILD_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.sourceReferenceId ?? input.correlationId}`
-  const jobRun = await ensureJobRun({
+  const jobKey = getMemoryRebuildUserJobKey({
+    userId: input.userId,
+    reason: input.reason,
+    sourceReferenceId: input.sourceReferenceId,
+    correlationId: input.correlationId,
+  })
+  const jobRun =
+    input.reason === "automation_refresh" || input.reason === "startup_rebuild"
+      ? await ensureCoalescedJobRun({
+          queueName: MEMORY_LEARNING_QUEUE_NAME,
+          jobName: MEMORY_REBUILD_USER_JOB_NAME,
+          jobKey,
+          payloadJson: {
+            correlationId: input.correlationId,
+            userId: input.userId,
+            source: input.source,
+            reason: input.reason,
+            sourceReferenceId: input.sourceReferenceId ?? null,
+          },
+        })
+      : await ensureJobRun({
     queueName: MEMORY_LEARNING_QUEUE_NAME,
     jobName: MEMORY_REBUILD_USER_JOB_NAME,
     jobKey,

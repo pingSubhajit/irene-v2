@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
+import { addOrRefreshTrackedJob, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const FORECASTING_QUEUE_NAME = "forecasting"
 export const FORECAST_REFRESH_USER_JOB_NAME = "forecast.refresh.user"
@@ -46,27 +46,37 @@ export function getForecastingQueue() {
   return getOrCreateQueue(FORECASTING_QUEUE_NAME, "forecasting")
 }
 
+export function getForecastRefreshUserJobKey(userId: string) {
+  return `${FORECAST_REFRESH_USER_JOB_NAME}:user:${userId}`
+}
+
+export function getForecastRebuildUserJobKey(userId: string) {
+  return `${FORECAST_REBUILD_USER_JOB_NAME}:user:${userId}`
+}
+
 export async function enqueueForecastRefreshUser(payload: ForecastRefreshUserJobPayload) {
   const parsed = forecastRefreshUserJobPayloadSchema.parse(payload)
 
-  return getForecastingQueue().add(FORECAST_REFRESH_USER_JOB_NAME, parsed, {
-    ...createTrackedJobOptions({
-      jobId: toBullJobId(parsed.jobKey),
-      attempts: 2,
-      backoffMs: 30_000,
-    }),
+  return addOrRefreshTrackedJob({
+    queue: getForecastingQueue(),
+    jobName: FORECAST_REFRESH_USER_JOB_NAME,
+    payload: parsed,
+    attempts: 2,
+    backoffMs: 30_000,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 
 export async function enqueueForecastRebuildUser(payload: ForecastRebuildUserJobPayload) {
   const parsed = forecastRebuildUserJobPayloadSchema.parse(payload)
 
-  return getForecastingQueue().add(FORECAST_REBUILD_USER_JOB_NAME, parsed, {
-    ...createTrackedJobOptions({
-      jobId: toBullJobId(parsed.jobKey),
-      attempts: 2,
-      backoffMs: 60_000,
-    }),
+  return addOrRefreshTrackedJob({
+    queue: getForecastingQueue(),
+    jobName: FORECAST_REBUILD_USER_JOB_NAME,
+    payload: parsed,
+    attempts: 2,
+    backoffMs: 60_000,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 

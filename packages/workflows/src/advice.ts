@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
+import { addOrRefreshTrackedJob, getOrCreateQueue, toBullJobId } from "./redis"
 
 export const ADVICE_QUEUE_NAME = "advice"
 export const ADVICE_REFRESH_USER_JOB_NAME = "advice.refresh.user"
@@ -46,39 +46,54 @@ export function getAdviceQueue() {
   return getOrCreateQueue(ADVICE_QUEUE_NAME, "advice")
 }
 
+export function getAdviceRefreshUserJobKey(userId: string) {
+  return `${ADVICE_REFRESH_USER_JOB_NAME}:user:${userId}`
+}
+
+export function getAdviceRebuildUserJobKey(userId: string) {
+  return `${ADVICE_REBUILD_USER_JOB_NAME}:user:${userId}`
+}
+
+export function getAdviceRankUserJobKey(userId: string) {
+  return `${ADVICE_RANK_USER_JOB_NAME}:user:${userId}`
+}
+
 export async function enqueueAdviceRefreshUser(payload: AdviceRefreshUserJobPayload) {
   const parsed = adviceRefreshUserJobPayloadSchema.parse(payload)
 
-  return getAdviceQueue().add(ADVICE_REFRESH_USER_JOB_NAME, parsed, {
-    ...createTrackedJobOptions({
-      jobId: toBullJobId(parsed.jobKey),
-      attempts: 2,
-      backoffMs: 30_000,
-    }),
+  return addOrRefreshTrackedJob({
+    queue: getAdviceQueue(),
+    jobName: ADVICE_REFRESH_USER_JOB_NAME,
+    payload: parsed,
+    attempts: 2,
+    backoffMs: 30_000,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 
 export async function enqueueAdviceRebuildUser(payload: AdviceRebuildUserJobPayload) {
   const parsed = adviceRebuildUserJobPayloadSchema.parse(payload)
 
-  return getAdviceQueue().add(ADVICE_REBUILD_USER_JOB_NAME, parsed, {
-    ...createTrackedJobOptions({
-      jobId: toBullJobId(parsed.jobKey),
-      attempts: 2,
-      backoffMs: 60_000,
-    }),
+  return addOrRefreshTrackedJob({
+    queue: getAdviceQueue(),
+    jobName: ADVICE_REBUILD_USER_JOB_NAME,
+    payload: parsed,
+    attempts: 2,
+    backoffMs: 60_000,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 
 export async function enqueueAdviceRankUser(payload: AdviceRankUserJobPayload) {
   const parsed = adviceRankUserJobPayloadSchema.parse(payload)
 
-  return getAdviceQueue().add(ADVICE_RANK_USER_JOB_NAME, parsed, {
-    ...createTrackedJobOptions({
-      jobId: toBullJobId(parsed.jobKey),
-      attempts: 2,
-      backoffMs: 30_000,
-    }),
+  return addOrRefreshTrackedJob({
+    queue: getAdviceQueue(),
+    jobName: ADVICE_RANK_USER_JOB_NAME,
+    payload: parsed,
+    attempts: 2,
+    backoffMs: 30_000,
+    jobId: toBullJobId(parsed.jobKey),
   })
 }
 

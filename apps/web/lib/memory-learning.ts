@@ -2,6 +2,7 @@ import { ensureJobRun } from "@workspace/db"
 import { createCorrelationId } from "@workspace/observability"
 import {
   enqueueMemoryRebuildUser,
+  getMemoryRebuildUserJobKey,
   MEMORY_LEARNING_QUEUE_NAME,
   MEMORY_REBUILD_USER_JOB_NAME,
 } from "@workspace/workflows"
@@ -12,7 +13,12 @@ export async function triggerUserMemoryRebuild(input: {
   sourceReferenceId?: string
 }) {
   const correlationId = createCorrelationId()
-  const jobKey = `${MEMORY_REBUILD_USER_JOB_NAME}:${input.userId}:${input.reason}:${input.sourceReferenceId ?? new Date().toISOString().slice(0, 16)}`
+  const jobKey = getMemoryRebuildUserJobKey({
+    userId: input.userId,
+    reason: input.reason,
+    sourceReferenceId: input.sourceReferenceId,
+    correlationId,
+  })
 
   const jobRun = await ensureJobRun({
     queueName: MEMORY_LEARNING_QUEUE_NAME,

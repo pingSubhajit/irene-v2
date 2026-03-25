@@ -14,6 +14,8 @@ type CreateJobRunInput = {
   recoveryGroupKey?: string | null
 }
 
+const COALESCED_ACTIVE_STATUSES = ["queued", "running"] as const
+
 export async function createJobRun(input: CreateJobRunInput) {
   const rows = await db
     .insert(jobRuns)
@@ -49,6 +51,39 @@ export async function ensureJobRun(input: CreateJobRunInput) {
 
     if (existing) {
       return existing
+    }
+  }
+
+  return createJobRun(input)
+}
+
+export async function ensureCoalescedJobRun(input: CreateJobRunInput) {
+  if (input.jobKey) {
+    const [existing] = await db
+      .select()
+      .from(jobRuns)
+      .where(eq(jobRuns.jobKey, input.jobKey))
+      .orderBy(desc(jobRuns.createdAt))
+      .limit(1)
+
+    if (
+      existing &&
+      COALESCED_ACTIVE_STATUSES.includes(
+        existing.status as (typeof COALESCED_ACTIVE_STATUSES)[number],
+      )
+    ) {
+      const [updated] = await db
+        .update(jobRuns)
+        .set({
+          payloadJson: input.payloadJson ?? null,
+          maxAttempts: input.maxAttempts ?? 1,
+          retryable: input.retryable ?? true,
+          recoveryGroupKey: input.recoveryGroupKey ?? null,
+        })
+        .where(eq(jobRuns.id, existing.id))
+        .returning()
+
+      return updated ?? existing
     }
   }
 

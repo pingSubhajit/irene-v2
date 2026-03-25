@@ -1,6 +1,11 @@
 import { z } from "zod"
 
-import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
+import {
+  addOrRefreshTrackedJob,
+  createTrackedJobOptions,
+  getOrCreateQueue,
+  toBullJobId,
+} from "./redis"
 
 export const MEMORY_LEARNING_QUEUE_NAME = "memory-learning"
 export const FEEDBACK_PROCESS_JOB_NAME = "feedback.process"
@@ -44,6 +49,25 @@ export function getMemoryLearningQueue() {
   return getOrCreateQueue(MEMORY_LEARNING_QUEUE_NAME, "memoryLearning")
 }
 
+export function isBackgroundMemoryRebuildReason(
+  reason: MemoryRebuildUserJobPayload["reason"],
+) {
+  return reason === "automation_refresh" || reason === "startup_rebuild"
+}
+
+export function getMemoryRebuildUserJobKey(input: {
+  userId: string
+  reason: MemoryRebuildUserJobPayload["reason"]
+  sourceReferenceId?: string
+  correlationId?: string
+}) {
+  if (isBackgroundMemoryRebuildReason(input.reason)) {
+    return `${MEMORY_REBUILD_USER_JOB_NAME}:user:${input.userId}:${input.reason}`
+  }
+
+  return `${MEMORY_REBUILD_USER_JOB_NAME}:user:${input.userId}:${input.reason}:${input.sourceReferenceId ?? "explicit"}:${input.correlationId ?? "manual"}`
+}
+
 export async function enqueueFeedbackProcess(payload: FeedbackProcessJobPayload) {
   const parsed = feedbackProcessJobPayloadSchema.parse(payload)
 
@@ -58,6 +82,17 @@ export async function enqueueFeedbackProcess(payload: FeedbackProcessJobPayload)
 
 export async function enqueueMemoryRebuildUser(payload: MemoryRebuildUserJobPayload) {
   const parsed = memoryRebuildUserJobPayloadSchema.parse(payload)
+
+  if (isBackgroundMemoryRebuildReason(parsed.reason)) {
+    return addOrRefreshTrackedJob({
+      queue: getMemoryLearningQueue(),
+      jobName: MEMORY_REBUILD_USER_JOB_NAME,
+      payload: parsed,
+      attempts: 2,
+      backoffMs: 60_000,
+      jobId: toBullJobId(parsed.jobKey),
+    })
+  }
 
   return getMemoryLearningQueue().add(MEMORY_REBUILD_USER_JOB_NAME, parsed, {
     ...createTrackedJobOptions({

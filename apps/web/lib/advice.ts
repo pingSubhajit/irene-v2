@@ -1,4 +1,4 @@
-import { ensureJobRun } from "@workspace/db"
+import { ensureCoalescedJobRun } from "@workspace/db"
 import type { AdviceItemAction } from "@workspace/db"
 import { createCorrelationId } from "@workspace/observability"
 import {
@@ -6,6 +6,9 @@ import {
   ADVICE_RANK_USER_JOB_NAME,
   ADVICE_REFRESH_USER_JOB_NAME,
   ADVICE_REBUILD_USER_JOB_NAME,
+  getAdviceRankUserJobKey,
+  getAdviceRefreshUserJobKey,
+  getAdviceRebuildUserJobKey,
   enqueueAdviceRankUser,
   enqueueAdviceRefreshUser,
   enqueueAdviceRebuildUser,
@@ -16,11 +19,9 @@ export async function triggerUserAdviceRefresh(input: {
   reason: "forecast_changed" | "goals_changed" | "manual_refresh"
 }) {
   const correlationId = createCorrelationId()
-  const jobKey = `${ADVICE_REFRESH_USER_JOB_NAME}:${input.userId}:${input.reason}:${new Date()
-    .toISOString()
-    .slice(0, 16)}`
+  const jobKey = getAdviceRefreshUserJobKey(input.userId)
 
-  const jobRun = await ensureJobRun({
+  const jobRun = await ensureCoalescedJobRun({
     queueName: ADVICE_QUEUE_NAME,
     jobName: ADVICE_REFRESH_USER_JOB_NAME,
     jobKey,
@@ -49,11 +50,9 @@ export async function triggerUserAdviceRebuild(input: {
   reason: "manual_rebuild" | "logic_change"
 }) {
   const correlationId = createCorrelationId()
-  const jobKey = `${ADVICE_REBUILD_USER_JOB_NAME}:${input.userId}:${input.reason}:${new Date()
-    .toISOString()
-    .slice(0, 16)}`
+  const jobKey = getAdviceRebuildUserJobKey(input.userId)
 
-  const jobRun = await ensureJobRun({
+  const jobRun = await ensureCoalescedJobRun({
     queueName: ADVICE_QUEUE_NAME,
     jobName: ADVICE_REBUILD_USER_JOB_NAME,
     jobKey,
@@ -82,11 +81,9 @@ export async function triggerUserAdviceRank(input: {
   reason: "manual_rank"
 }) {
   const correlationId = createCorrelationId()
-  const jobKey = `${ADVICE_RANK_USER_JOB_NAME}:${input.userId}:${input.reason}:${new Date()
-    .toISOString()
-    .slice(0, 16)}`
+  const jobKey = getAdviceRankUserJobKey(input.userId)
 
-  const jobRun = await ensureJobRun({
+  const jobRun = await ensureCoalescedJobRun({
     queueName: ADVICE_QUEUE_NAME,
     jobName: ADVICE_RANK_USER_JOB_NAME,
     jobKey,

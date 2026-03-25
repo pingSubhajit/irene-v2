@@ -1,4 +1,4 @@
-import { Queue, type ConnectionOptions, type JobsOptions } from "bullmq"
+import { Queue, type ConnectionOptions, type Job, type JobsOptions } from "bullmq"
 
 import { getRedisEnv } from "@workspace/config/server"
 
@@ -66,6 +66,77 @@ export function createTrackedJobOptions(input: {
       delay: input.backoffMs ?? 15_000,
     },
   } satisfies JobsOptions
+}
+
+type CoalescedJobState =
+  | "active"
+  | "completed"
+  | "delayed"
+  | "failed"
+  | "paused"
+  | "prioritized"
+  | "unknown"
+  | "waiting"
+  | "waiting-children"
+
+function isQueuedState(state: CoalescedJobState) {
+  return (
+    state === "waiting" ||
+    state === "delayed" ||
+    state === "prioritized" ||
+    state === "paused" ||
+    state === "waiting-children"
+  )
+}
+
+async function replaceTerminalJob<T>(
+  queue: Queue,
+  existingJob: Job<T>,
+  jobName: string,
+  payload: T,
+  options: JobsOptions,
+) {
+  await existingJob.remove()
+  return queue.add(jobName, payload, options)
+}
+
+export async function addOrRefreshTrackedJob<T>(input: {
+  queue: Queue
+  jobName: string
+  payload: T
+  attempts?: number
+  backoffMs?: number
+  jobId: string
+}) {
+  const options = createTrackedJobOptions({
+    jobId: input.jobId,
+    attempts: input.attempts,
+    backoffMs: input.backoffMs,
+  })
+  const existingJob = await input.queue.getJob(input.jobId)
+
+  if (!existingJob) {
+    return input.queue.add(input.jobName, input.payload, options)
+  }
+
+  const state = (await existingJob.getState()) as CoalescedJobState
+
+  if (isQueuedState(state)) {
+    await existingJob.updateData(input.payload)
+    return existingJob
+  }
+
+  if (state === "active") {
+    return existingJob
+  }
+
+  return replaceTerminalJob(
+    input.queue,
+    existingJob as Job<T>,
+    input.jobName,
+    input.payload,
+    options,
+  )
 }
 
 export function getOrCreateQueue(name: string, key: keyof QueueRegistry) {
