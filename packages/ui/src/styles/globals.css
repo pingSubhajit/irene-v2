@@ -137,10 +137,17 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    scrollbar-width: none;
   }
 
   html {
     color-scheme: dark;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
   }
 
   body {
