@@ -15,7 +15,7 @@ import {
 
 import {
   GMAIL_CURSOR_NAME,
-  triggerGmailBackfill,
+  triggerGmailSyncAfterConnect,
 } from "@/lib/gmail-integration"
 import { requireSession } from "@/lib/session"
 
@@ -91,18 +91,20 @@ export async function GET(request: NextRequest) {
       status: "active",
     })
     const cursor = await ensureEmailSyncCursor(connection.id, GMAIL_CURSOR_NAME)
-
-    await triggerGmailBackfill({
+    const sync = await triggerGmailSyncAfterConnect({
       userId: session.user.id,
       oauthConnectionId: connection.id,
       cursorId: cursor.id,
+      cursor,
       source: "web",
     })
 
-    logger.info("Connected Gmail inbox and enqueued backfill", {
+    logger.info("Connected Gmail inbox and enqueued sync", {
       userId: session.user.id,
       oauthConnectionId: connection.id,
       cursorId: cursor.id,
+      syncMode: sync.mode,
+      jobRunId: sync.jobRun.id,
     })
 
     return redirectToSettings(request, "connected")

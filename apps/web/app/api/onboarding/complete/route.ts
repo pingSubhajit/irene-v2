@@ -16,7 +16,7 @@ import { isSupportedReportingCurrency } from "@/lib/currency-options"
 import { triggerUserFinancialEventValuationBackfill } from "@/lib/fx-valuation"
 import {
   GMAIL_CURSOR_NAME,
-  triggerGmailBackfill,
+  triggerGmailSyncAfterConnect,
 } from "@/lib/gmail-integration"
 import { requireSession } from "@/lib/session"
 import { isSupportedTimeZone } from "@/lib/time-zone-options"
@@ -132,11 +132,11 @@ export async function POST(request: Request) {
       status: "active",
     })
     const cursor = await ensureEmailSyncCursor(connection.id, GMAIL_CURSOR_NAME)
-
-    await triggerGmailBackfill({
+    const sync = await triggerGmailSyncAfterConnect({
       userId: session.user.id,
       oauthConnectionId: connection.id,
       cursorId: cursor.id,
+      cursor,
       source: "web",
     })
 
@@ -159,7 +159,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      backfillRunning: true,
+      backfillRunning: sync.mode === "backfill",
+      syncMode: sync.mode,
     })
   } catch (error) {
     logger.errorWithCause("Failed to finish onboarding", error, {

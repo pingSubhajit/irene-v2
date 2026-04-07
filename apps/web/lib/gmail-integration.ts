@@ -1,6 +1,7 @@
 import {
   countRawDocumentsForUser,
   createJobRun,
+  type EmailSyncCursorSelect,
   ensureEmailSyncCursor,
   ensureJobRun,
   getGmailOauthConnectionForUser,
@@ -106,6 +107,35 @@ export async function triggerGmailIncrementalSync(input: TriggerBaseInput) {
 
   return {
     jobRun,
+  }
+}
+
+function hasExistingGmailSyncState(cursor: EmailSyncCursorSelect) {
+  return Boolean(
+    cursor.providerCursor ||
+      cursor.backfillStartedAt ||
+      cursor.backfillCompletedAt ||
+      cursor.lastSeenMessageAt,
+  )
+}
+
+export async function triggerGmailSyncAfterConnect(input: TriggerBaseInput & {
+  cursor: EmailSyncCursorSelect
+}) {
+  if (hasExistingGmailSyncState(input.cursor)) {
+    const { jobRun } = await triggerGmailIncrementalSync(input)
+
+    return {
+      jobRun,
+      mode: "incremental" as const,
+    }
+  }
+
+  const { jobRun } = await triggerGmailBackfill(input)
+
+  return {
+    jobRun,
+    mode: "backfill" as const,
   }
 }
 
