@@ -21,6 +21,7 @@ import {
   ensureCoalescedJobRun,
   ensureJobRun,
   getEmailSyncCursorById,
+  getLatestGoogleAccountForUser,
   getGmailMessageRelevanceCache,
   getMemoryBundleForUser,
   getOauthConnectionById,
@@ -320,6 +321,152 @@ function isGmailNotFoundError(error: unknown) {
     typeof error.code === "number" &&
     error.code === 404
   )
+}
+
+function isGoogleInvalidGrantError(error: unknown) {
+  if (error instanceof Error && error.message === "invalid_grant") {
+    return true
+  }
+
+  if (typeof error !== "object" || error === null) {
+    return false
+  }
+
+  const response =
+    "response" in error && typeof error.response === "object" && error.response !== null
+      ? error.response
+      : null
+  const responseData =
+    response && "data" in response && typeof response.data === "object" && response.data !== null
+      ? response.data
+      : null
+  const providerError =
+    responseData && "error" in responseData && typeof responseData.error === "string"
+      ? responseData.error
+      : null
+  const message =
+    "message" in error && typeof error.message === "string" ? error.message : null
+  const code = "code" in error && typeof error.code === "number" ? error.code : null
+
+  return providerError === "invalid_grant" || message === "invalid_grant" || code === 400
+}
+
+function parseGrantedScopes(scope: string | null | undefined) {
+  if (!scope) {
+    return []
+  }
+
+  return scope
+    .split(/[\s,]+/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+}
+
+const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+
+type GmailOauthConnection = NonNullable<Awaited<ReturnType<typeof getOauthConnectionById>>>
+
+async function recoverGmailConnectionFromGoogleAccount(input: {
+  userId: string
+  connectionId: string
+}) {
+  const googleAccount = await getLatestGoogleAccountForUser(input.userId)
+
+  if (!googleAccount?.accessToken || !googleAccount.refreshToken) {
+    return null
+  }
+
+  const grantedScopes = parseGrantedScopes(googleAccount.scope)
+
+  if (!grantedScopes.includes(GMAIL_READONLY_SCOPE)) {
+    return null
+  }
+
+  return updateOauthConnection(input.connectionId, {
+    accessTokenEncrypted: encryptSecret(googleAccount.accessToken),
+    refreshTokenEncrypted: encryptSecret(googleAccount.refreshToken),
+    tokenExpiresAt: googleAccount.accessTokenExpiresAt ?? null,
+    scope: googleAccount.scope ?? undefined,
+    status: "active",
+  })
+}
+
+async function runGmailOperationWithRecovery<T>(input: {
+  userId: string
+  connection: GmailOauthConnection
+  operation: (connection: GmailOauthConnection) => Promise<T>
+  logContext: Record<string, unknown>
+}) {
+  try {
+    return {
+      result: await input.operation(input.connection),
+      connection: input.connection,
+      revoked: false as const,
+    }
+  } catch (error) {
+    if (!isGoogleInvalidGrantError(error)) {
+      throw error
+    }
+
+    logger.warn("Encountered invalid Gmail grant, attempting token recovery", {
+      ...input.logContext,
+      oauthConnectionId: input.connection.id,
+      userId: input.userId,
+    })
+
+    const recoveredConnection = await recoverGmailConnectionFromGoogleAccount({
+      userId: input.userId,
+      connectionId: input.connection.id,
+    })
+
+    if (!recoveredConnection) {
+      await updateOauthConnection(input.connection.id, {
+        lastFailedSyncAt: new Date(),
+        status: "revoked",
+      })
+
+      logger.warn("Revoked Gmail connection after invalid grant with no recovery token", {
+        ...input.logContext,
+        oauthConnectionId: input.connection.id,
+        userId: input.userId,
+      })
+
+      return {
+        result: null,
+        connection: input.connection,
+        revoked: true as const,
+      }
+    }
+
+    try {
+      return {
+        result: await input.operation(recoveredConnection),
+        connection: recoveredConnection,
+        revoked: false as const,
+      }
+    } catch (retryError) {
+      if (!isGoogleInvalidGrantError(retryError)) {
+        throw retryError
+      }
+
+      await updateOauthConnection(input.connection.id, {
+        lastFailedSyncAt: new Date(),
+        status: "revoked",
+      })
+
+      logger.warn("Revoked Gmail connection after invalid grant persisted post-recovery", {
+        ...input.logContext,
+        oauthConnectionId: input.connection.id,
+        userId: input.userId,
+      })
+
+      return {
+        result: null,
+        connection: recoveredConnection,
+        revoked: true as const,
+      }
+    }
+  }
 }
 
 type GmailFallbackAnchor =
@@ -1864,24 +2011,51 @@ async function handleGmailIncrementalPoll(job: Job) {
   }
 
   const onTokenUpdate = createTokenPersister(connection.id)
+  let activeConnection: GmailOauthConnection = connection
   let messageIds: string[] = []
   let latestHistoryId = cursor.providerCursor
   let usedFallback = false
   let fallbackAnchor: GmailFallbackAnchor = null
 
   if (cursor.providerCursor) {
+    const startHistoryId = cursor.providerCursor
+
     try {
       let nextPageToken: string | null | undefined = undefined
 
       do {
-        const historyPage = await listGmailHistory(
-          connection,
-          {
-            startHistoryId: cursor.providerCursor,
-            pageToken: nextPageToken ?? undefined,
+        const historyResult = await runGmailOperationWithRecovery({
+          userId: payload.userId,
+          connection: activeConnection,
+          operation: (candidateConnection) =>
+            listGmailHistory(
+              candidateConnection,
+              {
+                startHistoryId,
+                pageToken: nextPageToken ?? undefined,
+              },
+              onTokenUpdate,
+            ),
+          logContext: {
+            cursorId: cursor.id,
+            jobName: GMAIL_INCREMENTAL_POLL_JOB_NAME,
           },
-          onTokenUpdate,
-        )
+        })
+
+        if (historyResult.revoked) {
+          await markJobSucceeded(job, payload, {
+            skipped: true,
+            reason: "gmail_reconnect_required",
+          })
+
+          return {
+            skipped: true,
+            reason: "gmail_reconnect_required",
+          }
+        }
+
+        activeConnection = historyResult.connection
+        const historyPage = historyResult.result
 
         latestHistoryId = historyPage.historyId ?? latestHistoryId
         messageIds.push(...historyPage.messages.map((message) => message.id))
@@ -1925,14 +2099,38 @@ async function handleGmailIncrementalPoll(job: Job) {
     })
 
     do {
-      const recentPage = await listGmailMessageIds(
-        connection,
-        {
-          query: recentQuery,
-          pageToken: nextPageToken ?? undefined,
+      const recentResult = await runGmailOperationWithRecovery({
+        userId: payload.userId,
+        connection: activeConnection,
+        operation: (candidateConnection) =>
+          listGmailMessageIds(
+            candidateConnection,
+            {
+              query: recentQuery,
+              pageToken: nextPageToken ?? undefined,
+            },
+            onTokenUpdate,
+          ),
+        logContext: {
+          cursorId: cursor.id,
+          jobName: GMAIL_INCREMENTAL_POLL_JOB_NAME,
         },
-        onTokenUpdate,
-      )
+      })
+
+      if (recentResult.revoked) {
+        await markJobSucceeded(job, payload, {
+          skipped: true,
+          reason: "gmail_reconnect_required",
+        })
+
+        return {
+          skipped: true,
+          reason: "gmail_reconnect_required",
+        }
+      }
+
+      activeConnection = recentResult.connection
+      const recentPage = recentResult.result
 
       messageIds.push(...recentPage.messages.map((message) => message.id))
       nextPageToken = recentPage.nextPageToken
@@ -3775,7 +3973,7 @@ for (const [queueName, worker] of [
     if (typeof oauthConnectionId === "string") {
       await updateOauthConnection(oauthConnectionId, {
         lastFailedSyncAt: new Date(),
-        status: "error",
+        status: isGoogleInvalidGrantError(error) ? "revoked" : "error",
       })
     }
   })

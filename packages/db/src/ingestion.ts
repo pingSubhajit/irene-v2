@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, lte, not, or } from "drizzle-orm"
 
 import { db } from "./client"
 import {
+  accounts,
   adviceItems,
   balanceAnchors,
   balanceObservations,
@@ -104,6 +105,17 @@ export async function getGmailOauthConnectionForUser(userId: string) {
     .limit(1)
 
   return connection ?? null
+}
+
+export async function getLatestGoogleAccountForUser(userId: string) {
+  const [account] = await db
+    .select()
+    .from(accounts)
+    .where(and(eq(accounts.userId, userId), eq(accounts.providerId, "google")))
+    .orderBy(desc(accounts.updatedAt))
+    .limit(1)
+
+  return account ?? null
 }
 
 export async function listActiveGmailOauthConnections() {
