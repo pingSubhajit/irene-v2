@@ -18,6 +18,10 @@ import {
 } from "@workspace/ui/components/avatar"
 
 import { formatInUserTimeZone } from "../lib/date-format"
+import {
+  appendGlobalTimeframeToHref,
+  type GlobalTimeframe,
+} from "../lib/global-timeframe"
 import { CategoryBadge } from "./category-badge"
 
 type TransactionCardProps = {
@@ -38,6 +42,7 @@ type TransactionCardProps = {
   paymentInstrument: string | null
   traceCount?: number
   timeZone?: string
+  timeframe?: GlobalTimeframe
 }
 
 function getInitials(name: string) {
@@ -99,9 +104,20 @@ export function TransactionCard({
   needsReview,
   traceCount = 0,
   timeZone,
+  timeframe,
 }: TransactionCardProps) {
-  const merchantHref = merchantId ? `/activity/merchants/${merchantId}` : null
-  const categoryHref = categoryId ? `/activity/categories/${categoryId}` : null
+  const merchantHref = merchantId
+    ? appendGlobalTimeframeToHref(
+        `/activity/merchants/${merchantId}`,
+        timeframe ?? "this_month"
+      )
+    : null
+  const categoryHref = categoryId
+    ? appendGlobalTimeframeToHref(
+        `/activity/categories/${categoryId}`,
+        timeframe ?? "this_month"
+      )
+    : null
 
   const avatar = (
     <Avatar className="size-10 shrink-0 rounded-full bg-white/[0.07]">
@@ -121,7 +137,7 @@ export function TransactionCard({
         <Link
           href={`/activity/${eventId}/trace`}
           aria-label={`Open ${merchant} transaction`}
-          className="absolute inset-0 z-0 block rounded-[1.25rem] transition hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/16"
+          className="absolute inset-0 z-0 block rounded-[1.25rem] transition hover:bg-white/[0.02] focus-visible:ring-1 focus-visible:ring-white/16 focus-visible:outline-none"
         />
       ) : null}
 

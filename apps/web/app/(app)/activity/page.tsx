@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { cookies } from "next/headers"
 import {
   getUserSettings,
   listActivityMerchantsForUser,
@@ -23,6 +24,11 @@ import {
   getUtcEndOfUserDay,
   getUtcStartOfUserDay,
 } from "@/lib/date-format"
+import {
+  GLOBAL_TIMEFRAME_COOKIE_NAME,
+  GLOBAL_TIMEFRAME_QUERY_PARAM,
+  resolveGlobalTimeframe,
+} from "@/lib/global-timeframe"
 import { createPrivateMetadata } from "@/lib/metadata"
 import {
   PWA_SNAPSHOT_VERSION,
@@ -63,13 +69,31 @@ function resolveSort(value: string | undefined) {
 
 function resolveDatePreset(value: string | undefined) {
   switch (value) {
+    case "this_week":
     case "today":
     case "last_7_days":
     case "this_month":
+    case "last_3_months":
+    case "this_year":
     case "last_month":
       return value
     default:
       return undefined
+  }
+}
+
+function mapGlobalTimeframeToActivityDatePreset(
+  timeframe: ReturnType<typeof resolveGlobalTimeframe>
+) {
+  switch (timeframe) {
+    case "this_week":
+      return "this_week" as const
+    case "this_month":
+      return "this_month" as const
+    case "last_three_months":
+      return "last_3_months" as const
+    case "this_year":
+      return "this_year" as const
   }
 }
 
@@ -146,6 +170,7 @@ function formatScheduleDate(date: Date | null, timeZone: string) {
 export default async function ActivityPage({
   searchParams,
 }: ActivityPageProps) {
+  const cookieStore = await cookies()
   const session = await requireSession()
   const params = (await searchParams) ?? {}
   const query = asSingleValue(params.query)?.trim() || undefined
@@ -175,13 +200,21 @@ export default async function ActivityPage({
     getUserSettings(session.user.id),
     listCategoriesForUser(session.user.id),
   ])
+  const timeframe = resolveGlobalTimeframe(
+    asSingleValue(params[GLOBAL_TIMEFRAME_QUERY_PARAM]) ??
+      cookieStore.get(GLOBAL_TIMEFRAME_COOKIE_NAME)?.value
+  )
+  const hasCustomDateRange = Boolean(customDateFrom || customDateTo)
+  const effectiveDatePreset = hasCustomDateRange
+    ? undefined
+    : (datePreset ?? mapGlobalTimeframeToActivityDatePreset(timeframe))
 
   const selectedCategoryIds = categories
     .filter((entry) => selectedCategorySlugs.includes(entry.slug))
     .map((entry) => entry.id)
 
-  const presetRange = datePreset
-    ? getDateRangeForPreset(datePreset, settings.timeZone)
+  const presetRange = effectiveDatePreset
+    ? getDateRangeForPreset(effectiveDatePreset, settings.timeZone)
     : { dateFrom: null, dateTo: null }
   const dateFrom =
     presetRange.dateFrom ??
@@ -429,17 +462,17 @@ export default async function ActivityPage({
   return (
     <section className="mx-auto max-w-lg">
       <PwaSnapshotHydrator snapshot={pwaSnapshot} />
-      {/* Header */}
       <h1 className="py-6 text-[1.65rem] font-semibold tracking-tight text-white">
         activity
       </h1>
 
       <ActivityToolbar
+        timeframe={timeframe}
         query={query}
         view={view}
         sort={sort}
         reportingCurrency={settings.reportingCurrency}
-        datePreset={datePreset}
+        datePreset={effectiveDatePreset}
         dateFrom={customDateFrom}
         dateTo={customDateTo}
         categories={categories.map((entry) => ({
@@ -575,6 +608,7 @@ export default async function ActivityPage({
                       paymentInstrument={paymentInstrument?.displayName ?? null}
                       traceCount={(sourcesByEventId.get(event.id) ?? []).length}
                       timeZone={settings.timeZone}
+                      timeframe={timeframe}
                     />
                   )
                 )}

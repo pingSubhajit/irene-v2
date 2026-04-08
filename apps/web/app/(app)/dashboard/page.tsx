@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { cookies } from "next/headers"
 import {
   countOpenReviewQueueItemsForUser,
   countRecurringObligationsByType,
@@ -18,7 +19,7 @@ import {
 import { ActionTile } from "@/components/action-tile"
 import { AdviceHomeCarousel } from "@/components/advice-rail"
 import { AppEmptyState } from "@/components/app-empty-state"
-import { DashboardTimeframeSelect } from "@/components/dashboard-timeframe-select"
+import { GlobalTimeframeSelect } from "@/components/global-timeframe-select"
 import { HeroBalanceCard } from "@/components/hero-balance-card"
 import { HomeCategoryStrip } from "@/components/home-category-strip"
 import { PwaSnapshotHydrator } from "@/components/pwa-snapshot-hydrator"
@@ -28,12 +29,21 @@ import { summarizeCategoryActivity } from "@/lib/category-summary"
 import {
   formatInUserTimeZone,
   getUserTimeZoneDateParts,
-  getUtcEndOfUserDay,
   getUtcStartOfUserDay,
 } from "@/lib/date-format"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
 import { isAdviceEnabled } from "@/lib/feature-flags"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
+import {
+  appendGlobalTimeframeToHref,
+  buildGlobalTimeframeRange,
+  formatGlobalTimeframeCaption,
+  GLOBAL_TIMEFRAME_COOKIE_NAME,
+  GLOBAL_TIMEFRAME_QUERY_PARAM,
+  mapLegacyDashboardRangeToGlobalTimeframe,
+  resolveGlobalTimeframe,
+  type GlobalTimeframe,
+} from "@/lib/global-timeframe"
 import { createPrivateMetadata } from "@/lib/metadata"
 import {
   PWA_SNAPSHOT_VERSION,
@@ -49,7 +59,6 @@ export const metadata: Metadata = createPrivateMetadata({
   description: "Your Irene money overview.",
 })
 
-type DashboardTimeframe = "week" | "month" | "year"
 type DashboardPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
@@ -59,16 +68,6 @@ type DashboardLedgerEvent = Awaited<
 
 function asSingleValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value
-}
-
-function resolveTimeframe(value: string | undefined): DashboardTimeframe {
-  switch (value) {
-    case "week":
-    case "year":
-      return value
-    default:
-      return "month"
-  }
 }
 
 function formatCurrency(amountMinor: number, currency = "INR") {
@@ -85,14 +84,6 @@ function formatCurrency(amountMinor: number, currency = "INR") {
   }
 }
 
-function requireDate(value: Date | null, label: string) {
-  if (!value) {
-    throw new Error(`Missing dashboard date for ${label}`)
-  }
-
-  return value
-}
-
 function shiftLocalDate(localDate: string, offsetDays: number) {
   const [year = 0, month = 1, day = 1] = localDate.split("-").map(Number)
   const value = new Date(Date.UTC(year, month - 1, day))
@@ -103,93 +94,8 @@ function shiftLocalDate(localDate: string, offsetDays: number) {
   ).padStart(2, "0")}`
 }
 
-function buildSnapshotRange(
-  timeframe: DashboardTimeframe,
-  timeZone: string,
-  now = new Date()
-) {
-  const todayParts = getUserTimeZoneDateParts(now, timeZone)
-  const localDateTo = `${todayParts.year}-${todayParts.month}-${todayParts.day}`
-  const dateTo = requireDate(
-    getUtcEndOfUserDay(localDateTo, timeZone),
-    "snapshot dateTo"
-  )
-
-  if (timeframe === "year") {
-    const localDateFrom = `${todayParts.year}-01-01`
-
-    return {
-      label: "This year",
-      pageHeading: "this year.",
-      localDateFrom,
-      localDateTo,
-      dateFrom: requireDate(
-        getUtcStartOfUserDay(localDateFrom, timeZone),
-        "snapshot year dateFrom"
-      ),
-      dateTo,
-    }
-  }
-
-  if (timeframe === "week") {
-    const weekday = new Date(
-      Date.UTC(
-        Number(todayParts.year),
-        Number(todayParts.month) - 1,
-        Number(todayParts.day)
-      )
-    ).getUTCDay()
-    const daysSinceMonday = (weekday + 6) % 7
-    const localDateFrom = shiftLocalDate(localDateTo, -daysSinceMonday)
-
-    return {
-      label: "This week",
-      pageHeading: "this week.",
-      localDateFrom,
-      localDateTo,
-      dateFrom: requireDate(
-        getUtcStartOfUserDay(localDateFrom, timeZone),
-        "snapshot week dateFrom"
-      ),
-      dateTo,
-    }
-  }
-
-  const localDateFrom = `${todayParts.year}-${todayParts.month}-01`
-
-  return {
-    label: "This month",
-    pageHeading: "this month.",
-    localDateFrom,
-    localDateTo,
-    dateFrom: requireDate(
-      getUtcStartOfUserDay(localDateFrom, timeZone),
-      "snapshot month dateFrom"
-    ),
-    dateTo,
-  }
-}
-
-function buildRangeCaption(input: {
-  label: string
-  dateFrom: Date
-  dateTo: Date
-  timeZone: string
-}) {
-  const fromLabel = formatInUserTimeZone(input.dateFrom, input.timeZone, {
-    month: "short",
-    day: "numeric",
-  })
-  const toLabel = formatInUserTimeZone(input.dateTo, input.timeZone, {
-    month: "short",
-    day: "numeric",
-  })
-
-  return `${input.label} · ${fromLabel} to ${toLabel}`
-}
-
 function buildSpendSeries(input: {
-  timeframe: DashboardTimeframe
+  timeframe: GlobalTimeframe
   rows: DashboardLedgerEvent[]
   timeZone: string
   localDateFrom: string
@@ -214,7 +120,7 @@ function buildSpendSeries(input: {
       input.timeZone
     )
     const key =
-      input.timeframe === "year"
+      input.timeframe === "this_year" || input.timeframe === "last_three_months"
         ? `${parts.year}-${parts.month}`
         : `${parts.year}-${parts.month}-${parts.day}`
     const bucket = spendByKey.get(key) ?? {
@@ -227,21 +133,29 @@ function buildSpendSeries(input: {
     spendByKey.set(key, bucket)
   }
 
-  if (input.timeframe === "year") {
-    const currentYear = Number(input.localDateTo.slice(0, 4))
-    const currentMonth = Number(input.localDateTo.slice(5, 7))
+  if (
+    input.timeframe === "this_year" ||
+    input.timeframe === "last_three_months"
+  ) {
+    const startYear = Number(input.localDateFrom.slice(0, 4))
+    const startMonth = Number(input.localDateFrom.slice(5, 7))
+    const endYear = Number(input.localDateTo.slice(0, 4))
+    const endMonth = Number(input.localDateTo.slice(5, 7))
+    const monthCount = (endYear - startYear) * 12 + (endMonth - startMonth) + 1
 
-    return Array.from({ length: currentMonth }, (_, index) => {
-      const month = index + 1
-      const key = `${currentYear}-${String(month).padStart(2, "0")}`
-      const bucket = spendByKey.get(key)
+    return Array.from({ length: monthCount }, (_, index) => {
+      const monthDate = new Date(
+        Date.UTC(startYear, startMonth - 1 + index, 15)
+      )
+      const monthKey = `${monthDate.getUTCFullYear()}-${String(
+        monthDate.getUTCMonth() + 1
+      ).padStart(2, "0")}`
+      const bucket = spendByKey.get(monthKey)
 
       return {
-        label: formatInUserTimeZone(
-          new Date(Date.UTC(currentYear, index, 15)),
-          input.timeZone,
-          { month: "short" }
-        ),
+        label: formatInUserTimeZone(monthDate, input.timeZone, {
+          month: "short",
+        }),
         amount: (bucket?.amountMinor ?? 0) / 100,
         originalCurrencies: Array.from(bucket?.originalCurrencies ?? []),
       }
@@ -260,15 +174,12 @@ function buildSpendSeries(input: {
     localDate = shiftLocalDate(localDate, 1)
   ) {
     const bucket = spendByKey.get(localDate)
-    const bucketDate = requireDate(
-      getUtcStartOfUserDay(localDate, input.timeZone),
-      "spend series date"
-    )
+    const bucketDate = getUtcStartOfUserDay(localDate, input.timeZone)
 
     points.push({
       label:
-        input.timeframe === "week"
-          ? formatInUserTimeZone(bucketDate, input.timeZone, {
+        input.timeframe === "this_week"
+          ? formatInUserTimeZone(bucketDate ?? new Date(), input.timeZone, {
               weekday: "short",
             })
           : String(Number(localDate.slice(8, 10))),
@@ -284,17 +195,22 @@ export default async function DashboardPage({
   searchParams,
 }: DashboardPageProps) {
   const params = searchParams ? await searchParams : undefined
+  const cookieStore = await cookies()
   const session = await requireSession()
   const settings = await getUserSettings(session.user.id)
   const adviceEnabled = isAdviceEnabled()
-  const timeframe = resolveTimeframe(asSingleValue(params?.range))
-  const snapshotRange = buildSnapshotRange(timeframe, settings.timeZone)
+  const timeframe = resolveGlobalTimeframe(
+    asSingleValue(params?.[GLOBAL_TIMEFRAME_QUERY_PARAM]) ??
+      mapLegacyDashboardRangeToGlobalTimeframe(asSingleValue(params?.range)) ??
+      cookieStore.get(GLOBAL_TIMEFRAME_COOKIE_NAME)?.value
+  )
+  const snapshotRange = buildGlobalTimeframeRange(timeframe, settings.timeZone)
   const valuationCoverage = await ensureUserFinancialEventValuationCoverage(
     session.user.id,
     {
       dateFrom: snapshotRange.dateFrom,
       dateTo: snapshotRange.dateTo,
-      limit: timeframe === "year" ? 5000 : 1000,
+      limit: timeframe === "this_year" ? 5000 : 1000,
     }
   )
   const reportingCurrency = valuationCoverage.reportingCurrency
@@ -501,13 +417,13 @@ export default async function DashboardPage({
           label="Primary snapshot"
           headline="total spend"
           amount={formatCurrency(spendMinor, reportingCurrency)}
-          amountCaption={buildRangeCaption({
+          amountCaption={formatGlobalTimeframeCaption({
             label: snapshotRange.label,
             dateFrom: snapshotRange.dateFrom,
             dateTo: snapshotRange.dateTo,
             timeZone: settings.timeZone,
           })}
-          headerAccessory={<DashboardTimeframeSelect value={timeframe} />}
+          headerAccessory={<GlobalTimeframeSelect value={timeframe} />}
           income={formatCurrency(incomeMinor, reportingCurrency)}
           netFlow={formatCurrency(netFlowMinor, reportingCurrency)}
           netFlowDirection={
@@ -583,6 +499,7 @@ export default async function DashboardPage({
             formatAmount={(amountMinor) =>
               formatCurrency(amountMinor, reportingCurrency)
             }
+            timeframe={timeframe}
           />
         ) : null}
 
@@ -612,7 +529,7 @@ export default async function DashboardPage({
             <span>({recentEvents.length})</span>
           </div>
           <Link
-            href="/activity"
+            href={appendGlobalTimeframeToHref("/activity", timeframe)}
             className="text-sm text-white/52 transition hover:text-white"
           >
             view all
@@ -644,6 +561,7 @@ export default async function DashboardPage({
                   paymentInstrument={paymentInstrument?.displayName ?? null}
                   traceCount={(sourcesByEventId.get(event.id) ?? []).length}
                   timeZone={settings.timeZone}
+                  timeframe={timeframe}
                 />
               )
             )

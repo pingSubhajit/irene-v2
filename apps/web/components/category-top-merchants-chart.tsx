@@ -2,7 +2,11 @@
 
 import Link from "next/link"
 import { Pie, PieChart, Sector, Tooltip } from "recharts"
-import { Avatar, AvatarFallback, AvatarImage } from "@workspace/ui/components/avatar"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar"
 import type { CategoryColorToken } from "@workspace/config/category-presentation"
 
 import {
@@ -10,6 +14,11 @@ import {
   ChartContainer,
   ChartTooltipContent,
 } from "@workspace/ui/components/chart"
+
+import {
+  appendGlobalTimeframeToHref,
+  type GlobalTimeframe,
+} from "@/lib/global-timeframe"
 
 type MerchantSlice = {
   merchantId: string | null
@@ -61,7 +70,7 @@ function getInitials(name: string) {
 }
 
 function getCategorySliceColors(
-  colorToken: CategoryColorToken | null | undefined,
+  colorToken: CategoryColorToken | null | undefined
 ) {
   switch (colorToken) {
     case "yellow":
@@ -86,10 +95,12 @@ export function CategoryTopMerchantsChart({
   merchants,
   currency,
   colorToken,
+  timeframe,
 }: {
   merchants: MerchantSlice[]
   currency: string
   colorToken?: CategoryColorToken | null
+  timeframe: GlobalTimeframe
 }) {
   const leadMerchant = merchants[0] ?? null
   const sliceColors = getCategorySliceColors(colorToken)
@@ -126,7 +137,7 @@ export function CategoryTopMerchantsChart({
                         share: number
                       }
                       color?: string
-                    },
+                    }
                   ) => {
                     const point = item.payload
 
@@ -141,7 +152,9 @@ export function CategoryTopMerchantsChart({
                             className="size-2.5 rounded-full"
                             style={{ backgroundColor: item.color ?? "#fff" }}
                           />
-                          <span className="text-muted-foreground">{point.name}</span>
+                          <span className="text-muted-foreground">
+                            {point.name}
+                          </span>
                           <span className="ml-auto font-medium text-foreground">
                             {formatCurrency(point.spendMinor, currency)}
                           </span>
@@ -194,7 +207,9 @@ export function CategoryTopMerchantsChart({
               fill="#ffffff"
               className="font-sans text-[18px] font-semibold"
             >
-              {leadMerchant ? formatCurrency(leadMerchant.spendMinor, currency) : formatCurrency(0, currency)}
+              {leadMerchant
+                ? formatCurrency(leadMerchant.spendMinor, currency)
+                : formatCurrency(0, currency)}
             </text>
             <text
               x="50%"
@@ -202,9 +217,11 @@ export function CategoryTopMerchantsChart({
               textAnchor="middle"
               dominantBaseline="middle"
               fill={sliceColors[0]}
-              className="font-sans text-[10px] font-semibold uppercase tracking-[0.18em]"
+              className="font-sans text-[10px] font-semibold tracking-[0.18em] uppercase"
             >
-              {leadMerchant ? leadMerchant.merchantName.slice(0, 18).toUpperCase() : "NO MERCHANT"}
+              {leadMerchant
+                ? leadMerchant.merchantName.slice(0, 18).toUpperCase()
+                : "NO MERCHANT"}
             </text>
           </PieChart>
         </ChartContainer>
@@ -216,16 +233,26 @@ export function CategoryTopMerchantsChart({
             key={`${merchant.merchantId ?? merchant.merchantName}-${index}`}
             href={
               merchant.merchantId
-                ? `/activity/merchants/${merchant.merchantId}`
+                ? appendGlobalTimeframeToHref(
+                    `/activity/merchants/${merchant.merchantId}`,
+                    timeframe
+                  )
                 : "#"
             }
-            className={merchant.merchantId ? "block transition hover:bg-white/[0.02]" : "pointer-events-none block"}
+            className={
+              merchant.merchantId
+                ? "block transition hover:bg-white/[0.02]"
+                : "pointer-events-none block"
+            }
           >
             <div className="flex items-center justify-between gap-4 py-4">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <Avatar className="size-9 shrink-0 rounded-full bg-white/[0.05]">
                   {merchant.merchantLogoUrl ? (
-                    <AvatarImage src={merchant.merchantLogoUrl} alt={merchant.merchantName} />
+                    <AvatarImage
+                      src={merchant.merchantLogoUrl}
+                      alt={merchant.merchantName}
+                    />
                   ) : (
                     <AvatarFallback className="bg-white/[0.05] text-[0.68rem] font-semibold tracking-wide text-white/48">
                       {getInitials(merchant.merchantName)}
@@ -243,8 +270,10 @@ export function CategoryTopMerchantsChart({
                   </p>
                   <p className="mt-1 text-sm text-white/38">
                     {merchant.transactionCount}{" "}
-                    {merchant.transactionCount === 1 ? "transaction" : "transactions"} ·{" "}
-                    {formatPercent(merchant.shareOfCategorySpend)}
+                    {merchant.transactionCount === 1
+                      ? "transaction"
+                      : "transactions"}{" "}
+                    · {formatPercent(merchant.shareOfCategorySpend)}
                   </p>
                 </div>
               </div>

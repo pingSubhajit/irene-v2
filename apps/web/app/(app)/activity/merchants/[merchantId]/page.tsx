@@ -1,14 +1,27 @@
 import type { Metadata } from "next"
+import { cookies } from "next/headers"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { RiArrowLeftLine } from "@remixicon/react"
 import { getMerchantDetailForUser, getUserSettings } from "@workspace/db"
-import { Avatar, AvatarFallback, AvatarImage } from "@workspace/ui/components/avatar"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar"
 
 import { AppEmptyState } from "@/components/app-empty-state"
+import { GlobalTimeframeSelect } from "@/components/global-timeframe-select"
 import { MerchantTopCategoriesChart } from "@/components/merchant-top-categories-chart"
 import { TransactionCard } from "@/components/transaction-card"
 import { ensureUserFinancialEventValuationCoverage } from "@/lib/fx-valuation"
+import {
+  appendGlobalTimeframeToHref,
+  buildGlobalTimeframeRange,
+  GLOBAL_TIMEFRAME_COOKIE_NAME,
+  GLOBAL_TIMEFRAME_QUERY_PARAM,
+  resolveGlobalTimeframe,
+} from "@/lib/global-timeframe"
 import { createPrivateMetadata } from "@/lib/metadata"
 import { getServerSession, requireSession } from "@/lib/session"
 
@@ -60,10 +73,6 @@ type MerchantAccent = {
   amount: string
 }
 
-function asSingleValue(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value
-}
-
 function formatCurrency(amountMinor: number, currency = "INR") {
   const amount = amountMinor / 100
 
@@ -78,33 +87,10 @@ function formatCurrency(amountMinor: number, currency = "INR") {
   }
 }
 
-function formatMonthLabel(monthKey: string) {
-  const match = monthKey.match(/^(\d{4})-(\d{2})$/)
-
-  if (!match) {
-    return monthKey
-  }
-
-  const year = match[1]!
-  const month = match[2]!
-  const date = new Date(Date.UTC(Number(year), Number(month) - 1, 1))
-  const monthLabel = date.toLocaleDateString("en-IN", { month: "short" }).toUpperCase()
-  return `${monthLabel} '${year.slice(-2)}`
-}
-
 function formatPercent(value: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "percent",
     maximumFractionDigits: 0,
-  }).format(value)
-}
-
-function formatLocalDateInput(value: Date, timeZone: string) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
   }).format(value)
 }
 
@@ -130,7 +116,10 @@ function hashString(input: string) {
   return hash
 }
 
-function getMerchantAccent(displayName: string, logoUrl?: string | null): MerchantAccent {
+function getMerchantAccent(
+  displayName: string,
+  logoUrl?: string | null
+): MerchantAccent {
   const subject = `${displayName} ${logoUrl ?? ""}`.toLowerCase()
   const palettes = [
     {
@@ -181,7 +170,11 @@ function getMerchantAccent(displayName: string, logoUrl?: string | null): Mercha
     return palettes[2]!
   }
 
-  if (subject.includes("macpaw") || subject.includes("figma") || subject.includes("adobe")) {
+  if (
+    subject.includes("macpaw") ||
+    subject.includes("figma") ||
+    subject.includes("adobe")
+  ) {
     return palettes[3]!
   }
 
@@ -192,15 +185,38 @@ function getMerchantAccent(displayName: string, logoUrl?: string | null): Mercha
   return palettes[hashString(displayName) % palettes.length] ?? palettes[0]!
 }
 
+function mapTimeframeToRangePreset(
+  timeframe: ReturnType<typeof resolveGlobalTimeframe>
+) {
+  switch (timeframe) {
+    case "this_week":
+      return "this_week" as const
+    case "this_month":
+      return "this_month" as const
+    case "last_three_months":
+      return "last_three_months" as const
+    case "this_year":
+      return "this_year" as const
+  }
+}
+
 export default async function MerchantDetailPage({
   params,
   searchParams,
 }: MerchantDetailPageProps) {
+  const cookieStore = await cookies()
   const session = await requireSession()
   const { merchantId } = await params
   const query = (await searchParams) ?? {}
 
   const settings = await getUserSettings(session.user.id)
+  const timeframe = resolveGlobalTimeframe(
+    (Array.isArray(query[GLOBAL_TIMEFRAME_QUERY_PARAM])
+      ? query[GLOBAL_TIMEFRAME_QUERY_PARAM]?.[0]
+      : query[GLOBAL_TIMEFRAME_QUERY_PARAM]) ??
+      cookieStore.get(GLOBAL_TIMEFRAME_COOKIE_NAME)?.value
+  )
+  const timeframeRange = buildGlobalTimeframeRange(timeframe, settings.timeZone)
 
   await ensureUserFinancialEventValuationCoverage(session.user.id, {
     dateFrom: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000),
@@ -212,70 +228,50 @@ export default async function MerchantDetailPage({
     merchantId,
     reportingCurrency: settings.reportingCurrency,
     timeZone: settings.timeZone,
-    monthKey: asSingleValue(query.month) ?? null,
-    week: (() => {
-      const value = Number(asSingleValue(query.week))
-      return value >= 1 && value <= 4 ? value : null
-    })(),
+    dateFrom: timeframeRange.dateFrom,
+    dateTo: timeframeRange.dateTo,
+    rangePreset: mapTimeframeToRangePreset(timeframe),
   })
 
   if (!detail) {
     notFound()
   }
 
-  const accent = getMerchantAccent(detail.merchant.displayName, detail.merchant.logoUrl)
-  const periodLabel =
-    detail.mode === "month"
-      ? formatMonthLabel(detail.selectedMonthKey ?? "")
-      : `${formatMonthLabel(detail.selectedMonthKey ?? "")} · W${detail.selectedWeek ?? 1}`
-
-  const merchantActivityHref = (() => {
-    const search = new URLSearchParams()
-    search.append("merchant", detail.merchant.id)
-
-    if (detail.mode === "month") {
-      const bucket = detail.monthBuckets.find((row) => row.monthKey === detail.selectedMonthKey)
-      if (bucket) {
-        const [year, month] = bucket.monthKey.split("-")
-        const lastDay = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate()
-        search.set("dateFrom", `${bucket.monthKey}-01`)
-        search.set("dateTo", `${bucket.monthKey}-${String(lastDay).padStart(2, "0")}`)
-      }
-    } else {
-      const bucket = detail.weekBuckets.find((row) => row.week === detail.selectedWeek)
-      if (bucket?.dateFrom && bucket.dateTo) {
-        search.set("dateFrom", formatLocalDateInput(bucket.dateFrom, settings.timeZone))
-        search.set("dateTo", formatLocalDateInput(bucket.dateTo, settings.timeZone))
-      }
-    }
-
-    return `/activity?${search.toString()}`
-  })()
+  const accent = getMerchantAccent(
+    detail.merchant.displayName,
+    detail.merchant.logoUrl
+  )
+  const periodLabel = timeframeRange.label
+  const merchantActivityHref = appendGlobalTimeframeToHref(
+    `/activity?merchant=${detail.merchant.id}`,
+    timeframe
+  )
 
   return (
     <div>
       <div
-        className="pointer-events-none absolute left-1/2 top-[-10rem] h-[30rem] w-[100vw] -translate-x-1/2 blur-3xl"
+        className="pointer-events-none absolute top-[-10rem] left-1/2 h-[30rem] w-[100vw] -translate-x-1/2 blur-3xl"
         style={{
           background: `radial-gradient(circle at 50% 0%, ${accent.glow}, transparent 72%)`,
         }}
       />
       <div
-        className="pointer-events-none absolute left-1/2 top-[-2rem] h-[24rem] w-[100vw] -translate-x-1/2 blur-[120px]"
+        className="pointer-events-none absolute top-[-2rem] left-1/2 h-[24rem] w-[100vw] -translate-x-1/2 blur-[120px]"
         style={{
           background: `radial-gradient(circle at 50% 0%, ${accent.soft}, transparent 74%)`,
         }}
       />
 
       <section className="relative mx-auto grid w-full max-w-4xl min-w-0 gap-8">
-        <div className="pt-2">
+        <div className="flex items-center justify-between gap-4 pt-2">
           <Link
-            href="/activity"
+            href={appendGlobalTimeframeToHref("/activity", timeframe)}
             className="inline-flex items-center gap-2 text-sm text-white/46 transition hover:text-white"
           >
             <RiArrowLeftLine className="size-4" />
             Back to activity
           </Link>
+          <GlobalTimeframeSelect value={timeframe} />
         </div>
 
         <div className="relative pb-8 text-center md:pb-12">
@@ -315,12 +311,15 @@ export default async function MerchantDetailPage({
                   textShadow: "0 0 18px rgba(255,255,255,0.02)",
                 }}
               >
-                {formatCurrency(detail.summary.totalOutflowMinor, settings.reportingCurrency)}
+                {formatCurrency(
+                  detail.summary.totalOutflowMinor,
+                  settings.reportingCurrency
+                )}
               </p>
 
               <div className="mx-auto grid w-full max-w-2xl grid-cols-3 divide-x divide-white/[0.08] border-y border-white/[0.06]">
                 <div className="px-3 py-3">
-                  <p className="text-[0.64rem] uppercase tracking-[0.18em] text-white/28">
+                  <p className="text-[0.64rem] tracking-[0.18em] text-white/28 uppercase">
                     Period
                   </p>
                   <p className="mt-2 text-sm font-medium text-white/82">
@@ -328,25 +327,27 @@ export default async function MerchantDetailPage({
                   </p>
                 </div>
                 <div className="px-3 py-3">
-                  <p className="text-[0.64rem] uppercase tracking-[0.18em] text-white/28">
+                  <p className="text-[0.64rem] tracking-[0.18em] text-white/28 uppercase">
                     Activity
                   </p>
                   <p className="mt-2 text-sm font-medium text-white/82">
                     {detail.summary.transactionCount}{" "}
-                    {detail.summary.transactionCount === 1 ? "transaction" : "transactions"}
+                    {detail.summary.transactionCount === 1
+                      ? "transaction"
+                      : "transactions"}
                   </p>
                   {detail.summary.averageTransactionMinor > 0 ? (
                     <p className="mt-1 text-xs text-white/42">
                       Avg{" "}
                       {formatCurrency(
                         detail.summary.averageTransactionMinor,
-                        settings.reportingCurrency,
+                        settings.reportingCurrency
                       )}
                     </p>
                   ) : null}
                 </div>
                 <div className="px-3 py-3">
-                  <p className="text-[0.64rem] uppercase tracking-[0.18em] text-white/28">
+                  <p className="text-[0.64rem] tracking-[0.18em] text-white/28 uppercase">
                     Top category
                   </p>
                   <p className="mt-2 text-sm font-medium text-white/82">
@@ -354,7 +355,8 @@ export default async function MerchantDetailPage({
                   </p>
                   {detail.summary.shareOfTotalOutflow > 0 ? (
                     <p className="mt-1 text-xs text-white/42">
-                      {formatPercent(detail.summary.shareOfTotalOutflow)} of outflow
+                      {formatPercent(detail.summary.shareOfTotalOutflow)} of
+                      outflow
                     </p>
                   ) : null}
                 </div>
@@ -364,9 +366,9 @@ export default async function MerchantDetailPage({
         </div>
 
         <div className="grid gap-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="text-[0.82rem] uppercase tracking-[0.18em] text-white/32">
-              {detail.mode === "month" ? "Current year" : "Current month"}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="text-[0.82rem] tracking-[0.18em] text-white/32 uppercase">
+              {timeframeRange.label}
             </div>
             <Link
               href={merchantActivityHref}
@@ -375,39 +377,46 @@ export default async function MerchantDetailPage({
               view all activity
             </Link>
           </div>
-
-          <div className="grid grid-cols-4 gap-4">
-            {(detail.mode === "month" ? detail.monthBuckets : detail.weekBuckets).map((bucket) => {
-              const isActive =
-                detail.mode === "month"
-                  ? "monthKey" in bucket && bucket.monthKey === detail.selectedMonthKey
-                  : "week" in bucket && bucket.week === detail.selectedWeek
-              const href =
-                detail.mode === "month"
-                  ? `/activity/merchants/${detail.merchant.id}?month=${"monthKey" in bucket ? bucket.monthKey : ""}`
-                  : `/activity/merchants/${detail.merchant.id}?week=${"week" in bucket ? bucket.week : ""}`
-
-              return (
-                <Link key={bucket.key} href={href} className="group">
+          {detail.rangeBuckets.length > 0 ? (
+            <div
+              className="grid gap-4"
+              style={{
+                gridTemplateColumns: `repeat(${detail.rangeBuckets.length}, minmax(0, 1fr))`,
+              }}
+            >
+              {detail.rangeBuckets.map((bucket) => (
+                <div key={bucket.key}>
                   <div className="relative h-2">
-                    <div className="absolute inset-x-0 top-0 h-px bg-white/16 transition group-hover:bg-white/34" />
+                    <div className="absolute inset-x-0 top-0 h-px bg-white/16" />
                     <div
-                      className="absolute inset-x-0 top-0 h-0.5 transition"
+                      className="absolute inset-x-0 top-0 h-0.5"
                       style={{
-                        backgroundColor: isActive ? accent.line : "transparent",
-                        boxShadow: isActive ? `0 0 18px ${accent.glow}` : "none",
+                        backgroundColor:
+                          bucket.transactionCount > 0
+                            ? accent.line
+                            : "rgba(255,255,255,0.1)",
+                        boxShadow:
+                          bucket.transactionCount > 0
+                            ? `0 0 18px ${accent.glow}`
+                            : "none",
                       }}
                     />
                   </div>
-                  <div className="mt-1 min-w-0 text-white/34 transition group-hover:text-white/60">
-                    <span className="block truncate text-[0.9rem] font-medium tracking-[-0.01em] text-white/54">
-                      {formatCurrency(bucket.totalMinor, settings.reportingCurrency)}
+                  <div className="mt-2 min-w-0">
+                    <span className="block truncate text-[0.62rem] tracking-[0.18em] text-white/32 uppercase">
+                      {bucket.label}
+                    </span>
+                    <span className="mt-1 block truncate text-[0.9rem] font-medium tracking-[-0.01em] text-white/54">
+                      {formatCurrency(
+                        bucket.totalMinor,
+                        settings.reportingCurrency
+                      )}
                     </span>
                   </div>
-                </Link>
-              )
-            })}
-          </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {detail.topCategories.length > 0 ? (
@@ -416,6 +425,7 @@ export default async function MerchantDetailPage({
               <MerchantTopCategoriesChart
                 categories={detail.topCategories}
                 currency={settings.reportingCurrency}
+                timeframe={timeframe}
               />
             </div>
           </section>
@@ -423,7 +433,7 @@ export default async function MerchantDetailPage({
 
         <section className="mt-10 grid gap-3">
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-[0.82rem] uppercase tracking-[0.18em] text-white/36">
+            <div className="flex items-center gap-2 text-[0.82rem] tracking-[0.18em] text-white/36 uppercase">
               <span>Recent transactions</span>
               <span>({detail.recentTransactions.length})</span>
             </div>
@@ -440,26 +450,37 @@ export default async function MerchantDetailPage({
               detail.recentTransactions.map((row) => (
                 <TransactionCard
                   key={row.event.id}
-                eventId={row.event.id}
-                merchant={row.merchant?.displayName ?? detail.merchant.displayName}
-                merchantLogoUrl={row.merchant?.logoUrl ?? detail.merchant.logoUrl ?? null}
-                merchantId={row.merchant?.id ?? row.event.merchantId ?? detail.merchant.id}
-                processor={row.paymentProcessor?.displayName ?? null}
-                amount={formatCurrency(
-                  row.reportingAmountMinor ?? row.event.amountMinor,
-                    row.reportingAmountMinor ? settings.reportingCurrency : row.event.currency,
-                )}
-                occurredAt={row.event.eventOccurredAt}
-                categoryName={row.category?.name ?? "Uncategorized"}
-                categoryId={row.category?.id ?? row.event.categoryId}
-                categoryIconName={row.category?.iconName}
-                categoryColorToken={row.category?.colorToken}
+                  eventId={row.event.id}
+                  merchant={
+                    row.merchant?.displayName ?? detail.merchant.displayName
+                  }
+                  merchantLogoUrl={
+                    row.merchant?.logoUrl ?? detail.merchant.logoUrl ?? null
+                  }
+                  merchantId={
+                    row.merchant?.id ??
+                    row.event.merchantId ??
+                    detail.merchant.id
+                  }
+                  processor={row.paymentProcessor?.displayName ?? null}
+                  amount={formatCurrency(
+                    row.reportingAmountMinor ?? row.event.amountMinor,
+                    row.reportingAmountMinor
+                      ? settings.reportingCurrency
+                      : row.event.currency
+                  )}
+                  occurredAt={row.event.eventOccurredAt}
+                  categoryName={row.category?.name ?? "Uncategorized"}
+                  categoryId={row.category?.id ?? row.event.categoryId}
+                  categoryIconName={row.category?.iconName}
+                  categoryColorToken={row.category?.colorToken}
                   direction={row.event.direction}
                   eventType={row.event.eventType}
                   needsReview={row.event.needsReview}
                   paymentInstrument={row.paymentInstrument?.displayName ?? null}
                   traceCount={1}
                   timeZone={settings.timeZone}
+                  timeframe={timeframe}
                 />
               ))
             ) : (

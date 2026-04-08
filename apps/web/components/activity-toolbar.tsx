@@ -43,9 +43,12 @@ const sortOptions = [
 ] as const
 
 const datePresetOptions = [
+  { value: "this_week", label: "This week" },
   { value: "today", label: "Today" },
   { value: "last_7_days", label: "Last 7 days" },
   { value: "this_month", label: "This month" },
+  { value: "last_3_months", label: "Last 3 months" },
+  { value: "this_year", label: "This year" },
   { value: "last_month", label: "Last month" },
 ] as const
 
@@ -78,6 +81,7 @@ type FilterPanel =
   | "sort"
 
 type ActivityToolbarProps = {
+  timeframe?: string
   query?: string
   view: string
   sort: string
@@ -202,7 +206,23 @@ function countAppliedFilterGroups(input: {
   return count
 }
 
+function mapDatePresetToGlobalTimeframe(preset: string | undefined) {
+  switch (preset) {
+    case "this_week":
+      return "this_week"
+    case "this_month":
+      return "this_month"
+    case "last_3_months":
+      return "last_three_months"
+    case "this_year":
+      return "this_year"
+    default:
+      return undefined
+  }
+}
+
 export function ActivityToolbar({
+  timeframe,
   query,
   view,
   sort,
@@ -277,6 +297,7 @@ export function ActivityToolbar({
         sort:
           sortOptions.find((option) => option.value === sort)?.value ??
           "recent",
+        timeframe,
         datePreset,
         dateFrom: dateFrom ?? "",
         dateTo: dateTo ?? "",
@@ -319,6 +340,7 @@ export function ActivityToolbar({
     selectedProcessors,
     selectedTypes,
     sort,
+    timeframe,
     view,
   ])
 
@@ -960,6 +982,7 @@ export function ActivityToolbar({
                     router.push(
                       buildHref({
                         pathname,
+                        timeframe,
                         query: searchValue,
                         feed: draftFeed,
                         direction: "all",
@@ -989,6 +1012,7 @@ export function ActivityToolbar({
                     router.push(
                       buildHref({
                         pathname,
+                        timeframe,
                         query: searchValue,
                         feed: draftFeed,
                         direction: draftDirection,
@@ -1022,6 +1046,7 @@ export function ActivityToolbar({
 
 function buildHref(input: {
   pathname: string
+  timeframe?: string
   query?: string
   feed: FeedValue
   direction: DirectionValue
@@ -1047,8 +1072,16 @@ function buildHref(input: {
         : input.direction
       : input.feed
   const canonicalView = input.feed === "all" || input.feed === "review"
+  const timeframeFromPreset = canonicalView
+    ? mapDatePresetToGlobalTimeframe(input.datePreset)
+    : undefined
 
   if (nextQuery) searchParams.set("query", nextQuery)
+  if (timeframeFromPreset) {
+    searchParams.set("timeframe", timeframeFromPreset)
+  } else if (input.timeframe && !input.dateFrom && !input.dateTo) {
+    searchParams.set("timeframe", input.timeframe)
+  }
   if (nextView !== "all") searchParams.set("view", nextView)
   if (canonicalView && input.sort !== "recent")
     searchParams.set("sort", input.sort)

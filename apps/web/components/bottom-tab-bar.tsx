@@ -1,10 +1,17 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 
 import { ArrowsLeftRight, Gear, House, Binoculars } from "@phosphor-icons/react"
 import { cn } from "@workspace/ui/lib/utils"
+
+import {
+  appendGlobalTimeframeToHref,
+  type GlobalTimeframe,
+  GLOBAL_TIMEFRAME_QUERY_PARAM,
+  resolveGlobalTimeframe,
+} from "@/lib/global-timeframe"
 
 const tabs = [
   { href: "/dashboard", label: "Home", icon: House },
@@ -15,10 +22,24 @@ const tabs = [
 
 export function BottomTabBar({
   reviewAttentionCount = 0,
+  fallbackTimeframe,
 }: {
   reviewAttentionCount?: number
+  fallbackTimeframe: GlobalTimeframe
 }) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const activeTimeframe = resolveGlobalTimeframe(
+    searchParams.get(GLOBAL_TIMEFRAME_QUERY_PARAM) ?? fallbackTimeframe
+  )
+
+  const buildTabHref = (href: string) => {
+    if (href !== "/dashboard" && href !== "/activity") {
+      return href
+    }
+
+    return appendGlobalTimeframeToHref(href, activeTimeframe)
+  }
 
   return (
     <nav className="border-t border-white/8 bg-[rgba(10,10,12,0.8)] pb-[max(0.25rem,env(safe-area-inset-bottom))] backdrop-blur-2xl">
@@ -33,7 +54,7 @@ export function BottomTabBar({
             return (
               <Link
                 key={tab.href}
-                href={tab.href}
+                href={buildTabHref(tab.href)}
                 className={cn(
                   "relative flex min-w-[56px] flex-1 items-center justify-center px-2 py-3 text-white/34 transition hover:text-white/68",
                   active && "text-white"

@@ -3,6 +3,7 @@ import { BottomTabBar } from "@/components/bottom-tab-bar"
 import { PwaStatusCard } from "@/components/pwa-status-card"
 import { PwaRuntime } from "@/components/pwa-runtime"
 import { ProfileAvatar } from "@/components/profile-avatar"
+import type { GlobalTimeframe } from "@/lib/global-timeframe"
 
 type AppShellProps = {
   user: {
@@ -13,6 +14,7 @@ type AppShellProps = {
   }
   reviewAttentionCount?: number
   backfillRunning?: boolean
+  globalTimeframe: GlobalTimeframe
   children: React.ReactNode
 }
 
@@ -24,6 +26,7 @@ export function AppShell({
   user,
   reviewAttentionCount = 0,
   backfillRunning = false,
+  globalTimeframe,
   children,
 }: AppShellProps) {
   const greetingName = getGreetingName(user.name)
@@ -58,7 +61,10 @@ export function AppShell({
         <div className="pointer-events-auto">
           <PwaStatusCard mode="footer" offlineOnly />
           <BackfillStatusBanner initialRunning={backfillRunning} />
-          <BottomTabBar reviewAttentionCount={reviewAttentionCount} />
+          <BottomTabBar
+            reviewAttentionCount={reviewAttentionCount}
+            fallbackTimeframe={globalTimeframe}
+          />
         </div>
       </div>
       <PwaRuntime

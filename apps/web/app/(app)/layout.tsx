@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import {
@@ -9,6 +10,10 @@ import {
 
 import { AppShell } from "@/components/app-shell"
 import { getGmailIntegrationState } from "@/lib/gmail-integration"
+import {
+  GLOBAL_TIMEFRAME_COOKIE_NAME,
+  resolveGlobalTimeframe,
+} from "@/lib/global-timeframe"
 import { authenticatedAppMetadata } from "@/lib/metadata"
 import { requireSession } from "@/lib/session"
 
@@ -20,6 +25,7 @@ export default async function AuthenticatedLayout({
   children: React.ReactNode
 }>) {
   const session = await requireSession()
+  const cookieStore = await cookies()
   const settings = await getUserSettings(session.user.id)
 
   if (!settings.onboardingCompletedAt) {
@@ -46,6 +52,9 @@ export default async function AuthenticatedLayout({
       }}
       reviewAttentionCount={reviewAttentionCount}
       backfillRunning={backfillRunning}
+      globalTimeframe={resolveGlobalTimeframe(
+        cookieStore.get(GLOBAL_TIMEFRAME_COOKIE_NAME)?.value
+      )}
     >
       {children}
     </AppShell>

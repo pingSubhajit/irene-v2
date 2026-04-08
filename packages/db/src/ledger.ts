@@ -162,7 +162,7 @@ function resolveUserTimeZone(timeZone: string | null | undefined) {
 
 function getUserTimeZoneDateParts(
   value: Date,
-  timeZone: string | null | undefined,
+  timeZone: string | null | undefined
 ) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: resolveUserTimeZone(timeZone),
@@ -183,7 +183,7 @@ function getUserTimeZoneDateParts(
 
 function getUserTimeZoneMonthKey(
   value: Date,
-  timeZone: string | null | undefined,
+  timeZone: string | null | undefined
 ) {
   const parts = getUserTimeZoneDateParts(value, timeZone)
   return `${parts.year}-${parts.month}`
@@ -191,14 +191,14 @@ function getUserTimeZoneMonthKey(
 
 function getUserTimeZoneDayOfMonth(
   value: Date,
-  timeZone: string | null | undefined,
+  timeZone: string | null | undefined
 ) {
   return Number(getUserTimeZoneDateParts(value, timeZone).day)
 }
 
 function getTimeZoneOffsetMilliseconds(
   value: Date,
-  timeZone: string | null | undefined,
+  timeZone: string | null | undefined
 ) {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: resolveUserTimeZone(timeZone),
@@ -218,7 +218,7 @@ function getTimeZoneOffsetMilliseconds(
     Number(byType.get("day") ?? "1"),
     Number(byType.get("hour") ?? "0"),
     Number(byType.get("minute") ?? "0"),
-    Number(byType.get("second") ?? "0"),
+    Number(byType.get("second") ?? "0")
   )
 
   return zonedTimestamp - value.getTime()
@@ -241,16 +241,19 @@ function getUtcDateForTimeZoneParts(input: {
     input.hour ?? 0,
     input.minute ?? 0,
     input.second ?? 0,
-    input.millisecond ?? 0,
+    input.millisecond ?? 0
   )
-  const offset = getTimeZoneOffsetMilliseconds(new Date(utcGuess), input.timeZone)
+  const offset = getTimeZoneOffsetMilliseconds(
+    new Date(utcGuess),
+    input.timeZone
+  )
 
   return new Date(utcGuess - offset)
 }
 
 function getUtcStartOfUserDay(
   localDate: string,
-  timeZone: string | null | undefined,
+  timeZone: string | null | undefined
 ) {
   const match = localDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
 
@@ -273,7 +276,7 @@ function getUtcStartOfUserDay(
 
 function getUtcEndOfUserDay(
   localDate: string,
-  timeZone: string | null | undefined,
+  timeZone: string | null | undefined
 ) {
   const match = localDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
 
@@ -308,7 +311,7 @@ function getComparableAmountExpression(reportingCurrency?: string) {
 
 function buildMonthDateRange(
   monthKey: string,
-  timeZone: string | null | undefined,
+  timeZone: string | null | undefined
 ) {
   const match = monthKey.match(/^(\d{4})-(\d{2})$/)
 
@@ -325,7 +328,7 @@ function buildMonthDateRange(
     dateFrom: getUtcStartOfUserDay(`${year}-${month}-01`, timeZone),
     dateTo: getUtcEndOfUserDay(
       `${year}-${month}-${String(lastDay).padStart(2, "0")}`,
-      timeZone,
+      timeZone
     ),
   }
 }
@@ -356,11 +359,11 @@ function buildWeekBucketsForMonth(input: {
     .map((range) => {
       const dateFrom = getUtcStartOfUserDay(
         `${year}-${month}-${String(range.startDay).padStart(2, "0")}`,
-        input.timeZone,
+        input.timeZone
       )
       const dateTo = getUtcEndOfUserDay(
         `${year}-${month}-${String(range.endDay).padStart(2, "0")}`,
-        input.timeZone,
+        input.timeZone
       )
 
       return {
@@ -373,6 +376,159 @@ function buildWeekBucketsForMonth(input: {
     })
 }
 
+type DetailRangePreset =
+  | "this_week"
+  | "this_month"
+  | "last_three_months"
+  | "this_year"
+
+type DetailRangeBucket = {
+  key: string
+  label: string
+  totalMinor: number
+  transactionCount: number
+}
+
+function getUserTimeZoneLocalDate(
+  value: Date,
+  timeZone: string | null | undefined
+) {
+  const parts = getUserTimeZoneDateParts(value, timeZone)
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
+function shiftLocalDate(localDate: string, offsetDays: number) {
+  const [year = 0, month = 1, day = 1] = localDate.split("-").map(Number)
+  const value = new Date(Date.UTC(year, month - 1, day))
+  value.setUTCDate(value.getUTCDate() + offsetDays)
+
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(value.getUTCDate()).padStart(2, "0")}`
+}
+
+function formatRangeMonthLabel(monthKey: string) {
+  const [year = "0000", month = "01"] = monthKey.split("-")
+  const value = new Date(Date.UTC(Number(year), Number(month) - 1, 15))
+  return value.toLocaleDateString("en-IN", { month: "short" }).toUpperCase()
+}
+
+function formatRangeDayLabel(localDate: string) {
+  const [year = 0, month = 1, day = 1] = localDate.split("-").map(Number)
+  const value = new Date(Date.UTC(year, month - 1, day))
+  return value.toLocaleDateString("en-IN", { weekday: "short" }).toUpperCase()
+}
+
+function buildRangeBucketsForPreset(input: {
+  rangePreset: DetailRangePreset
+  timeZone: string | null | undefined
+  periodDateFrom: Date
+  periodDateTo: Date
+  rows: Array<{
+    eventOccurredAt: Date
+    amountMinor: number | null
+  }>
+}) {
+  const periodRows = input.rows.filter(
+    (row) =>
+      row.eventOccurredAt >= input.periodDateFrom &&
+      row.eventOccurredAt <= input.periodDateTo
+  )
+
+  if (input.rangePreset === "this_week") {
+    const buckets: DetailRangeBucket[] = []
+
+    for (
+      let localDate = getUserTimeZoneLocalDate(
+        input.periodDateFrom,
+        input.timeZone
+      );
+      localDate <= getUserTimeZoneLocalDate(input.periodDateTo, input.timeZone);
+      localDate = shiftLocalDate(localDate, 1)
+    ) {
+      const rows = periodRows.filter(
+        (row) =>
+          getUserTimeZoneLocalDate(row.eventOccurredAt, input.timeZone) ===
+          localDate
+      )
+
+      buckets.push({
+        key: localDate,
+        label: formatRangeDayLabel(localDate),
+        totalMinor: rows.reduce((sum, row) => sum + (row.amountMinor ?? 0), 0),
+        transactionCount: rows.length,
+      })
+    }
+
+    return buckets
+  }
+
+  if (input.rangePreset === "this_month") {
+    const monthKey = getUserTimeZoneMonthKey(
+      input.periodDateFrom,
+      input.timeZone
+    )
+
+    return buildWeekBucketsForMonth({
+      monthKey,
+      timeZone: input.timeZone,
+    }).map((bucket) => {
+      const rows = periodRows.filter((row) => {
+        const day = getUserTimeZoneDayOfMonth(
+          row.eventOccurredAt,
+          input.timeZone
+        )
+
+        if (bucket.week === 1) return day >= 1 && day <= 7
+        if (bucket.week === 2) return day >= 8 && day <= 14
+        if (bucket.week === 3) return day >= 15 && day <= 21
+        return day >= 22
+      })
+
+      return {
+        key: bucket.key,
+        label: bucket.label,
+        totalMinor: rows.reduce((sum, row) => sum + (row.amountMinor ?? 0), 0),
+        transactionCount: rows.length,
+      }
+    })
+  }
+
+  const startParts = getUserTimeZoneDateParts(
+    input.periodDateFrom,
+    input.timeZone
+  )
+  const endParts = getUserTimeZoneDateParts(input.periodDateTo, input.timeZone)
+  const monthCount =
+    (Number(endParts.year) - Number(startParts.year)) * 12 +
+    (Number(endParts.month) - Number(startParts.month)) +
+    1
+
+  return Array.from({ length: monthCount }, (_, index) => {
+    const monthDate = new Date(
+      Date.UTC(
+        Number(startParts.year),
+        Number(startParts.month) - 1 + index,
+        15
+      )
+    )
+    const monthKey = getUserTimeZoneMonthKey(monthDate, input.timeZone)
+    const rows = periodRows.filter(
+      (row) =>
+        getUserTimeZoneMonthKey(row.eventOccurredAt, input.timeZone) ===
+        monthKey
+    )
+
+    return {
+      key: monthKey,
+      label: formatRangeMonthLabel(monthKey),
+      totalMinor: rows.reduce((sum, row) => sum + (row.amountMinor ?? 0), 0),
+      transactionCount: rows.length,
+    }
+  })
+}
+
 type CategoryDetailMerchantRow = {
   merchantId: string | null
   merchantName: string
@@ -382,18 +538,17 @@ type CategoryDetailMerchantRow = {
   shareOfCategorySpend: number
 }
 
-type CategoryDetailTransactionRow = Awaited<
-  ReturnType<typeof db.select>
-> extends never
-  ? never
-  : {
-      event: typeof financialEvents.$inferSelect
-      merchant: typeof merchants.$inferSelect | null
-      category: typeof categories.$inferSelect | null
-      paymentInstrument: typeof paymentInstruments.$inferSelect | null
-      paymentProcessor: typeof paymentProcessors.$inferSelect | null
-      reportingAmountMinor: number | null
-    }
+type CategoryDetailTransactionRow =
+  Awaited<ReturnType<typeof db.select>> extends never
+    ? never
+    : {
+        event: typeof financialEvents.$inferSelect
+        merchant: typeof merchants.$inferSelect | null
+        category: typeof categories.$inferSelect | null
+        paymentInstrument: typeof paymentInstruments.$inferSelect | null
+        paymentProcessor: typeof paymentProcessors.$inferSelect | null
+        reportingAmountMinor: number | null
+      }
 
 type MerchantDetailCategoryRow = {
   categoryId: string | null
@@ -413,6 +568,9 @@ export async function getCategoryDetailForUser(input: {
   categoryId: string
   reportingCurrency: string
   timeZone: string
+  dateFrom?: Date | null
+  dateTo?: Date | null
+  rangePreset?: DetailRangePreset
   monthKey?: string | null
   week?: number | null
   recentTransactionsLimit?: number
@@ -433,7 +591,7 @@ export async function getCategoryDetailForUser(input: {
   ]
 
   const comparableAmountExpression = getComparableAmountExpression(
-    input.reportingCurrency,
+    input.reportingCurrency
   )
 
   const monthBucketRows = await db
@@ -447,8 +605,8 @@ export async function getCategoryDetailForUser(input: {
       and(
         eq(financialEventValuations.financialEventId, financialEvents.id),
         eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-        isNull(financialEventValuations.supersededAt),
-      ),
+        isNull(financialEventValuations.supersededAt)
+      )
     )
     .where(and(...outflowBaseConditions))
     .orderBy(desc(financialEvents.eventOccurredAt))
@@ -463,7 +621,10 @@ export async function getCategoryDetailForUser(input: {
   >()
 
   for (const row of monthBucketRows) {
-    const monthKey = getUserTimeZoneMonthKey(row.eventOccurredAt, input.timeZone)
+    const monthKey = getUserTimeZoneMonthKey(
+      row.eventOccurredAt,
+      input.timeZone
+    )
     const existing = monthBucketMap.get(monthKey)
 
     if (existing) {
@@ -488,13 +649,15 @@ export async function getCategoryDetailForUser(input: {
       label: bucket.monthKey,
     }))
 
-  const mode = normalizedMonthBuckets.length >= 4 ? "month" : "week"
+  let mode: "month" | "week" | "range" =
+    normalizedMonthBuckets.length >= 4 ? "month" : "week"
   const currentMonthKey = getUserTimeZoneMonthKey(new Date(), input.timeZone)
 
   let selectedMonthKey: string | null = null
   let selectedWeek: 1 | 2 | 3 | 4 | null = null
   let periodDateFrom: Date | null = null
   let periodDateTo: Date | null = null
+  let rangeBuckets: DetailRangeBucket[] = []
   let weekBuckets: Array<{
     key: string
     week: 1 | 2 | 3 | 4
@@ -505,10 +668,23 @@ export async function getCategoryDetailForUser(input: {
     transactionCount: number
   }> = []
 
-  if (mode === "month") {
+  if (input.dateFrom && input.dateTo) {
+    mode = "range"
+    periodDateFrom = input.dateFrom
+    periodDateTo = input.dateTo
+    rangeBuckets = buildRangeBucketsForPreset({
+      rangePreset: input.rangePreset ?? "this_month",
+      timeZone: input.timeZone,
+      periodDateFrom: input.dateFrom,
+      periodDateTo: input.dateTo,
+      rows: monthBucketRows,
+    })
+  } else if (mode === "month") {
     selectedMonthKey =
       input.monthKey &&
-      normalizedMonthBuckets.some((bucket) => bucket.monthKey === input.monthKey)
+      normalizedMonthBuckets.some(
+        (bucket) => bucket.monthKey === input.monthKey
+      )
         ? input.monthKey
         : (normalizedMonthBuckets[0]?.monthKey ?? null)
 
@@ -520,37 +696,53 @@ export async function getCategoryDetailForUser(input: {
     periodDateTo = monthRange?.dateTo ?? null
   } else {
     selectedMonthKey = currentMonthKey
-    const currentMonthRange = buildMonthDateRange(currentMonthKey, input.timeZone)
-    const currentMonthOutflowRows = currentMonthRange?.dateFrom && currentMonthRange.dateTo
-      ? await db
-          .select({
-            eventOccurredAt: financialEvents.eventOccurredAt,
-            amountMinor: comparableAmountExpression.mapWith(Number),
-          })
-          .from(financialEvents)
-          .leftJoin(
-            financialEventValuations,
-            and(
-              eq(financialEventValuations.financialEventId, financialEvents.id),
-              eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-              isNull(financialEventValuations.supersededAt),
-            ),
-          )
-          .where(
-            and(
-              ...outflowBaseConditions,
-              gte(financialEvents.eventOccurredAt, currentMonthRange.dateFrom),
-              lte(financialEvents.eventOccurredAt, currentMonthRange.dateTo),
-            ),
-          )
-      : []
+    const currentMonthRange = buildMonthDateRange(
+      currentMonthKey,
+      input.timeZone
+    )
+    const currentMonthOutflowRows =
+      currentMonthRange?.dateFrom && currentMonthRange.dateTo
+        ? await db
+            .select({
+              eventOccurredAt: financialEvents.eventOccurredAt,
+              amountMinor: comparableAmountExpression.mapWith(Number),
+            })
+            .from(financialEvents)
+            .leftJoin(
+              financialEventValuations,
+              and(
+                eq(
+                  financialEventValuations.financialEventId,
+                  financialEvents.id
+                ),
+                eq(
+                  financialEventValuations.targetCurrency,
+                  input.reportingCurrency
+                ),
+                isNull(financialEventValuations.supersededAt)
+              )
+            )
+            .where(
+              and(
+                ...outflowBaseConditions,
+                gte(
+                  financialEvents.eventOccurredAt,
+                  currentMonthRange.dateFrom
+                ),
+                lte(financialEvents.eventOccurredAt, currentMonthRange.dateTo)
+              )
+            )
+        : []
 
     weekBuckets = buildWeekBucketsForMonth({
       monthKey: currentMonthKey,
       timeZone: input.timeZone,
     }).map((bucket) => {
       const rows = currentMonthOutflowRows.filter((row) => {
-        const day = getUserTimeZoneDayOfMonth(row.eventOccurredAt, input.timeZone)
+        const day = getUserTimeZoneDayOfMonth(
+          row.eventOccurredAt,
+          input.timeZone
+        )
 
         if (bucket.week === 1) return day >= 1 && day <= 7
         if (bucket.week === 2) return day >= 8 && day <= 14
@@ -577,7 +769,7 @@ export async function getCategoryDetailForUser(input: {
       return 4
     })()
     const currentWeekWithActivity = weekBuckets.find(
-      (bucket) => bucket.week === currentWeek && bucket.transactionCount > 0,
+      (bucket) => bucket.week === currentWeek && bucket.transactionCount > 0
     )
     const latestWeekWithActivity = [...weekBuckets]
       .reverse()
@@ -590,7 +782,8 @@ export async function getCategoryDetailForUser(input: {
       1
 
     selectedWeek = resolvedWeek as 1 | 2 | 3 | 4
-    const selectedBucket = weekBuckets.find((bucket) => bucket.week === resolvedWeek) ?? null
+    const selectedBucket =
+      weekBuckets.find((bucket) => bucket.week === resolvedWeek) ?? null
     periodDateFrom = selectedBucket?.dateFrom ?? null
     periodDateTo = selectedBucket?.dateTo ?? null
   }
@@ -603,6 +796,7 @@ export async function getCategoryDetailForUser(input: {
       selectedMonthKey,
       selectedWeek,
       weekBuckets,
+      rangeBuckets,
       summary: {
         totalOutflowMinor: 0,
         transactionCount: 0,
@@ -629,115 +823,132 @@ export async function getCategoryDetailForUser(input: {
     eq(financialEvents.isTransfer, false),
   ]
 
-  const [periodSummaryRow, overallPeriodOutflowRow, topMerchantRows, recentTransactions] =
-    await Promise.all([
-      db
-        .select({
-          totalOutflowMinor:
-            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
-          transactionCount: count(financialEvents.id).mapWith(Number),
-        })
-        .from(financialEvents)
-        .leftJoin(
-          financialEventValuations,
-          and(
-            eq(financialEventValuations.financialEventId, financialEvents.id),
-            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-            isNull(financialEventValuations.supersededAt),
+  const [
+    periodSummaryRow,
+    overallPeriodOutflowRow,
+    topMerchantRows,
+    recentTransactions,
+  ] = await Promise.all([
+    db
+      .select({
+        totalOutflowMinor:
+          sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(
+            Number
           ),
+        transactionCount: count(financialEvents.id).mapWith(Number),
+      })
+      .from(financialEvents)
+      .leftJoin(
+        financialEventValuations,
+        and(
+          eq(financialEventValuations.financialEventId, financialEvents.id),
+          eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+          isNull(financialEventValuations.supersededAt)
         )
-        .where(and(...outflowPeriodConditions))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      db
-        .select({
-          totalOutflowMinor:
-            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
-        })
-        .from(financialEvents)
-        .leftJoin(
-          financialEventValuations,
-          and(
-            eq(financialEventValuations.financialEventId, financialEvents.id),
-            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-            isNull(financialEventValuations.supersededAt),
+      )
+      .where(and(...outflowPeriodConditions))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({
+        totalOutflowMinor:
+          sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(
+            Number
           ),
+      })
+      .from(financialEvents)
+      .leftJoin(
+        financialEventValuations,
+        and(
+          eq(financialEventValuations.financialEventId, financialEvents.id),
+          eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+          isNull(financialEventValuations.supersededAt)
         )
-        .where(
-          and(
-            eq(financialEvents.userId, input.userId),
-            inArray(financialEvents.status, ["confirmed", "needs_review"]),
-            eq(financialEvents.direction, "outflow"),
-            eq(financialEvents.isTransfer, false),
-            gte(financialEvents.eventOccurredAt, periodDateFrom),
-            lte(financialEvents.eventOccurredAt, periodDateTo),
+      )
+      .where(
+        and(
+          eq(financialEvents.userId, input.userId),
+          inArray(financialEvents.status, ["confirmed", "needs_review"]),
+          eq(financialEvents.direction, "outflow"),
+          eq(financialEvents.isTransfer, false),
+          gte(financialEvents.eventOccurredAt, periodDateFrom),
+          lte(financialEvents.eventOccurredAt, periodDateTo)
+        )
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({
+        merchantId: financialEvents.merchantId,
+        merchantName: sql<string>`coalesce(${merchants.displayName}, 'Unmapped merchant')`,
+        merchantLogoUrl: merchants.logoUrl,
+        spendMinor:
+          sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(
+            Number
           ),
+        transactionCount: count(financialEvents.id).mapWith(Number),
+      })
+      .from(financialEvents)
+      .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
+      .leftJoin(
+        financialEventValuations,
+        and(
+          eq(financialEventValuations.financialEventId, financialEvents.id),
+          eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+          isNull(financialEventValuations.supersededAt)
         )
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      db
-        .select({
-          merchantId: financialEvents.merchantId,
-          merchantName:
-            sql<string>`coalesce(${merchants.displayName}, 'Unmapped merchant')`,
-          merchantLogoUrl: merchants.logoUrl,
-          spendMinor:
-            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
-          transactionCount: count(financialEvents.id).mapWith(Number),
-        })
-        .from(financialEvents)
-        .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
-        .leftJoin(
-          financialEventValuations,
-          and(
-            eq(financialEventValuations.financialEventId, financialEvents.id),
-            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-            isNull(financialEventValuations.supersededAt),
-          ),
+      )
+      .where(and(...outflowPeriodConditions))
+      .groupBy(
+        financialEvents.merchantId,
+        merchants.displayName,
+        merchants.logoUrl
+      )
+      .orderBy(
+        desc(sql`coalesce(sum(${comparableAmountExpression}), 0)`),
+        desc(count(financialEvents.id))
+      )
+      .limit(input.topMerchantsLimit ?? 5),
+    db
+      .select({
+        event: financialEvents,
+        merchant: merchants,
+        category: categories,
+        paymentInstrument: paymentInstruments,
+        paymentProcessor: paymentProcessors,
+        reportingAmountMinor: comparableAmountExpression.mapWith(Number),
+      })
+      .from(financialEvents)
+      .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
+      .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
+      .leftJoin(
+        paymentInstruments,
+        eq(financialEvents.paymentInstrumentId, paymentInstruments.id)
+      )
+      .leftJoin(
+        paymentProcessors,
+        eq(financialEvents.paymentProcessorId, paymentProcessors.id)
+      )
+      .leftJoin(
+        financialEventValuations,
+        and(
+          eq(financialEventValuations.financialEventId, financialEvents.id),
+          eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+          isNull(financialEventValuations.supersededAt)
         )
-        .where(and(...outflowPeriodConditions))
-        .groupBy(financialEvents.merchantId, merchants.displayName, merchants.logoUrl)
-        .orderBy(
-          desc(sql`coalesce(sum(${comparableAmountExpression}), 0)`),
-          desc(count(financialEvents.id)),
-        )
-        .limit(input.topMerchantsLimit ?? 5),
-      db
-        .select({
-          event: financialEvents,
-          merchant: merchants,
-          category: categories,
-          paymentInstrument: paymentInstruments,
-          paymentProcessor: paymentProcessors,
-          reportingAmountMinor: comparableAmountExpression.mapWith(Number),
-        })
-        .from(financialEvents)
-        .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
-        .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
-        .leftJoin(
-          paymentInstruments,
-          eq(financialEvents.paymentInstrumentId, paymentInstruments.id),
-        )
-        .leftJoin(
-          paymentProcessors,
-          eq(financialEvents.paymentProcessorId, paymentProcessors.id),
-        )
-        .leftJoin(
-          financialEventValuations,
-          and(
-            eq(financialEventValuations.financialEventId, financialEvents.id),
-            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-            isNull(financialEventValuations.supersededAt),
-          ),
-        )
-        .where(and(...periodConditions))
-        .orderBy(desc(financialEvents.eventOccurredAt), desc(financialEvents.createdAt))
-        .limit(input.recentTransactionsLimit ?? 10),
-    ])
+      )
+      .where(and(...periodConditions))
+      .orderBy(
+        desc(financialEvents.eventOccurredAt),
+        desc(financialEvents.createdAt)
+      )
+      .limit(input.recentTransactionsLimit ?? 10),
+  ])
 
   const totalOutflowMinor = periodSummaryRow?.totalOutflowMinor ?? 0
   const transactionCount = periodSummaryRow?.transactionCount ?? 0
-  const overallPeriodOutflowMinor = overallPeriodOutflowRow?.totalOutflowMinor ?? 0
+  const overallPeriodOutflowMinor =
+    overallPeriodOutflowRow?.totalOutflowMinor ?? 0
   const averageTransactionMinor =
     transactionCount > 0 ? Math.round(totalOutflowMinor / transactionCount) : 0
 
@@ -758,6 +969,7 @@ export async function getCategoryDetailForUser(input: {
     selectedMonthKey,
     selectedWeek,
     weekBuckets,
+    rangeBuckets,
     summary: {
       totalOutflowMinor,
       transactionCount,
@@ -778,6 +990,9 @@ export async function getMerchantDetailForUser(input: {
   merchantId: string
   reportingCurrency: string
   timeZone: string
+  dateFrom?: Date | null
+  dateTo?: Date | null
+  rangePreset?: DetailRangePreset
   monthKey?: string | null
   week?: number | null
   recentTransactionsLimit?: number
@@ -786,7 +1001,12 @@ export async function getMerchantDetailForUser(input: {
   const [merchant] = await db
     .select()
     .from(merchants)
-    .where(and(eq(merchants.userId, input.userId), eq(merchants.id, input.merchantId)))
+    .where(
+      and(
+        eq(merchants.userId, input.userId),
+        eq(merchants.id, input.merchantId)
+      )
+    )
     .limit(1)
 
   if (!merchant) {
@@ -802,7 +1022,7 @@ export async function getMerchantDetailForUser(input: {
   ]
 
   const comparableAmountExpression = getComparableAmountExpression(
-    input.reportingCurrency,
+    input.reportingCurrency
   )
 
   const monthBucketRows = await db
@@ -816,8 +1036,8 @@ export async function getMerchantDetailForUser(input: {
       and(
         eq(financialEventValuations.financialEventId, financialEvents.id),
         eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-        isNull(financialEventValuations.supersededAt),
-      ),
+        isNull(financialEventValuations.supersededAt)
+      )
     )
     .where(and(...outflowBaseConditions))
     .orderBy(desc(financialEvents.eventOccurredAt))
@@ -832,7 +1052,10 @@ export async function getMerchantDetailForUser(input: {
   >()
 
   for (const row of monthBucketRows) {
-    const monthKey = getUserTimeZoneMonthKey(row.eventOccurredAt, input.timeZone)
+    const monthKey = getUserTimeZoneMonthKey(
+      row.eventOccurredAt,
+      input.timeZone
+    )
     const existing = monthBucketMap.get(monthKey)
 
     if (existing) {
@@ -857,13 +1080,15 @@ export async function getMerchantDetailForUser(input: {
       label: bucket.monthKey,
     }))
 
-  const mode = normalizedMonthBuckets.length >= 4 ? "month" : "week"
+  let mode: "month" | "week" | "range" =
+    normalizedMonthBuckets.length >= 4 ? "month" : "week"
   const currentMonthKey = getUserTimeZoneMonthKey(new Date(), input.timeZone)
 
   let selectedMonthKey: string | null = null
   let selectedWeek: 1 | 2 | 3 | 4 | null = null
   let periodDateFrom: Date | null = null
   let periodDateTo: Date | null = null
+  let rangeBuckets: DetailRangeBucket[] = []
   let weekBuckets: Array<{
     key: string
     week: 1 | 2 | 3 | 4
@@ -874,10 +1099,23 @@ export async function getMerchantDetailForUser(input: {
     transactionCount: number
   }> = []
 
-  if (mode === "month") {
+  if (input.dateFrom && input.dateTo) {
+    mode = "range"
+    periodDateFrom = input.dateFrom
+    periodDateTo = input.dateTo
+    rangeBuckets = buildRangeBucketsForPreset({
+      rangePreset: input.rangePreset ?? "this_month",
+      timeZone: input.timeZone,
+      periodDateFrom: input.dateFrom,
+      periodDateTo: input.dateTo,
+      rows: monthBucketRows,
+    })
+  } else if (mode === "month") {
     selectedMonthKey =
       input.monthKey &&
-      normalizedMonthBuckets.some((bucket) => bucket.monthKey === input.monthKey)
+      normalizedMonthBuckets.some(
+        (bucket) => bucket.monthKey === input.monthKey
+      )
         ? input.monthKey
         : (normalizedMonthBuckets[0]?.monthKey ?? null)
 
@@ -889,7 +1127,10 @@ export async function getMerchantDetailForUser(input: {
     periodDateTo = monthRange?.dateTo ?? null
   } else {
     selectedMonthKey = currentMonthKey
-    const currentMonthRange = buildMonthDateRange(currentMonthKey, input.timeZone)
+    const currentMonthRange = buildMonthDateRange(
+      currentMonthKey,
+      input.timeZone
+    )
     const currentMonthOutflowRows =
       currentMonthRange?.dateFrom && currentMonthRange.dateTo
         ? await db
@@ -901,17 +1142,26 @@ export async function getMerchantDetailForUser(input: {
             .leftJoin(
               financialEventValuations,
               and(
-                eq(financialEventValuations.financialEventId, financialEvents.id),
-                eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-                isNull(financialEventValuations.supersededAt),
-              ),
+                eq(
+                  financialEventValuations.financialEventId,
+                  financialEvents.id
+                ),
+                eq(
+                  financialEventValuations.targetCurrency,
+                  input.reportingCurrency
+                ),
+                isNull(financialEventValuations.supersededAt)
+              )
             )
             .where(
               and(
                 ...outflowBaseConditions,
-                gte(financialEvents.eventOccurredAt, currentMonthRange.dateFrom),
-                lte(financialEvents.eventOccurredAt, currentMonthRange.dateTo),
-              ),
+                gte(
+                  financialEvents.eventOccurredAt,
+                  currentMonthRange.dateFrom
+                ),
+                lte(financialEvents.eventOccurredAt, currentMonthRange.dateTo)
+              )
             )
         : []
 
@@ -920,7 +1170,10 @@ export async function getMerchantDetailForUser(input: {
       timeZone: input.timeZone,
     }).map((bucket) => {
       const rows = currentMonthOutflowRows.filter((row) => {
-        const day = getUserTimeZoneDayOfMonth(row.eventOccurredAt, input.timeZone)
+        const day = getUserTimeZoneDayOfMonth(
+          row.eventOccurredAt,
+          input.timeZone
+        )
 
         if (bucket.week === 1) return day >= 1 && day <= 7
         if (bucket.week === 2) return day >= 8 && day <= 14
@@ -947,7 +1200,7 @@ export async function getMerchantDetailForUser(input: {
       return 4
     })()
     const currentWeekWithActivity = weekBuckets.find(
-      (bucket) => bucket.week === currentWeek && bucket.transactionCount > 0,
+      (bucket) => bucket.week === currentWeek && bucket.transactionCount > 0
     )
     const latestWeekWithActivity = [...weekBuckets]
       .reverse()
@@ -960,7 +1213,8 @@ export async function getMerchantDetailForUser(input: {
       1
 
     selectedWeek = resolvedWeek as 1 | 2 | 3 | 4
-    const selectedBucket = weekBuckets.find((bucket) => bucket.week === resolvedWeek) ?? null
+    const selectedBucket =
+      weekBuckets.find((bucket) => bucket.week === resolvedWeek) ?? null
     periodDateFrom = selectedBucket?.dateFrom ?? null
     periodDateTo = selectedBucket?.dateTo ?? null
   }
@@ -973,6 +1227,7 @@ export async function getMerchantDetailForUser(input: {
       selectedMonthKey,
       selectedWeek,
       weekBuckets,
+      rangeBuckets,
       summary: {
         totalOutflowMinor: 0,
         transactionCount: 0,
@@ -1000,123 +1255,136 @@ export async function getMerchantDetailForUser(input: {
     eq(financialEvents.isTransfer, false),
   ]
 
-  const [periodSummaryRow, overallPeriodOutflowRow, topCategoryRows, recentTransactions] =
-    await Promise.all([
-      db
-        .select({
-          totalOutflowMinor:
-            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
-          transactionCount: count(financialEvents.id).mapWith(Number),
-        })
-        .from(financialEvents)
-        .leftJoin(
-          financialEventValuations,
-          and(
-            eq(financialEventValuations.financialEventId, financialEvents.id),
-            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-            isNull(financialEventValuations.supersededAt),
+  const [
+    periodSummaryRow,
+    overallPeriodOutflowRow,
+    topCategoryRows,
+    recentTransactions,
+  ] = await Promise.all([
+    db
+      .select({
+        totalOutflowMinor:
+          sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(
+            Number
           ),
+        transactionCount: count(financialEvents.id).mapWith(Number),
+      })
+      .from(financialEvents)
+      .leftJoin(
+        financialEventValuations,
+        and(
+          eq(financialEventValuations.financialEventId, financialEvents.id),
+          eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+          isNull(financialEventValuations.supersededAt)
         )
-        .where(and(...outflowPeriodConditions))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      db
-        .select({
-          totalOutflowMinor:
-            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
-        })
-        .from(financialEvents)
-        .leftJoin(
-          financialEventValuations,
-          and(
-            eq(financialEventValuations.financialEventId, financialEvents.id),
-            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-            isNull(financialEventValuations.supersededAt),
+      )
+      .where(and(...outflowPeriodConditions))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({
+        totalOutflowMinor:
+          sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(
+            Number
           ),
+      })
+      .from(financialEvents)
+      .leftJoin(
+        financialEventValuations,
+        and(
+          eq(financialEventValuations.financialEventId, financialEvents.id),
+          eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+          isNull(financialEventValuations.supersededAt)
         )
-        .where(
-          and(
-            eq(financialEvents.userId, input.userId),
-            inArray(financialEvents.status, ["confirmed", "needs_review"]),
-            eq(financialEvents.direction, "outflow"),
-            eq(financialEvents.isTransfer, false),
-            gte(financialEvents.eventOccurredAt, periodDateFrom),
-            lte(financialEvents.eventOccurredAt, periodDateTo),
+      )
+      .where(
+        and(
+          eq(financialEvents.userId, input.userId),
+          inArray(financialEvents.status, ["confirmed", "needs_review"]),
+          eq(financialEvents.direction, "outflow"),
+          eq(financialEvents.isTransfer, false),
+          gte(financialEvents.eventOccurredAt, periodDateFrom),
+          lte(financialEvents.eventOccurredAt, periodDateTo)
+        )
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({
+        categoryId: financialEvents.categoryId,
+        categoryName: sql<string>`coalesce(${categories.name}, 'Uncategorized')`,
+        categorySlug: categories.slug,
+        categoryIconName: categories.iconName,
+        categoryColorToken: categories.colorToken,
+        spendMinor:
+          sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(
+            Number
           ),
+        transactionCount: count(financialEvents.id).mapWith(Number),
+      })
+      .from(financialEvents)
+      .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
+      .leftJoin(
+        financialEventValuations,
+        and(
+          eq(financialEventValuations.financialEventId, financialEvents.id),
+          eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+          isNull(financialEventValuations.supersededAt)
         )
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      db
-        .select({
-          categoryId: financialEvents.categoryId,
-          categoryName:
-            sql<string>`coalesce(${categories.name}, 'Uncategorized')`,
-          categorySlug: categories.slug,
-          categoryIconName: categories.iconName,
-          categoryColorToken: categories.colorToken,
-          spendMinor:
-            sql<number>`coalesce(sum(${comparableAmountExpression}), 0)`.mapWith(Number),
-          transactionCount: count(financialEvents.id).mapWith(Number),
-        })
-        .from(financialEvents)
-        .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
-        .leftJoin(
-          financialEventValuations,
-          and(
-            eq(financialEventValuations.financialEventId, financialEvents.id),
-            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-            isNull(financialEventValuations.supersededAt),
-          ),
+      )
+      .where(and(...outflowPeriodConditions))
+      .groupBy(
+        financialEvents.categoryId,
+        categories.name,
+        categories.slug,
+        categories.iconName,
+        categories.colorToken
+      )
+      .orderBy(
+        desc(sql`coalesce(sum(${comparableAmountExpression}), 0)`),
+        desc(count(financialEvents.id))
+      )
+      .limit(input.topCategoriesLimit ?? 5),
+    db
+      .select({
+        event: financialEvents,
+        merchant: merchants,
+        category: categories,
+        paymentInstrument: paymentInstruments,
+        paymentProcessor: paymentProcessors,
+        reportingAmountMinor: comparableAmountExpression.mapWith(Number),
+      })
+      .from(financialEvents)
+      .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
+      .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
+      .leftJoin(
+        paymentInstruments,
+        eq(financialEvents.paymentInstrumentId, paymentInstruments.id)
+      )
+      .leftJoin(
+        paymentProcessors,
+        eq(financialEvents.paymentProcessorId, paymentProcessors.id)
+      )
+      .leftJoin(
+        financialEventValuations,
+        and(
+          eq(financialEventValuations.financialEventId, financialEvents.id),
+          eq(financialEventValuations.targetCurrency, input.reportingCurrency),
+          isNull(financialEventValuations.supersededAt)
         )
-        .where(and(...outflowPeriodConditions))
-        .groupBy(
-          financialEvents.categoryId,
-          categories.name,
-          categories.slug,
-          categories.iconName,
-          categories.colorToken,
-        )
-        .orderBy(
-          desc(sql`coalesce(sum(${comparableAmountExpression}), 0)`),
-          desc(count(financialEvents.id)),
-        )
-        .limit(input.topCategoriesLimit ?? 5),
-      db
-        .select({
-          event: financialEvents,
-          merchant: merchants,
-          category: categories,
-          paymentInstrument: paymentInstruments,
-          paymentProcessor: paymentProcessors,
-          reportingAmountMinor: comparableAmountExpression.mapWith(Number),
-        })
-        .from(financialEvents)
-        .leftJoin(merchants, eq(financialEvents.merchantId, merchants.id))
-        .leftJoin(categories, eq(financialEvents.categoryId, categories.id))
-        .leftJoin(
-          paymentInstruments,
-          eq(financialEvents.paymentInstrumentId, paymentInstruments.id),
-        )
-        .leftJoin(
-          paymentProcessors,
-          eq(financialEvents.paymentProcessorId, paymentProcessors.id),
-        )
-        .leftJoin(
-          financialEventValuations,
-          and(
-            eq(financialEventValuations.financialEventId, financialEvents.id),
-            eq(financialEventValuations.targetCurrency, input.reportingCurrency),
-            isNull(financialEventValuations.supersededAt),
-          ),
-        )
-        .where(and(...periodConditions))
-        .orderBy(desc(financialEvents.eventOccurredAt), desc(financialEvents.createdAt))
-        .limit(input.recentTransactionsLimit ?? 10),
-    ])
+      )
+      .where(and(...periodConditions))
+      .orderBy(
+        desc(financialEvents.eventOccurredAt),
+        desc(financialEvents.createdAt)
+      )
+      .limit(input.recentTransactionsLimit ?? 10),
+  ])
 
   const totalOutflowMinor = periodSummaryRow?.totalOutflowMinor ?? 0
   const transactionCount = periodSummaryRow?.transactionCount ?? 0
-  const overallPeriodOutflowMinor = overallPeriodOutflowRow?.totalOutflowMinor ?? 0
+  const overallPeriodOutflowMinor =
+    overallPeriodOutflowRow?.totalOutflowMinor ?? 0
   const averageTransactionMinor =
     transactionCount > 0 ? Math.round(totalOutflowMinor / transactionCount) : 0
 
@@ -1139,6 +1407,7 @@ export async function getMerchantDetailForUser(input: {
     selectedMonthKey,
     selectedWeek,
     weekBuckets,
+    rangeBuckets,
     summary: {
       totalOutflowMinor,
       transactionCount,
@@ -1747,7 +2016,9 @@ export async function reassignFinancialEventSources(input: {
     .set({
       financialEventId: input.toFinancialEventId,
     })
-    .where(eq(financialEventSources.financialEventId, input.fromFinancialEventId))
+    .where(
+      eq(financialEventSources.financialEventId, input.fromFinancialEventId)
+    )
     .returning()
 }
 
@@ -1942,7 +2213,10 @@ export async function listLedgerEventsForUser(input: {
 }) {
   const conditions = [
     eq(financialEvents.userId, input.userId),
-    inArray(financialEvents.status, input.statuses ?? ["confirmed", "needs_review"]),
+    inArray(
+      financialEvents.status,
+      input.statuses ?? ["confirmed", "needs_review"]
+    ),
   ]
 
   if (input.eventType) {

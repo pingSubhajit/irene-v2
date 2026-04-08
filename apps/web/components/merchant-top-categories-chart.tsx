@@ -13,6 +13,10 @@ import {
   ChartTooltipContent,
 } from "@workspace/ui/components/chart"
 
+import {
+  appendGlobalTimeframeToHref,
+  type GlobalTimeframe,
+} from "@/lib/global-timeframe"
 import { CategoryBadge } from "./category-badge"
 
 type CategorySlice = {
@@ -56,7 +60,7 @@ function formatPercent(value: number) {
 
 function getCategorySliceColor(
   colorToken: CategoryColorToken | null | undefined,
-  index: number,
+  index: number
 ) {
   const byToken: Record<CategoryColorToken, [string, string]> = {
     yellow: ["#ffd75f", "#efbc3b"],
@@ -75,11 +79,15 @@ function getCategorySliceColor(
 export function MerchantTopCategoriesChart({
   categories,
   currency,
+  timeframe,
 }: {
   categories: CategorySlice[]
   currency: string
+  timeframe: GlobalTimeframe
 }) {
-  const activeCategoryCount = categories.filter((category) => category.spendMinor > 0).length
+  const activeCategoryCount = categories.filter(
+    (category) => category.spendMinor > 0
+  ).length
 
   const data = categories.map((category, index) => ({
     name: category.categoryName,
@@ -117,7 +125,7 @@ export function MerchantTopCategoriesChart({
                         share: number
                       }
                       color?: string
-                    },
+                    }
                   ) => {
                     const point = item.payload
 
@@ -132,7 +140,9 @@ export function MerchantTopCategoriesChart({
                             className="size-2.5 rounded-full"
                             style={{ backgroundColor: item.color ?? "#fff" }}
                           />
-                          <span className="text-muted-foreground">{point.name}</span>
+                          <span className="text-muted-foreground">
+                            {point.name}
+                          </span>
                           <span className="ml-auto font-medium text-foreground">
                             {formatCurrency(point.spendMinor, currency)}
                           </span>
@@ -193,7 +203,7 @@ export function MerchantTopCategoriesChart({
               textAnchor="middle"
               dominantBaseline="middle"
               fill="rgba(255,255,255,0.54)"
-              className="font-sans text-[10px] font-semibold uppercase tracking-[0.18em]"
+              className="font-sans text-[10px] font-semibold tracking-[0.18em] uppercase"
             >
               categories
             </text>
@@ -218,15 +228,20 @@ export function MerchantTopCategoriesChart({
                   <p
                     className="truncate text-[15px] font-medium"
                     style={{
-                      color: getCategorySliceColor(category.categoryColorToken, index),
+                      color: getCategorySliceColor(
+                        category.categoryColorToken,
+                        index
+                      ),
                     }}
                   >
                     {category.categoryName}
                   </p>
                   <p className="mt-1 text-sm text-white/38">
                     {category.transactionCount}{" "}
-                    {category.transactionCount === 1 ? "transaction" : "transactions"} ·{" "}
-                    {formatPercent(category.shareOfMerchantSpend)}
+                    {category.transactionCount === 1
+                      ? "transaction"
+                      : "transactions"}{" "}
+                    · {formatPercent(category.shareOfMerchantSpend)}
                   </p>
                 </div>
               </div>
@@ -242,7 +257,10 @@ export function MerchantTopCategoriesChart({
             return (
               <Link
                 key={`${category.categoryId}-${index}`}
-                href={`/activity/categories/${category.categoryId}`}
+                href={appendGlobalTimeframeToHref(
+                  `/activity/categories/${category.categoryId}`,
+                  timeframe
+                )}
                 className="block transition hover:bg-white/[0.02]"
               >
                 {content}
@@ -250,11 +268,7 @@ export function MerchantTopCategoriesChart({
             )
           }
 
-          return (
-            <div key={`${category.categoryName}-${index}`}>
-              {content}
-            </div>
-          )
+          return <div key={`${category.categoryName}-${index}`}>{content}</div>
         })}
       </div>
     </div>
