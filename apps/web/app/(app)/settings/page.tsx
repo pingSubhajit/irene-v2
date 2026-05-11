@@ -169,6 +169,14 @@ export default async function SettingsPage({
         }
       )
     : "not yet"
+  const gmailConnected = Boolean(
+    gmailState.connection && gmailState.connection.status !== "revoked"
+  )
+  const inboxLabel = gmailConnected
+    ? (gmailState.connection?.providerAccountEmail ?? "connected")
+    : gmailState.connection
+      ? "reconnect required"
+      : "not linked"
   const linkedInstrumentCount = cardLikeInstruments.filter((instrument) =>
     Boolean(instrument.backingPaymentInstrumentId)
   ).length
@@ -191,9 +199,7 @@ export default async function SettingsPage({
         image: displayImage ?? null,
       },
       memberSinceLabel: memberSince,
-      inboxLabel: gmailState.connection
-        ? (gmailState.connection.providerAccountEmail ?? "connected")
-        : "not linked",
+      inboxLabel,
       reportingCurrency: settings.reportingCurrency,
       timeZone: settings.timeZone,
       lastSyncLabel: lastSyncValue,
@@ -201,7 +207,7 @@ export default async function SettingsPage({
       cashAccountsCount: cashAccounts.length,
       linkedInstrumentSummary: `${linkedInstrumentCount}/${cardLikeInstruments.length}`,
       memoryFactsCount: memoryFacts.length,
-      gmailConnected: Boolean(gmailState.connection),
+      gmailConnected,
     },
   } satisfies PwaRouteSnapshot<"settings">
 
@@ -244,14 +250,7 @@ export default async function SettingsPage({
 
       {/* Quick stats */}
       <div className="mt-10 divide-y divide-white/[0.06]">
-        <InfoRow
-          label="inbox"
-          value={
-            gmailState.connection
-              ? (gmailState.connection.providerAccountEmail ?? "connected")
-              : "not linked"
-          }
-        />
+        <InfoRow label="inbox" value={inboxLabel} />
         <InfoRow
           label="reporting currency"
           value={settings.reportingCurrency}
@@ -265,7 +264,7 @@ export default async function SettingsPage({
       <SectionHeader>Inbox</SectionHeader>
       <InboxSettingsRows
         userId={session.user.id}
-        connected={Boolean(gmailState.connection)}
+        connected={gmailConnected}
       />
 
       {/* Preferences */}

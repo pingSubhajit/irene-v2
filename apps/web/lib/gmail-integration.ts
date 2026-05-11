@@ -3,6 +3,7 @@ import {
   createJobRun,
   type EmailSyncCursorSelect,
   ensureEmailSyncCursor,
+  ensureCoalescedJobRun,
   ensureJobRun,
   getGmailOauthConnectionForUser,
   getLatestCursorForConnection,
@@ -78,8 +79,8 @@ function windowStartAtKey(value: Date | null | undefined) {
 
 export async function triggerGmailIncrementalSync(input: TriggerBaseInput) {
   const correlationId = createCorrelationId()
-  const jobKey = `${GMAIL_INCREMENTAL_POLL_JOB_NAME}:${input.oauthConnectionId}:${correlationId}`
-  const jobRun = await createJobRun({
+  const jobKey = `${GMAIL_INCREMENTAL_POLL_JOB_NAME}:${input.oauthConnectionId}`
+  const jobRun = await ensureCoalescedJobRun({
     queueName: EMAIL_SYNC_QUEUE_NAME,
     jobName: GMAIL_INCREMENTAL_POLL_JOB_NAME,
     jobKey,

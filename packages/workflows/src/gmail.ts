@@ -1,6 +1,11 @@
 import { z } from "zod"
 
-import { createTrackedJobOptions, getOrCreateQueue, toBullJobId } from "./redis"
+import {
+  addOrRefreshTrackedJob,
+  createTrackedJobOptions,
+  getOrCreateQueue,
+  toBullJobId,
+} from "./redis"
 
 export const BACKFILL_IMPORT_QUEUE_NAME = "backfill-import"
 export const EMAIL_SYNC_QUEUE_NAME = "email-sync"
@@ -105,12 +110,13 @@ export async function enqueueGmailIncrementalPoll(
 ) {
   const parsed = gmailIncrementalPollJobPayloadSchema.parse(payload)
 
-  return getEmailSyncQueue().add(GMAIL_INCREMENTAL_POLL_JOB_NAME, parsed, {
-    ...createTrackedJobOptions({
-      jobId: toBullJobId(parsed.jobKey),
-      attempts: 3,
-      backoffMs: 45_000,
-    }),
+  return addOrRefreshTrackedJob({
+    queue: getEmailSyncQueue(),
+    jobName: GMAIL_INCREMENTAL_POLL_JOB_NAME,
+    payload: parsed,
+    jobId: toBullJobId(parsed.jobKey),
+    attempts: 3,
+    backoffMs: 45_000,
   })
 }
 

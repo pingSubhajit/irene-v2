@@ -297,13 +297,17 @@ export default async function DashboardPage({
   const forecastNeedsRecovery =
     latestForecastJob?.status === "failed" ||
     latestForecastJob?.status === "dead_lettered"
+  const gmailConnected = Boolean(
+    gmailState.connection && gmailState.connection.status !== "revoked"
+  )
 
-  const setupBlocker = !gmailState.connection
+  const setupBlocker = !gmailConnected
     ? {
         eyebrow: "Setup blocker",
-        title: "connect Gmail",
-        description:
-          "Irene needs your inbox connected before it can keep your money picture current.",
+        title: gmailState.connection ? "reconnect Gmail" : "connect Gmail",
+        description: gmailState.connection
+          ? "Gmail access expired, so Irene cannot sync new transactions until you reconnect it."
+          : "Irene needs your inbox connected before it can keep your money picture current.",
         href: "/settings",
         badge: "Action",
         badgeVariant: "warning" as const,

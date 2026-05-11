@@ -176,6 +176,9 @@ export default async function RecoveryPage({ searchParams }: RecoveryPageProps) 
   const latestAdviceUpdatedAt = adviceRows[0]?.adviceItem.updatedAt ?? null
   const forecastStale = !latestForecast?.run.completedAt
   const adviceStale = !latestAdviceUpdatedAt
+  const gmailConnected = Boolean(
+    gmailState.connection && gmailState.connection.status !== "revoked"
+  )
 
   return (
     <section className="mx-auto max-w-lg">
@@ -271,7 +274,9 @@ export default async function RecoveryPage({ searchParams }: RecoveryPageProps) 
         <RecoveryActionRow
           label="recent mail sync"
           value={
-            latestSyncJob?.status === "failed" || latestSyncJob?.status === "dead_lettered"
+            !gmailConnected
+              ? "reconnect required"
+              : latestSyncJob?.status === "failed" || latestSyncJob?.status === "dead_lettered"
               ? latestSyncJob.status.replace("_", " ")
               : gmailState.connection?.lastSuccessfulSyncAt
                 ? "healthy"
@@ -285,7 +290,7 @@ export default async function RecoveryPage({ searchParams }: RecoveryPageProps) 
                 : "No sync has completed yet"
           }
           action={
-            gmailState.connection ? (
+            gmailConnected ? (
               <form action="/api/recovery/sync" method="post">
                 <input type="hidden" name="redirectTo" value="/settings/recovery" />
                 <Button type="submit" variant="outline" size="xs">

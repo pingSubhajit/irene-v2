@@ -3935,6 +3935,18 @@ for (const [queueName, worker] of [
     logger.info("Worker ready", { queueName })
   })
 
+  worker.on("error", (error) => {
+    logger.errorWithCause("Worker transport error", error, { queueName })
+  })
+
+  worker.on("stalled", (jobId, previous) => {
+    logger.warn("Worker job stalled", {
+      queueName,
+      jobId,
+      previous,
+    })
+  })
+
   worker.on("failed", async (job, error) => {
     logger.errorWithCause("Worker job failed", error, {
       queueName,
