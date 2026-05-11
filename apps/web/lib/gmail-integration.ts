@@ -10,6 +10,7 @@ import {
   listRecentJobRunsForQueues,
   listRecentRawDocumentsForUser,
 } from "@workspace/db"
+import { isGmailInitialBackfillEnabled } from "@workspace/config"
 import { createCorrelationId } from "@workspace/observability"
 import {
   BACKFILL_IMPORT_QUEUE_NAME,
@@ -123,7 +124,10 @@ function hasExistingGmailSyncState(cursor: EmailSyncCursorSelect) {
 export async function triggerGmailSyncAfterConnect(input: TriggerBaseInput & {
   cursor: EmailSyncCursorSelect
 }) {
-  if (hasExistingGmailSyncState(input.cursor)) {
+  if (
+    hasExistingGmailSyncState(input.cursor) ||
+    !isGmailInitialBackfillEnabled()
+  ) {
     const { jobRun } = await triggerGmailIncrementalSync(input)
 
     return {

@@ -47,7 +47,7 @@ function asSingleValue(value: string | string[] | undefined) {
 function getStatusMessage(value: string | undefined) {
   switch (value) {
     case "connected":
-      return "Gmail connected. Irene has started syncing and backfilling your inbox."
+      return "Gmail connected. Irene has started syncing your inbox."
     case "account-mismatch":
       return "The Gmail account you picked did not match your Irene owner account."
     case "invalid-state":
