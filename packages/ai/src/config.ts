@@ -2,9 +2,9 @@ const gatewayProviderPrefix = "google"
 
 const modelCatalog = {
   financeRelevanceClassifier: "openai/gpt-5-nano",
-  financeDocumentRouter: "gemini-3-flash",
+  financeDocumentRouter: "gemini-3.1-flash-lite",
   financeSignalExtractor: "gemini-2.5-flash-lite",
-  financeMerchantHintExtractor: "gemini-3-flash",
+  financeMerchantHintExtractor: "gemini-3.1-flash-lite",
   financeBalanceExtractor: "openai/gpt-5-nano",
   financeMemoryAuthoring: "gemini-3-flash",
   financeMemorySummarizer: "openai/gpt-5-nano",

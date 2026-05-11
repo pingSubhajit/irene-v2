@@ -72,6 +72,12 @@ type ResolutionOutcome = {
   observationIds?: string[]
 }
 
+const MAX_AI_MERCHANT_OBSERVATIONS = 6
+const MAX_AI_MERCHANT_CANDIDATES = 8
+const MAX_AI_PROCESSOR_CANDIDATES = 5
+const MAX_AI_ALIAS_PER_ENTITY = 6
+const MAX_AI_MEMORY_LINES = 8
+
 function normalizeWhitespace(input: string | null | undefined) {
   if (!input) return null
   const normalized = input.replace(/\s+/g, " ").trim()
@@ -655,6 +661,59 @@ export async function resolveMerchantCluster(input: {
       observation.processorNameHint ?? "",
     ]),
   })
+  const highConfidenceParserMerchant = (() => {
+    if (
+      candidateMerchantRows.length > 0 ||
+      candidateProcessors.length > 0 ||
+      relevantObservations.some(
+        (observation) =>
+          observation.observationSourceKind === "bank_alert" ||
+          observation.observationSourceKind === "statement",
+      )
+    ) {
+      return null
+    }
+
+    const confidentMerchantObservations = relevantObservations.filter(
+      (observation) =>
+        (observation.observationSourceKind === "merchant_receipt" ||
+          observation.observationSourceKind === "merchant_order") &&
+        Number(observation.confidence) >= 0.82,
+    )
+    const merchantName =
+      confidentMerchantObservations
+        .map((observation) =>
+          getSanitizedMerchantHint({
+            merchantNameHint: observation.merchantNameHint,
+            merchantDescriptorRaw: observation.merchantDescriptorRaw,
+          }),
+        )
+        .find((value): value is string => Boolean(value)) ?? null
+
+    return merchantName
+  })()
+
+  if (highConfidenceParserMerchant) {
+    const applied = await applyMerchantDecision({
+      userId: input.userId,
+      financialEventId: input.financialEventId,
+      observations: relevantObservations,
+      canonicalMerchantName: highConfidenceParserMerchant,
+      canonicalProcessorName: null,
+      categorySlug: null,
+      targetMerchantId: null,
+      decision: "create_new_merchant",
+    })
+
+    return {
+      action: "created",
+      reason: "high_confidence_parser_merchant",
+      merchantId: applied.merchant?.id ?? null,
+      paymentProcessorId: applied.processor?.id ?? null,
+      categoryId: applied.category?.id ?? null,
+      observationIds: relevantObservations.map((observation) => observation.id),
+    }
+  }
 
   const merchantModelRun = await createModelRun({
     userId: input.userId,
@@ -682,6 +741,11 @@ export async function resolveMerchantCluster(input: {
       ),
     })
 
+    const aiObservations = relevantObservations.slice(0, MAX_AI_MERCHANT_OBSERVATIONS)
+    const aiCandidateMerchantRows = candidateMerchantRows.slice(0, MAX_AI_MERCHANT_CANDIDATES)
+    const aiMerchantIds = new Set(aiCandidateMerchantRows.map((row) => row.merchant.id))
+    const aiCandidateProcessors = candidateProcessors.slice(0, MAX_AI_PROCESSOR_CANDIDATES)
+
     const resolved = await resolveMerchantAndProcessorWithAi({
       userId: input.userId,
       sourceReliability: {
@@ -701,7 +765,7 @@ export async function resolveMerchantCluster(input: {
           (observation) => observation.observationSourceKind === "statement"
         ).length,
       },
-      observations: relevantObservations.map((observation) => ({
+      observations: aiObservations.map((observation) => ({
         id: observation.id,
         observationSourceKind: observation.observationSourceKind,
         issuerHint: observation.issuerHint,
@@ -724,26 +788,33 @@ export async function resolveMerchantCluster(input: {
         snippet:
           rawDocumentById.get(observation.rawDocumentId ?? "")?.snippet ?? null,
         bodyTextExcerpt: truncateText(
-          rawDocumentById.get(observation.rawDocumentId ?? "")?.bodyText
+          rawDocumentById.get(observation.rawDocumentId ?? "")?.bodyText,
+          candidateMerchantRows.length > 0 ? 500 : 900,
         ),
       })),
-      candidateMerchants: candidateMerchantRows.map((row) => ({
+      candidateMerchants: aiCandidateMerchantRows.map((row) => ({
         id: row.merchant.id,
         displayName: row.merchant.displayName,
         normalizedName: row.merchant.normalizedName,
         aliases: merchantAliases
-          .filter((alias) => alias.merchantId === row.merchant.id)
-          .map((alias) => alias.aliasText),
+          .filter((alias) => alias.merchantId === row.merchant.id && aiMerchantIds.has(alias.merchantId))
+          .map((alias) => alias.aliasText)
+          .slice(0, MAX_AI_ALIAS_PER_ENTITY),
         linkedEventCount: Number(row.linkedEventCount),
       })),
-      candidateProcessors: candidateProcessors.reduce<
+      candidateProcessors: aiCandidateProcessors.reduce<
         Array<{ id: string; displayName: string; aliases: string[] }>
       >((accumulator, row) => {
         const existing = accumulator.find(
           (item) => item.id === row.processor.id
         )
         if (existing) {
-          if (row.alias?.aliasText) existing.aliases.push(row.alias.aliasText)
+          if (
+            row.alias?.aliasText &&
+            existing.aliases.length < MAX_AI_ALIAS_PER_ENTITY
+          ) {
+            existing.aliases.push(row.alias.aliasText)
+          }
           return accumulator
         }
 
@@ -754,7 +825,7 @@ export async function resolveMerchantCluster(input: {
         })
         return accumulator
       }, []),
-      memorySummary: memory.summaryLines,
+      memorySummary: memory.summaryLines.slice(0, MAX_AI_MEMORY_LINES),
     })
 
     await updateModelRun(merchantModelRun.id, {

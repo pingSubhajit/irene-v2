@@ -51,6 +51,12 @@ type ResolutionOutcome = {
   financialEventIds?: string[]
 }
 
+const MAX_AI_INSTRUMENT_OBSERVATIONS = 8
+const MAX_AI_INSTRUMENT_CANDIDATES = 6
+const MAX_AI_INSTITUTION_CANDIDATES = 6
+const MAX_AI_ALIAS_PER_INSTITUTION = 6
+const MAX_AI_MEMORY_LINES = 8
+
 function normalizeWhitespace(input: string | null | undefined) {
   if (!input) {
     return null
@@ -499,6 +505,51 @@ export async function resolveInstrumentCluster(input: {
     userId: input.userId,
     aliasHints,
   })
+  const matchingCandidateInstruments = candidateInstruments.filter(
+    (candidate) =>
+      normalizeInstrumentMaskedIdentifier(candidate.instrument.maskedIdentifier) ===
+      normalizeInstrumentMaskedIdentifier(input.maskedIdentifier),
+  )
+
+  if (
+    matchingCandidateInstruments.length === 1 &&
+    sourceReliability.bankOriginCount + sourceReliability.statementOriginCount > 0
+  ) {
+    const candidate = matchingCandidateInstruments[0]!
+    const canonicalInstrument = await applyCanonicalInstrumentDecision({
+      userId: input.userId,
+      maskedIdentifier: input.maskedIdentifier,
+      observations,
+      canonicalInstitutionName:
+        candidate.institution?.displayName ??
+        candidate.instrument.providerName ??
+        null,
+      canonicalInstrumentType:
+        candidate.instrument.instrumentType === "unknown"
+          ? inferInstrumentTypeHint({
+              signalHint: observations[0]?.instrumentTypeHint ?? null,
+              sender: observations[0]?.issuerAliasHint ?? observations[0]?.issuerHint ?? null,
+              subject: null,
+            })
+          : candidate.instrument.instrumentType,
+      targetPaymentInstrumentId: candidate.instrument.id,
+      decision: "link_to_existing_instrument",
+    })
+
+    return {
+      action: "linked",
+      reason: "existing_instrument_last4_bank_evidence",
+      paymentInstrumentId: canonicalInstrument.id,
+      observationIds: observations.map((observation) => observation.id),
+      financialEventIds: Array.from(
+        new Set(
+          observations
+            .map((observation) => observation.financialEventId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ),
+    }
+  }
 
   const modelRun = await createModelRun({
     userId: input.userId,
@@ -525,11 +576,18 @@ export async function resolveInstrumentCluster(input: {
       ]),
     })
 
+    const aiObservations = observations.slice(0, MAX_AI_INSTRUMENT_OBSERVATIONS)
+    const aiCandidateInstruments = candidateInstruments.slice(0, MAX_AI_INSTRUMENT_CANDIDATES)
+    const aiCandidateInstitutions = candidateInstitutions.slice(
+      0,
+      MAX_AI_INSTITUTION_CANDIDATES,
+    )
+
     const aiResult = await resolvePaymentInstrumentWithAi({
       userId: input.userId,
       maskedIdentifier: input.maskedIdentifier,
       sourceReliability,
-      observations: observations.map((observation) => ({
+      observations: aiObservations.map((observation) => ({
         id: observation.id,
         observationSourceKind: observation.observationSourceKind,
         maskedIdentifier: observation.maskedIdentifier,
@@ -541,7 +599,7 @@ export async function resolveInstrumentCluster(input: {
         confidence: Number(observation.confidence),
         evidenceSummary: summarizeEvidence(observation),
       })),
-      candidateInstruments: candidateInstruments.map((candidate) => ({
+      candidateInstruments: aiCandidateInstruments.map((candidate) => ({
         id: candidate.instrument.id,
         displayName: candidate.instrument.displayName,
         providerName: candidate.instrument.providerName,
@@ -552,7 +610,7 @@ export async function resolveInstrumentCluster(input: {
       })),
       candidateInstitutions: Array.from(
         new Map(
-          candidateInstitutions.map((candidate) => [
+          aiCandidateInstitutions.map((candidate) => [
             candidate.institution.id,
             {
               id: candidate.institution.id,
@@ -561,8 +619,11 @@ export async function resolveInstrumentCluster(input: {
             },
           ]),
         ).values(),
-      ),
-      memorySummary: memory.summaryLines,
+      ).map((candidate) => ({
+        ...candidate,
+        aliases: candidate.aliases.slice(0, MAX_AI_ALIAS_PER_INSTITUTION),
+      })),
+      memorySummary: memory.summaryLines.slice(0, MAX_AI_MEMORY_LINES),
     })
 
     await updateModelRun(modelRun.id, {

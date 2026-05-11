@@ -2833,6 +2833,41 @@ function hasBalanceInferencePayload(
   )
 }
 
+function hasExistingSignalBalancePayload(
+  signals: Awaited<ReturnType<typeof listExtractedSignalsForRawDocumentIds>>,
+) {
+  return signals.some(
+    (signal) =>
+      typeof signal.availableBalanceMinor === "number" ||
+      typeof signal.availableCreditLimitMinor === "number" ||
+      Boolean(signal.balanceInstrumentLast4Hint) ||
+      Boolean(signal.backingAccountLast4Hint),
+  )
+}
+
+function shouldRunBalanceInference(input: {
+  normalizedDocument: Awaited<ReturnType<typeof buildNormalizedExtractionDocument>>
+  signals: Awaited<ReturnType<typeof listExtractedSignalsForRawDocumentIds>>
+}) {
+  if (hasExistingSignalBalancePayload(input.signals)) {
+    return false
+  }
+
+  const combinedText = [
+    input.normalizedDocument.subject,
+    input.normalizedDocument.snippet,
+    input.normalizedDocument.bodyText,
+    ...input.normalizedDocument.attachmentTexts.map((attachment) => attachment.parsedText),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+
+  return /\b(available balance|available credit|credit limit|available limit|current balance|closing balance|ledger balance|account balance|balance is|balance of|outstanding balance|account ending|account no|account number|linked account)\b/.test(
+    combinedText,
+  )
+}
+
 async function handleDocumentInferBalance(job: Job) {
   const payload = documentInferBalanceJobPayloadSchema.parse(job.data)
   await markJobRunning(job, payload)
@@ -2846,6 +2881,60 @@ async function handleDocumentInferBalance(job: Job) {
   const normalizedDocument = await buildNormalizedExtractionDocument(rawDocument)
   const signals = await listExtractedSignalsForRawDocumentIds([rawDocument.id])
   const knownInstruments = await listRecentPaymentInstrumentsForUser(payload.userId)
+  const shouldCallBalanceModel = shouldRunBalanceInference({
+    normalizedDocument,
+    signals,
+  })
+
+  if (!shouldCallBalanceModel) {
+    const balanceOutcome =
+      signals.length > 0
+        ? await inferAccountsAndPromoteBalancesForRawDocument({
+            userId: payload.userId,
+            rawDocumentId: rawDocument.id,
+          })
+        : {
+            createdObservationIds: [],
+            promotedAnchorIds: [],
+            linkedInstrumentIds: [],
+            updatedEventIds: [],
+            updatedInstrumentIds: [],
+          }
+
+    if (signals.length > 0) {
+      await enqueueTrackedSignalReconcilesForSignals({
+        userId: payload.userId,
+        rawDocumentId: rawDocument.id,
+        signals,
+      })
+    }
+
+    if (balanceOutcome.promotedAnchorIds.length > 0) {
+      await enqueueTrackedForecastRefresh({
+        userId: payload.userId,
+        correlationId: payload.correlationId,
+        source: "worker",
+        reason: "balance_anchor_changed",
+      })
+    }
+
+    await markJobSucceeded(job, payload, {
+      rawDocumentId: rawDocument.id,
+      modelRunId: null,
+      signalCount: signals.length,
+      balanceInferenceApplied: false,
+      balanceInferenceSkipped: true,
+      balanceInferenceError: null,
+      observationCount: balanceOutcome.createdObservationIds.length,
+      promotedAnchorCount: balanceOutcome.promotedAnchorIds.length,
+    })
+
+    return {
+      signalCount: signals.length,
+      promotedAnchorCount: balanceOutcome.promotedAnchorIds.length,
+    }
+  }
+
   const memory = await getMemoryBundleForUser({
     userId: payload.userId,
     senderHints: [normalizedDocument.sender],
