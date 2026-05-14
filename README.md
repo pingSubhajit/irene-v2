@@ -122,6 +122,51 @@ pnpm db:migrate      # Apply migrations
 pnpm worker:smoke    # Enqueue a smoke job through the web app
 ```
 
+## Deploy the worker to Fly.io
+
+The BullMQ worker can run as a dedicated Fly app with no public HTTP service.
+The checked-in `fly.worker.toml` uses `Dockerfile.worker`, runs without an HTTP
+service, and gives the worker time to close BullMQ and database connections on
+deploy shutdown.
+
+Create the Fly app once:
+
+```bash
+fly apps create irene-worker
+```
+
+Set the same production secrets used by the web app. Fly expects one
+`NAME=VALUE` pair per physical line when importing secrets, so multiline values
+such as `GCS_PRIVATE_KEY` must be escaped as literal `\n` sequences.
+
+```bash
+pnpm --filter @workspace/config exec node --input-type=module <<'EOF' | fly secrets import -a irene-worker --stage
+import { config } from "dotenv"
+
+const parsed = config({
+  path: process.env.FLY_SECRETS_ENV_FILE ?? "../../.env.prod",
+  processEnv: {},
+  quiet: true,
+}).parsed
+
+if (!parsed) {
+  throw new Error("Could not load Fly secrets env file")
+}
+
+for (const [key, value] of Object.entries(parsed)) {
+  console.log(`${key}=${value.replaceAll("\n", "\\n")}`)
+}
+EOF
+```
+
+Deploy and inspect logs:
+
+```bash
+pnpm deploy:worker:fly
+fly scale count 1 -a irene-worker
+fly logs -a irene-worker
+```
+
 ## How the system fits together
 
 1. The web app handles sign-in, dashboard views, review actions, settings, and internal routes.

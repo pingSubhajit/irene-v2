@@ -16,6 +16,7 @@
     "typecheck": "turbo typecheck",
     "db:generate": "drizzle-kit generate --config packages/db/drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config packages/db/drizzle.config.ts",
+    "deploy:worker:fly": "fly deploy -c fly.worker.toml",
     "trigger:deploy": "npx trigger.dev@latest deploy",
     "worker:smoke": "pnpm --filter web exec tsx scripts/enqueue-smoke.ts",
     "worker:diagnose-queues": "pnpm --filter web exec tsx scripts/diagnose-queues.ts"

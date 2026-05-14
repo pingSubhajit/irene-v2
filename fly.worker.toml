@@ -1,0 +1,20 @@
+app = "irene-worker"
+primary_region = "bom"
+kill_signal = "SIGINT"
+kill_timeout = 120
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[deploy]
+  strategy = "rolling"
+  wait_timeout = "10m"
+
+[env]
+  NODE_ENV = "production"
+  LOG_LEVEL = "info"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
